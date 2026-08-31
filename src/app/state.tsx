@@ -758,22 +758,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const t0 = Date.now()
 
     try {
-      // Plates are uploaded once per box and then cited by name.
+      // Plates are uploaded once per box and then cited by name — and a plate
+      // PICKED from the box is already there, so it is never sent back to it.
       const refs: Array<{ filename: string; subfolder: string }> = []
+      const videoRefs: Array<{ filename: string; subfolder: string }> = []
       for (const p of snap) {
-        if (p.uploaded?.endpointId === endpoint.id) {
-          refs.push({ filename: p.uploaded.filename, subfolder: p.uploaded.subfolder })
+        const into = p.kind === 'video' ? videoRefs : refs
+        if (p.boxFile?.endpointId === endpoint.id) {
+          into.push({ filename: p.boxFile.filename, subfolder: p.boxFile.subfolder })
           continue
         }
+        if (p.uploaded?.endpointId === endpoint.id) {
+          into.push({ filename: p.uploaded.filename, subfolder: p.uploaded.subfolder })
+          continue
+        }
+        if (!p.dataUrl) throw new Error(`Plate “${p.name}” has no file on this box and nothing to upload.`)
         const safe = `${p.id}_${p.name.replace(/[^a-z0-9]+/gi, '_').slice(0, 40) || 'plate'}.png`
         const up = await uploadImage(endpoint, p.dataUrl, safe)
-        refs.push(up)
+        into.push(up)
         await savePlate({ ...p, uploaded: { endpointId: endpoint.id, ...up } })
       }
 
       const graph = applyRecipe(recipe, {
         prompt,
         refs,
+        videoRefs,
         width: recipe.defaults.width,
         height: recipe.defaults.height,
         frames,
@@ -846,6 +855,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const plate: Plate = {
           id: previous?.id ?? `p${Date.now().toString(36)}`,
           name: `clip ${c.index} · last frame`,
+          kind: 'image',
           job: previous?.job?.trim()
             ? previous.job
             : 'Use it for the room, the light and where they are standing. Do not take expression from it.',

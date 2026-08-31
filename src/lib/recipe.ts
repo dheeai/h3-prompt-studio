@@ -24,6 +24,11 @@ const CANDIDATES: Record<Exclude<BindingSlot, 'output'>, Array<[cls: string, fie
   steps: [['BasicScheduler', 'steps'], ['KSampler', 'steps'], ['KSamplerAdvanced', 'steps']],
 }
 
+const REF_PREFIXES = ['ref_image_', 'ref_video_', 'ref_video_audio_', 'ref_audio_'] as const
+
+/** H3's own caps, from the node schema. Exceeding one is silently ignored. */
+export const REF_CAPS = { image: 9, video: 3 } as const
+
 const OUTPUT_CLASSES = ['SaveVideo', 'VHS_VideoCombine', 'SaveAnimatedWEBP', 'SaveWEBM', 'SaveImage']
 
 export class WorkflowError extends Error {}
@@ -62,7 +67,7 @@ const byClass = (g: Record<string, ComfyNode>, cls: string) =>
  * in `ambiguous` and the panel asks. Silently picking the wrong scheduler is
  * worse than one question.
  */
-export function detectBindings(graph: Record<string, ComfyNode>): Pick<Recipe, 'bindings' | 'ambiguous' | 'refHost'> {
+export function detectBindings(graph: Record<string, ComfyNode>): Pick<Recipe, 'bindings' | 'ambiguous' | 'refHost' | 'refHosts'> {
   const bindings: Recipe['bindings'] = {}
   const ambiguous: Recipe['ambiguous'] = {}
 
@@ -95,18 +100,22 @@ export function detectBindings(graph: Record<string, ComfyNode>): Pick<Recipe, '
     ambiguous.output = out
   }
 
-  // The reference group is an autogrow input expressed as dotted keys on the
-  // node itself: ref_images.ref_image_0, …_1. Find whoever carries them.
-  let refHost: string | undefined
+  // Reference groups are autogrow inputs expressed as dotted keys on the node
+  // itself: ref_images.ref_image_0, …_1. H3 has four such groups — images
+  // (max 9), videos (max 3), those videos' soundtracks, and standalone audio.
+  const refHosts: NonNullable<Recipe['refHosts']> = {}
   for (const [id, n] of Object.entries(graph)) {
-    if (Object.keys(n.inputs).some((k) => k.startsWith('ref_images.') || /^ref_image_\d+$/.test(k))) refHost = id
+    for (const prefix of REF_PREFIXES) {
+      if (Object.keys(n.inputs).some((k) => k.includes(prefix))) refHosts[prefix] = id
+    }
   }
-  if (!refHost) {
-    const h3 = byClass(graph, H3)[0]
-    if (h3) refHost = h3[0]
-  }
+  // A graph that ships with no references wired still has the node that would
+  // carry them, so fall back to the H3 node rather than reporting none.
+  const h3 = byClass(graph, H3)[0]
+  if (h3) for (const prefix of REF_PREFIXES) if (!refHosts[prefix]) refHosts[prefix] = h3[0]
 
-  return { bindings, ambiguous, refHost }
+  const refHost = refHosts['ref_image_']
+  return { bindings, ambiguous, refHost, refHosts }
 }
 
 /** H3 snaps length to a 17k+5 grid. Anything else is rounded DOWN onto it. */
@@ -141,8 +150,10 @@ export function makeRecipe(name: string, graph: Record<string, ComfyNode>): Reci
 
 export interface RenderInputs {
   prompt: string
-  /** Uploaded plates, in the order they must be numbered. */
+  /** Image plates, in the order they must be numbered. */
   refs: Array<{ filename: string; subfolder: string }>
+  /** Video plates. A video reference is a FRAME BATCH, not a VIDEO — see below. */
+  videoRefs?: Array<{ filename: string; subfolder: string }>
   width?: number
   height?: number
   frames?: number
@@ -174,25 +185,61 @@ export function applyRecipe(recipe: Recipe, input: RenderInputs): Record<string,
   if (input.seed != null) set(g, b.seed, input.seed)
   if (input.steps != null) set(g, b.steps, input.steps)
 
-  if (recipe.refHost && g[recipe.refHost]) {
-    const host = g[recipe.refHost]
-    const stale = Object.keys(host.inputs).filter((k) => k.startsWith('ref_images.') || /^ref_image_\d+$/.test(k))
-    const linked = new Set<string>()
-    for (const k of stale) {
+  const clearGroup = (hostId: string | undefined, prefix: string): ComfyNode | null => {
+    if (!hostId || !g[hostId]) return null
+    const host = g[hostId]
+    for (const k of Object.keys(host.inputs).filter((key) => key.includes(prefix))) {
       const v = host.inputs[k]
-      if (Array.isArray(v) && typeof v[0] === 'string') linked.add(v[0])
+      if (Array.isArray(v) && typeof v[0] === 'string') {
+        const fed = g[v[0] as string]
+        // Only drop loaders that existed to feed this slot; never a shared node.
+        if (fed && /^(LoadImage|VHS_LoadVideo|VHS_LoadVideoFFmpeg|LoadVideo|LoadAudio)$/.test(fed.class_type)) {
+          delete g[v[0] as string]
+        }
+      }
       delete host.inputs[k]
     }
-    // Drop the LoadImage nodes that only existed to feed those slots.
-    for (const id of linked) if (g[id]?.class_type === 'LoadImage') delete g[id]
+    return host
+  }
 
-    input.refs.forEach((ref, i) => {
+  const hosts = recipe.refHosts ?? (recipe.refHost ? { ref_image_: recipe.refHost } : {})
+
+  const imageHost = clearGroup(hosts['ref_image_'], 'ref_image_')
+  if (imageHost) {
+    input.refs.slice(0, REF_CAPS.image).forEach((ref, i) => {
       const id = `plate${i}`
       g[id] = {
         class_type: 'LoadImage',
         inputs: { image: ref.subfolder ? `${ref.subfolder}/${ref.filename}` : ref.filename, upload: 'image' },
       }
-      host.inputs[`ref_images.ref_image_${i}`] = [id, 0]
+      imageHost.inputs[`ref_images.ref_image_${i}`] = [id, 0]
+    })
+  }
+
+  // A video reference is declared IMAGE in the schema — "reference video frames
+  // at 24 fps" — so it is fed by a loader's frame-batch output, not a VIDEO.
+  // VHS_LoadVideo gives frames on output 0 and the soundtrack on output 2, and
+  // ref_video_audio_N is documented as the same-numbered video's soundtrack, so
+  // the pair is wired together rather than left for the operator to remember.
+  const videoHost = clearGroup(hosts['ref_video_'], 'ref_video_')
+  const audioHost = hosts['ref_video_audio_'] === hosts['ref_video_'] ? videoHost : clearGroup(hosts['ref_video_audio_'], 'ref_video_audio_')
+  if (videoHost && input.videoRefs?.length) {
+    input.videoRefs.slice(0, REF_CAPS.video).forEach((ref, i) => {
+      const id = `vplate${i}`
+      g[id] = {
+        class_type: 'VHS_LoadVideo',
+        inputs: {
+          video: ref.subfolder ? `${ref.subfolder}/${ref.filename}` : ref.filename,
+          force_rate: 24,
+          custom_width: 0,
+          custom_height: 0,
+          frame_load_cap: 0,
+          skip_first_frames: 0,
+          select_every_nth: 1,
+        },
+      }
+      videoHost.inputs[`ref_videos.ref_video_${i}`] = [id, 0]
+      if (audioHost) audioHost.inputs[`ref_video_audios.ref_video_audio_${i}`] = [id, 2]
     })
   }
 

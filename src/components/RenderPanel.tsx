@@ -17,11 +17,23 @@ export function EndpointPanel({ onClose }: { onClose: () => void }) {
   const [url, setUrl] = useState('http://')
 
   const add = async () => {
-    const clean = url.trim().replace(/\/+$/, '')
-    if (!/^https?:\/\/.+/.test(clean)) return
+    // A bare host is what people actually type. Default it to http, since a
+    // ComfyUI on a LAN or a tailnet is almost never behind TLS.
+    let clean = url.trim().replace(/\/+$/, '')
+    if (clean && !/^https?:\/\//.test(clean)) clean = `http://${clean}`
+    if (!/^https?:\/\/[^/]+/.test(clean)) return
+    let host: string
+    try {
+      const u = new URL(clean)
+      // Keep the port in the label: :8188 and :9000 on one machine are two
+      // different boxes as far as this panel is concerned.
+      host = u.port ? `${u.hostname}:${u.port}` : u.hostname
+    } catch {
+      return
+    }
     const ep: ComfyEndpoint = {
       id: `e${Date.now().toString(36)}`,
-      label: new URL(clean).hostname,
+      label: host,
       baseUrl: clean,
       builtIn: false,
     }
@@ -51,8 +63,13 @@ export function EndpointPanel({ onClose }: { onClose: () => void }) {
               <div key={ep.id} className={`card${probe?.state === 'ok' ? ' ok' : probe?.state === 'mixed-content' ? ' err' : ''}`}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
                   <span className={`dot ${b.cls}`} />
-                  <span style={{ fontSize: 12.5, fontWeight: 500, width: 96 }}>{ep.label}</span>
-                  <span className="tok" style={{ flexGrow: 1, minWidth: 0, wordBreak: 'break-all' }}>{ep.baseUrl}</span>
+                  <span
+                    style={{ fontSize: 12.5, fontWeight: 500, flex: '0 1 auto', maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                    title={ep.label}
+                  >
+                    {ep.label}
+                  </span>
+                  <span className="tok" style={{ flex: '1 1 auto', minWidth: 0, wordBreak: 'break-all' }}>{ep.baseUrl}</span>
                   <span className="tok">{b.label}</span>
                 </div>
 

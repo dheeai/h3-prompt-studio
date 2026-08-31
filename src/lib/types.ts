@@ -169,8 +169,16 @@ export interface Plate {
   name: string
   /** What the model must take from it, and what it must ignore. */
   job: string
-  /** Data URL. Held here so a plate survives a reload without the box. */
-  dataUrl: string
+  /** What the model is being handed. H3 takes both, on separate inputs. */
+  kind: 'image' | 'video'
+  /**
+   * Data URL — set when the file came from this machine, so a plate survives a
+   * reload without the box. Absent for a plate picked FROM the box, which is
+   * already where it needs to be and should never be round-tripped through here.
+   */
+  dataUrl?: string
+  /** Set when the plate is a file already sitting in ComfyUI's input folder. */
+  boxFile?: { endpointId: string; filename: string; subfolder: string; type: string }
   /** Filename on the ComfyUI box once uploaded, so it is uploaded once. */
   uploaded?: { endpointId: string; filename: string; subfolder: string }
   /** Carried plates persist across clips; a replaced one is rewritten each clip. */
@@ -214,8 +222,13 @@ export interface Recipe {
   bindings: Partial<Record<BindingSlot, Binding>>
   /** Candidates the detector could not choose between, for the UI to ask about. */
   ambiguous: Partial<Record<BindingSlot, Binding[]>>
-  /** Node id of the group holding ref_images.ref_image_N, when there is one. */
+  /**
+   * Which node carries each autogrow reference group, found by its prefix.
+   * H3 has four: images (max 9), videos (max 3), the videos' soundtracks, and
+   * standalone audio.
+   */
   refHost?: string
+  refHosts?: Partial<Record<'ref_image_' | 'ref_video_' | 'ref_video_audio_' | 'ref_audio_', string>>
   defaults: { width: number; height: number; fps: number; seconds: number }
   addedAt: number
 }

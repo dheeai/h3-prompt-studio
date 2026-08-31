@@ -32,6 +32,26 @@ export async function probeComfy(ep: ComfyEndpoint, signal?: AbortSignal): Promi
 
   try {
     const q = await fetch(`${base}/queue`, { signal })
+    if (q.status === 403) {
+      // MEASURED on our own gateway, 2026-08-31. ComfyUI validates the Origin
+      // header against its OWN host and returns an EMPTY 403 when they differ.
+      // Behind a reverse proxy that can never match — the proxy's ComfyUI sees
+      // itself as 127.0.0.1:8188, so only `Origin: http://127.0.0.1:8188` is
+      // accepted, which no browser will ever send. Worse, a proxy that adds
+      // `access-control-allow-origin: *` itself makes the box look correctly
+      // configured while every request is still refused, so this must be
+      // diagnosed by the STATUS, never by the header.
+      return {
+        state: 'error',
+        detail: 'ComfyUI refused the request because it carried an Origin header (403, empty body).',
+        hint:
+          'This is ComfyUI\'s own origin check, not a network problem — the same URL works from curl. ' +
+          'Start ComfyUI with --enable-cors-header. Behind a reverse proxy, having the proxy drop or rewrite ' +
+          'the Origin header works too. A CORS header added by the proxy does not fix this.',
+        models: [],
+        at,
+      }
+    }
     if (!q.ok) return { state: 'error', detail: `Queue check returned ${q.status}.`, models: [], at }
   } catch (e) {
     const msg = String((e as Error).message || e)
@@ -193,4 +213,51 @@ export function lastFrameOf(src: string): Promise<string> {
       } else grab()
     }
   })
+}
+
+/** ComfyUI rejected the request for carrying an Origin header. */
+export class OriginRefused extends Error {
+  constructor() {
+    super(
+      'ComfyUI refused the listing because the request came from a browser (403). ' +
+        'Start it with --enable-cors-header, or have the proxy in front of it drop the Origin header.',
+    )
+  }
+}
+
+/**
+ * What is already sitting in ComfyUI's input folder.
+ *
+ * Every file-picking node publishes its folder listing as a COMBO in
+ * /object_info, which is the only enumeration ComfyUI offers — there is no
+ * directory API. LoadImage carries the images; VHS_LoadVideo the videos.
+ * Assets a person already built on the box should never have to be uploaded
+ * back to it from here.
+ */
+export async function listBoxInputs(ep: ComfyEndpoint): Promise<{ images: string[]; videos: string[] }> {
+  const base = trim(ep.baseUrl)
+  const combo = async (node: string, field: string): Promise<string[]> => {
+    try {
+      const r = await fetch(`${base}/object_info/${node}`)
+      // A refused request must not read as an empty folder. Everything else
+      // (a node this box does not have) legitimately means "no files".
+      if (r.status === 403) throw new OriginRefused()
+      if (!r.ok) return []
+      const j = (await r.json()) as Record<string, { input?: { required?: Record<string, unknown[]> } }>
+      const spec = j[node]?.input?.required?.[field]
+      const list = Array.isArray(spec) ? spec[0] : null
+      return Array.isArray(list) ? (list as string[]).filter((x) => typeof x === 'string') : []
+    } catch (e) {
+      if (e instanceof OriginRefused) throw e
+      return []
+    }
+  }
+  const [images, videos] = await Promise.all([combo('LoadImage', 'image'), combo('VHS_LoadVideo', 'video')])
+  return { images, videos }
+}
+
+/** A file already on the box, addressed for display. */
+export function inputUrl(ep: ComfyEndpoint, filename: string): string {
+  const q = new URLSearchParams({ filename, subfolder: '', type: 'input' })
+  return `${trim(ep.baseUrl)}/view?${q}`
 }

@@ -5,12 +5,14 @@ import { buildContext, type BuiltContext } from '../lib/context'
 import { findingsToText, lint, looksLikePrompt } from '../lib/lint'
 import { streamChat } from '../lib/llm'
 import { DEFAULT_PROVIDERS, loadProviders, probe, saveProviders } from '../lib/providers'
-import { DEFAULT_TEMPLATES, STAGE_LABEL, fillTemplate, hasPromptBlock, splitReply, templateFor } from '../lib/stages'
+import { DEFAULT_TEMPLATES, STAGE_LABEL, fillTemplate, filmBlock, hasPromptBlock, splitReply, templateFor } from '../lib/stages'
 import { fetchBundledSkills, loadSkills, removeSkill, saveSkill } from '../lib/skills'
 import { estTokens } from '../lib/tokens'
-import type { ChatTurn, Finding, ProbeResult, Provider, Selection, Settings, Skill, StageId, Version } from '../lib/types'
+import type { ChatTurn, FilmContext, Finding, ProbeResult, Provider, Selection, Settings, Skill, StageId, Version } from '../lib/types'
 
 const SETTINGS_SCHEMA = 4
+
+const DEFAULT_FILM: FilmContext = { role: 'standalone', spine: '', precedes: '', follows: '' }
 
 /** Stages whose output is a prompt, as opposed to a direction sheet or notes. */
 const PROMPT_STAGES = new Set<StageId>(['draft', 'revise', 'freeform'])
@@ -37,6 +39,8 @@ interface Session {
   currentId: string | null
   /** The composer thread. Carried into every freeform turn so it continues. */
   chat?: ChatTurn[]
+  /** Where this clip sits in a longer film, if it is not standalone. */
+  film?: FilmContext
 }
 
 interface Api {
@@ -50,6 +54,7 @@ interface Api {
   current: Version | null
   streaming: { stage: StageId; text: string; reasoning: string; startedAt: number } | null
   chat: ChatTurn[]
+  film: FilmContext
   error: string | null
   /** Thinking from a run that produced no answer, kept so it is not lost. */
   failedReasoning: string | null
@@ -57,6 +62,7 @@ interface Api {
   context: BuiltContext | null
 
   setStory: (s: string) => void
+  setFilm: (f: Partial<FilmContext>) => void
   patchSettings: (p: Partial<Settings>) => void
   toggleSkill: (skill: Skill) => void
   toggleFile: (skill: Skill, rel: string) => void
@@ -247,6 +253,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const setStory = useCallback((story: string) => setSession((s) => ({ ...s, story })), [])
 
+  const setFilm = useCallback(
+    (f: Partial<FilmContext>) =>
+      setSession((s) => ({ ...s, film: { ...DEFAULT_FILM, ...s.film, ...f } })),
+    [],
+  )
+
   const toggleSkill = useCallback((skill: Skill) => {
     setSettings((s) => {
       const sel = { ...s.selection }
@@ -366,6 +378,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         story: snap.story,
         current: working,
         mode: settings.mode,
+        film: filmBlock(snap.film),
         notes: note,
         findings: findings.length ? findingsToText(findings) : undefined,
         critique: critiqueText,
@@ -509,7 +522,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     abortRef.current = null
     setStreaming(null)
     setError(null)
-    setSession({ story: '', versions: [], currentId: null, chat: [] })
+    setSession((s) => ({ story: '', versions: [], currentId: null, chat: [], film: s.film }))
     await idb.del('sessions', 'current')
   }, [])
 
@@ -524,11 +537,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     current,
     streaming,
     chat: session.chat ?? [],
+    film: session.film ?? DEFAULT_FILM,
     error,
     failedReasoning,
     findings,
     context,
     setStory,
+    setFilm,
     patchSettings,
     toggleSkill,
     toggleFile,

@@ -37,7 +37,17 @@ function Side({ row, side }: { row: DiffRow; side: 'left' | 'right' }) {
   )
 }
 
-export function DiffView({ before, after, changelog }: { before: string; after: string; changelog?: string[] }) {
+export function DiffView({
+  before,
+  after,
+  beforeLabel,
+  changelog,
+}: {
+  before: string
+  after: string
+  beforeLabel?: string
+  changelog?: string[]
+}) {
   const rows = useMemo(() => diffLines(before, after), [before, after])
   const stats = useMemo(() => diffStats(rows), [rows])
   const shown = useMemo(() => collapse(rows, 2), [rows])
@@ -65,7 +75,7 @@ export function DiffView({ before, after, changelog }: { before: string; after: 
       </div>
 
       <div className="diff-head">
-        <div className="dcol">Before</div>
+        <div className="dcol">Before{beforeLabel ? ` · ${beforeLabel}` : ''}</div>
         <div className="dcol">After</div>
       </div>
 

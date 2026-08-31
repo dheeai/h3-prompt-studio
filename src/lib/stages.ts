@@ -1,4 +1,4 @@
-import type { StageId } from './types'
+import type { ClipRole, FilmContext, StageId } from './types'
 
 export const STAGE_ORDER: StageId[] = ['direct', 'draft', 'critique', 'revise']
 
@@ -68,6 +68,8 @@ each beat earn its screen time, is the camera doing anything, is the
 performance observable. State what it is getting wrong. Then direct it again
 from the underlying intent — you are re-deciding the film, not preserving the
 prompt. Say plainly where your direction departs from what is there and why.
+
+{{film}}
 
 Produce a DIRECTION SHEET, following the loaded craft documents exactly where
 they specify a structure.
@@ -231,15 +233,58 @@ export function splitReply(raw: string): { prompt: string; changelog: string[] }
   return { prompt, changelog }
 }
 
+/**
+ * The clip's place in a longer film.
+ *
+ * The craft documents give each clip its own formula, which is right for a
+ * standalone clip and wrong for clip four of nine — apply it everywhere and a
+ * film becomes a row of miniature complete films, each hooking, escalating and
+ * resolving, none of them going anywhere together.
+ */
+export function filmBlock(f: FilmContext | undefined): string {
+  if (!f || f.role === 'standalone') return ''
+
+  const roleLine: Record<Exclude<ClipRole, 'standalone'>, string> = {
+    opening: 'This clip OPENS the film. It is the only one that may establish — it earns its hook. It must not resolve.',
+    rising: 'This clip is in the RISE. It inherits pressure already built and raises it. It has no hook of its own and no resolution — it is a middle.',
+    turn: 'This clip is the TURN — the one moment the situation changes. Everything before points at it and everything after follows from it. It does not re-establish and it does not settle.',
+    falling: 'This clip is AFTERMATH. The break has happened; this shows the cost. It must not introduce a new hook or a new escalation.',
+    closing: 'This clip CLOSES the film. It is the only one that may resolve, and it resolves what the film set up — not something of its own.',
+  }
+
+  return `THIS CLIP IS PART OF A LONGER FILM — DIRECT IT AS A PART, NOT A WHOLE
+
+${roleLine[f.role as Exclude<ClipRole, 'standalone'>]}
+
+${f.spine ? `The film is about: ${f.spine}
+` : ''}${f.precedes ? `The audience arrives here having just seen: ${f.precedes}
+` : ''}${f.follows ? `The next clip has to be able to open on: ${f.follows}
+` : ''}
+Consequences you must honour:
+
+- Do NOT give this clip its own hook, escalation curve and aftermath. A clip
+  that arcs completely is a short film, and a row of short films is not a film.
+- The five anchors belong to the FILM. Carry them; do not invent a new set for
+  this clip. Continuity of motif and object is what makes separate clips read
+  as one piece.
+- Its escalation is a SLICE of the film's curve — where it starts and where it
+  hands off — not a curve of its own.
+- Open on the state the previous clip left, and end on the state the next one
+  needs. State both explicitly at the top of the sheet.
+- Nothing may be re-established that the audience already has.
+`
+}
+
 export function templateFor(overrides: Partial<Record<StageId, string>> | undefined, stage: StageId): string {
   return overrides?.[stage] ?? DEFAULT_TEMPLATES[stage]
 }
 
 export function fillTemplate(
   template: string,
-  vars: { story?: string; current?: string; mode?: string; notes?: string; findings?: string; critique?: string },
+  vars: { story?: string; current?: string; mode?: string; notes?: string; findings?: string; critique?: string; film?: string },
 ): string {
   return template
+    .replace(/\{\{film\}\}/g, vars.film?.trim() ?? '')
     .replace(/\{\{story\}\}/g, vars.story ?? '')
     .replace(/\{\{current\}\}/g, vars.current ?? '')
     .replace(/\{\{mode\}\}/g, vars.mode ?? '')

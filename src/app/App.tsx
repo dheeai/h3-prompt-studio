@@ -14,6 +14,9 @@ import { wasSent } from '../lib/context'
 import { looksLikePrompt } from '../lib/lint'
 import type { StageId, Version } from '../lib/types'
 
+/** Stages whose output is a prompt — the only things worth diffing together. */
+const PROMPT_STAGES_UI = new Set<StageId>(['draft', 'revise', 'freeform'])
+
 const EXAMPLES: { label: string; text: string }[] = [
   {
     label: 'quiet drama',
@@ -37,7 +40,7 @@ function autosize(el: HTMLTextAreaElement | null) {
 
 export function App() {
   const app = useApp()
-  const { ready, skills, settings, providers, probes, story, versions, current, streaming, chat, error, failedReasoning, context } = app
+  const { ready, skills, settings, providers, probes, story, versions, current, streaming, chat, film, error, failedReasoning, context } = app
   const [modal, setModal] = useState<'connect' | 'skills' | 'settings' | null>(null)
   const [copied, setCopied] = useState(false)
   const [note, setNote] = useState('')
@@ -46,6 +49,7 @@ export function App() {
   const [thinkOpen, setThinkOpen] = useState(false)
   const [confirmClear, setConfirmClear] = useState(false)
   const [view, setView] = useState<'result' | 'diff'>('result')
+  const [filmOpen, setFilmOpen] = useState(false)
   const thinkRef = useRef<HTMLDivElement>(null)
   const storyRef = useRef<HTMLTextAreaElement>(null)
   const noteRef = useRef<HTMLTextAreaElement>(null)
@@ -196,7 +200,24 @@ export function App() {
       })()
     : null
   // A pass can only be diffed against what it actually worked from.
-  const diffable = !streaming && current?.fromText ? { before: current.fromText, after: current.text } : null
+  // What a pass should be compared against is the previous PROMPT, not
+  // whatever it happened to consume. A rebuild reads a direction sheet, so
+  // diffing against its input compared a sheet to a prompt — the one case
+  // where the diff matters most produced nothing worth reading.
+  const diffable = useMemo(() => {
+    if (streaming || !current) return null
+    if (PROMPT_STAGES_UI.has(current.stage)) {
+      const i = versions.findIndex((v) => v.id === current.id)
+      const prev = [...versions.slice(0, i)].reverse().find((v) => PROMPT_STAGES_UI.has(v.stage))
+      if (prev) {
+        return { before: prev.text, after: current.text, label: `pass ${versions.indexOf(prev) + 1} · ${STAGE_LABEL[prev.stage]}` }
+      }
+      if (looksLikePrompt(story)) return { before: story, after: current.text, label: 'the prompt you pasted' }
+      // Nothing to compare a first draft against — it came from a story.
+      return null
+    }
+    return current.fromText ? { before: current.fromText, after: current.text, label: 'its input' } : null
+  }, [streaming, current, versions, story])
 
   // Direct and Critique return prose. Rendering markdown as one monospace
   // block made a structured critique read as an undifferentiated wall.
@@ -403,12 +424,60 @@ export function App() {
                   {pastedPrompt ? 'a prompt you pasted' : 'your source'} · {story.length.toLocaleString()} characters
                 </span>
                 <div style={{ flexGrow: 1 }} />
+                <button
+                  className={`btn sm ${film.role === 'standalone' ? 'ghost' : ''}`}
+                  onClick={() => setFilmOpen((v) => !v)}
+                  title="Tell it where this clip sits in a longer film"
+                >
+                  {film.role === 'standalone' ? 'standalone clip' : `part of a film · ${film.role}`}
+                </button>
                 {(pastedPrompt || longSource) && (
                   <button className="btn sm ghost" onClick={() => setEditingSource((v) => !v)}>
                     {collapseSource ? 'expand' : 'collapse'}
                   </button>
                 )}
               </div>
+
+              {filmOpen && (
+                <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--rule)', background: 'var(--paper)' }}>
+                  <div className="tok" style={{ lineHeight: 1.5, marginBottom: 10 }}>
+                    A clip inside a film should not hook, escalate and resolve on its own — that makes a row of little
+                    complete films rather than one. Say where this one sits and it will be directed as a part.
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 10 }}>
+                    {(['standalone', 'opening', 'rising', 'turn', 'falling', 'closing'] as const).map((r) => (
+                      <button key={r} className={`chip${film.role === r ? ' on' : ''}`} onClick={() => app.setFilm({ role: r })}>
+                        {r}
+                      </button>
+                    ))}
+                  </div>
+                  {film.role !== 'standalone' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                      <input
+                        type="text"
+                        value={film.spine}
+                        onChange={(e) => app.setFilm({ spine: e.target.value })}
+                        placeholder="The whole film, in one line"
+                        style={{ width: '100%' }}
+                      />
+                      <input
+                        type="text"
+                        value={film.precedes}
+                        onChange={(e) => app.setFilm({ precedes: e.target.value })}
+                        placeholder="What the audience has just seen"
+                        style={{ width: '100%' }}
+                      />
+                      <input
+                        type="text"
+                        value={film.follows}
+                        onChange={(e) => app.setFilm({ follows: e.target.value })}
+                        placeholder="What the next clip has to open on"
+                        style={{ width: '100%' }}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="pane-body" style={{ paddingTop: 10, paddingBottom: 10 }}>
                 {collapseSource ? (
                   <div className={`epigraph-preview ${pastedPrompt ? 'one' : 'two'}`} onClick={() => setEditingSource(true)}>
@@ -513,7 +582,7 @@ export function App() {
                   )}
                   <div className="pane-body">
                     {diffable && view === 'diff' ? (
-                      <DiffView before={diffable.before} after={diffable.after} changelog={current?.changelog} />
+                      <DiffView before={diffable.before} after={diffable.after} beforeLabel={diffable.label} changelog={current?.changelog} />
                     ) : shownIsProse ? (
                       <ProseDoc text={shown} streaming={!!streaming} />
                     ) : (

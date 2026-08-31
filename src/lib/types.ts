@@ -85,6 +85,19 @@ export interface Version {
   note?: string
 }
 
+/** Where a clip sits in a longer film, when it is not standalone. */
+export type ClipRole = 'standalone' | 'opening' | 'rising' | 'turn' | 'falling' | 'closing'
+
+export interface FilmContext {
+  role: ClipRole
+  /** What the whole film is about — one line. */
+  spine: string
+  /** The state the audience arrives in, from the previous clip. */
+  precedes: string
+  /** What the next clip has to be able to open on. */
+  follows: string
+}
+
 export interface ChatTurn {
   role: 'user' | 'assistant'
   text: string

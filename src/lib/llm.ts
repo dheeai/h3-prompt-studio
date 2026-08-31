@@ -98,9 +98,12 @@ export async function streamChat(opts: StreamOptions): Promise<StreamResult> {
     model,
     messages,
     temperature,
-    max_tokens: maxTokens,
     stream: true,
   }
+  // 0 means no ceiling: omit the field entirely so the server applies its own
+  // maximum, which is its context minus the prompt — the real limit, and one
+  // no fixed number here could ever guess correctly across every model.
+  if (maxTokens > 0) body.max_tokens = maxTokens
   if (provider.sendCachePrompt) body.cache_prompt = true
 
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
@@ -117,14 +120,22 @@ export async function streamChat(opts: StreamOptions): Promise<StreamResult> {
 
   let res = await send(body)
 
-  // A ceiling larger than the model's context is a 400, not a clamp, on most
-  // servers. Rather than force everyone to know their context size, drop the
-  // limit and let the server apply its own.
+  // Servers disagree about max_tokens in both directions: most reject a ceiling
+  // larger than their context with a 400 rather than clamping it, and a few
+  // reject a request that omits it. One retry covers whichever complaint came
+  // back, so neither case needs the user to know anything about the model.
   if (!res.ok && res.status === 400) {
     const detail = await res.clone().text().catch(() => '')
-    if (/max_tokens|max_completion_tokens|context length|context_length|n_predict|too large|exceed/i.test(detail)) {
-      const { max_tokens: _dropped, ...withoutLimit } = body
-      res = await send(withoutLimit)
+    const mentionsLimit = /max_tokens|max_completion_tokens|max_output_tokens|context length|context_length|n_predict/i.test(detail)
+
+    if (mentionsLimit) {
+      const demandsOne = /required|must be|missing|expected/i.test(detail)
+      if (demandsOne && maxTokens <= 0) {
+        res = await send({ ...body, max_tokens: 32768 })
+      } else if (!demandsOne && maxTokens > 0) {
+        const { max_tokens: _dropped, ...withoutLimit } = body
+        res = await send(withoutLimit)
+      }
     }
   }
 

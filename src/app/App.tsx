@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useApp } from './state'
 import { Marginalia } from '../components/Marginalia'
 import { Legend, PromptDoc } from '../components/PromptDoc'
+import { DiffView } from '../components/DiffView'
 import { ConnectPanel } from '../components/ConnectPanel'
 import { SkillsPanel } from '../components/SkillsPanel'
 import { SettingsPanel } from '../components/SettingsPanel'
@@ -42,6 +43,8 @@ export function App() {
   const [editingSource, setEditingSource] = useState(false)
   const [hoveredStage, setHoveredStage] = useState<StageId | null>(null)
   const [thinkOpen, setThinkOpen] = useState(false)
+  const [confirmClear, setConfirmClear] = useState(false)
+  const [view, setView] = useState<'result' | 'diff'>('result')
   const thinkRef = useRef<HTMLDivElement>(null)
   const storyRef = useRef<HTMLTextAreaElement>(null)
   const noteRef = useRef<HTMLTextAreaElement>(null)
@@ -122,6 +125,7 @@ export function App() {
     }
   }, [ready])
   useEffect(() => autosize(noteRef.current), [note])
+  useEffect(() => setView('result'), [current?.id])
 
   // While the model is still thinking there is nothing else to look at, so the
   // panel opens itself — and folds away once real output starts arriving.
@@ -170,6 +174,8 @@ export function App() {
   const shown = streaming?.text || current?.text || (pastedPrompt ? story : '')
   const reasoning = streaming ? streaming.reasoning : (current?.reasoning ?? '')
   const reasoningStreaming = !!streaming && !streaming.text
+  // A pass can only be diffed against what it actually worked from.
+  const diffable = !streaming && current?.fromText ? { before: current.fromText, after: current.text } : null
   const longSource = story.length > 600
   const collapseSource = (pastedPrompt || longSource) && !editingSource
   const loadedSkills = skills.filter((s) => settings.selection[s.id]?.length)
@@ -204,6 +210,33 @@ export function App() {
           <span className={`dot ${connected ? 'ok' : probe?.state === 'mixed-content' ? 'err' : 'idle'}`} />
           {settings.model || 'no model'}
         </button>
+        {confirmClear ? (
+          <>
+            <span className="tok" style={{ color: 'var(--ox)' }}>discard {versions.length} pass{versions.length === 1 ? '' : 'es'}?</span>
+            <button
+              className="btn pri"
+              onClick={() => {
+                void app.reset()
+                setConfirmClear(false)
+                setEditingSource(false)
+              }}
+            >
+              Discard
+            </button>
+            <button className="btn ghost" onClick={() => setConfirmClear(false)}>
+              Keep
+            </button>
+          </>
+        ) : (
+          <button
+            className="btn ghost"
+            onClick={() => (versions.length || story ? setConfirmClear(true) : undefined)}
+            disabled={!versions.length && !story}
+            title="Clear the source and every pass, and start again"
+          >
+            New draft
+          </button>
+        )}
         <button className="btn ghost" onClick={() => setModal('settings')}>
           Settings
         </button>
@@ -386,6 +419,20 @@ export function App() {
                       </span>
                     )}
                     <div style={{ flexGrow: 1 }} />
+                    {diffable && (
+                      <div style={{ display: 'flex', gap: 4, marginRight: 4 }}>
+                        <button className={`chip${view === 'result' ? ' on' : ''}`} onClick={() => setView('result')}>
+                          Result
+                        </button>
+                        <button
+                          className={`chip${view === 'diff' ? ' on' : ''}`}
+                          onClick={() => setView('diff')}
+                          title="What this pass changed, side by side"
+                        >
+                          Diff{current?.changelog?.length ? ` · ${current.changelog.length}` : ''}
+                        </button>
+                      </div>
+                    )}
                     {!streaming && (
                       <button className="btn sm" onClick={() => void copy()}>
                         {copied ? 'Copied' : 'Copy'}
@@ -416,7 +463,11 @@ export function App() {
                     </div>
                   )}
                   <div className="pane-body">
-                    <PromptDoc text={shown} streaming={!!streaming} />
+                    {diffable && view === 'diff' ? (
+                      <DiffView before={diffable.before} after={diffable.after} changelog={current?.changelog} />
+                    ) : (
+                      <PromptDoc text={shown} streaming={!!streaming} />
+                    )}
                   </div>
                 </div>
               ) : (

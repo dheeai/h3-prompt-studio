@@ -348,6 +348,62 @@ input[type='range'] { accent-color: var(--ox); }
 .kw.swatch { width: 9px; height: 9px; padding: 0; display: inline-block; border-radius: 2px; }
 .kw.time.swatch { background: var(--ink); }
 
+/* ── diff ─────────────────────────────────────────────────────────────── */
+
+.diff-summary { display: flex; flex-wrap: wrap; gap: 14px; align-items: baseline; margin-bottom: 12px; }
+.diff-summary b { font-variant-numeric: tabular-nums; }
+
+.diff-head, .drow { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; }
+.diff-head { position: sticky; top: 0; z-index: 1; background: var(--panel); border-bottom: 1px solid var(--rule2); }
+.dcol {
+  padding: 4px 10px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink3);
+}
+
+.diff-grid { border: 1px solid var(--rule); background: var(--rule); max-height: 62vh; overflow: auto; }
+.drow { background: var(--rule); }
+
+.dcell {
+  background: var(--paper);
+  padding: 2px 10px;
+  font-family: var(--mono);
+  font-size: 11.6px;
+  line-height: 1.65;
+  color: var(--ink2);
+  white-space: pre-wrap;
+  word-break: break-word;
+  min-height: 20px;
+}
+.dcell.empty { background: var(--sunk); }
+.dcell.add { background: var(--grn-soft); }
+.dcell.del { background: var(--ox-soft); }
+.dcell.change { background: oklch(0.955 0.018 252); }
+
+mark.w { padding: 0 1px; border-radius: 2px; background: transparent; }
+mark.w.add { background: oklch(0.885 0.075 152); color: oklch(0.30 0.09 152); }
+mark.w.del { background: oklch(0.895 0.060 25); color: oklch(0.36 0.13 27); text-decoration: line-through; }
+
+.dgap {
+  grid-column: 1 / -1;
+  background: var(--sunk);
+  padding: 3px 10px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  color: var(--ink3);
+  text-align: center;
+}
+
+.changelog { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--rule); }
+.changelog ol { margin: 0; padding-left: 20px; }
+.changelog li { font-size: 12px; line-height: 1.6; color: var(--ink2); margin-bottom: 6px; }
+.changelog li::marker { color: var(--ox); font-family: var(--mono); font-size: 10.5px; }
+
 /* ── input / output panes ─────────────────────────────────────────────── */
 
 .pane { border: 1px solid var(--rule); background: var(--paper); }

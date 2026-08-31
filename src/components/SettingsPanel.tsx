@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useApp } from '../app/state'
-import { DEFAULT_TEMPLATES, STAGE_LABEL } from '../lib/stages'
+import { DEFAULT_TEMPLATES, STAGE_LABEL, templateFor } from '../lib/stages'
 import type { H3Mode, StageId } from '../lib/types'
 
 const MODES: { id: H3Mode; note: string }[] = [
@@ -19,8 +19,14 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const [tab, setTab] = useState<'output' | 'stages'>('output')
   const [editing, setEditing] = useState<StageId>('direct')
 
-  const template = settings.stageTemplates[editing] ?? DEFAULT_TEMPLATES[editing]
-  const modified = template !== DEFAULT_TEMPLATES[editing]
+  const template = templateFor(settings.stageTemplates, editing)
+  const modified = settings.stageTemplates[editing] !== undefined
+
+  const clearOverride = (stage: StageId) => {
+    const next = { ...settings.stageTemplates }
+    delete next[stage]
+    patchSettings({ stageTemplates: next })
+  }
 
   return (
     <div className="backdrop" onClick={onClose}>
@@ -71,24 +77,49 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
               </div>
 
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginTop: 12 }}>
-                <span style={{ fontSize: 11.5, width: 96 }}>max tokens</span>
-                <input
-                  type="range"
-                  min={1024}
-                  max={65536}
-                  step={1024}
-                  value={settings.maxTokens}
-                  onChange={(e) => patchSettings({ maxTokens: Number(e.target.value) })}
-                  style={{ flexGrow: 1 }}
-                />
-                <span className="tok" style={{ width: 44, textAlign: 'right', color: 'var(--ink)' }}>
-                  {settings.maxTokens >= 1024 ? `${Math.round(settings.maxTokens / 1024)}k` : settings.maxTokens}
+                <span style={{ fontSize: 11.5, width: 96 }}>output length</span>
+                <button
+                  className={`chip${settings.maxTokens === 0 ? ' on' : ''}`}
+                  onClick={() => patchSettings({ maxTokens: 0 })}
+                >
+                  No limit
+                </button>
+                <button
+                  className={`chip${settings.maxTokens > 0 ? ' on' : ''}`}
+                  onClick={() => patchSettings({ maxTokens: settings.maxTokens > 0 ? settings.maxTokens : 16384 })}
+                >
+                  Cap it
+                </button>
+                <div style={{ flexGrow: 1 }} />
+                <span className="tok" style={{ color: 'var(--ink)' }}>
+                  {settings.maxTokens === 0 ? 'the model’s own maximum' : `${Math.round(settings.maxTokens / 1024)}k`}
                 </span>
               </div>
-              <div className="tok" style={{ marginTop: 7, lineHeight: 1.5 }}>
-                This is a ceiling, not a target — a high value costs nothing when the answer is short. Reasoning models spend tokens
-                thinking before they write, and a ceiling that cuts them off mid-thought returns a truncated or empty string rather than a
-                shorter answer. If a server rejects the value as larger than its context, the request is retried without a limit.
+
+              {settings.maxTokens > 0 && (
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginTop: 10 }}>
+                  <span style={{ fontSize: 11.5, width: 96 }} />
+                  <input
+                    type="range"
+                    min={1024}
+                    max={131072}
+                    step={1024}
+                    value={settings.maxTokens}
+                    onChange={(e) => patchSettings({ maxTokens: Number(e.target.value) })}
+                    style={{ flexGrow: 1 }}
+                  />
+                  <span className="tok" style={{ width: 48, textAlign: 'right', color: 'var(--ink)' }}>
+                    {Math.round(settings.maxTokens / 1024)}k
+                  </span>
+                </div>
+              )}
+
+              <div className="tok" style={{ marginTop: 8, lineHeight: 1.55 }}>
+                {settings.maxTokens === 0
+                  ? 'No ceiling is sent, so the model may write until it reaches the end of its own context. This is the default because any fixed number is a guess that eventually truncates something — and a ceiling costs nothing when the answer is short anyway.'
+                  : 'A cap is only worth setting to bound cost on a metered provider. Reasoning models spend tokens thinking before they write, so a cap that lands mid-thought returns a truncated or empty answer rather than a shorter one.'}{' '}
+                Whichever a server disagrees with — a value larger than its context, or a missing one it requires — the request is retried
+                the other way automatically.
               </div>
 
               <div className="lbl" style={{ margin: '22px 0 9px' }}>This draft</div>
@@ -113,14 +144,15 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                 {EDITABLE.map((s) => (
                   <button key={s} className={`chip${editing === s ? ' on' : ''}`} onClick={() => setEditing(s)}>
                     {STAGE_LABEL[s]}
-                    {settings.stageTemplates[s] !== DEFAULT_TEMPLATES[s] && <span className="tok" style={{ color: 'inherit' }}>·edited</span>}
+                    {settings.stageTemplates[s] !== undefined && <span className="tok" style={{ color: 'inherit' }}>·edited</span>}
                   </button>
                 ))}
               </div>
 
               <div className="tok" style={{ marginBottom: 7, lineHeight: 1.5 }}>
                 Placeholders: <code>{'{{story}}'}</code> <code>{'{{current}}'}</code> <code>{'{{mode}}'}</code> <code>{'{{notes}}'}</code>{' '}
-                <code>{'{{findings}}'}</code>. The loaded skills are sent separately, ahead of this — don’t repeat them here or you break
+                <code>{'{{critique}}'}</code> <code>{'{{findings}}'}</code>. Editing one pins it — it will no longer track improvements to
+                the shipped prompt until you restore the default. The loaded skills are sent separately, ahead of this — don’t repeat them here or you break
                 the cached prefix.
               </div>
 
@@ -135,7 +167,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                 <button
                   className="btn sm"
                   style={{ marginTop: 8 }}
-                  onClick={() => patchSettings({ stageTemplates: { ...settings.stageTemplates, [editing]: DEFAULT_TEMPLATES[editing] } })}
+                  onClick={() => clearOverride(editing)}
                 >
                   Restore the default
                 </button>

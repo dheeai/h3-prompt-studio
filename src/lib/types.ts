@@ -73,6 +73,10 @@ export interface Version {
   ms: number
   /** Thinking tokens, when the model emitted any. */
   reasoning?: string
+  /** Exactly what this pass worked from, so a diff has a real "before". */
+  fromText?: string
+  /** One line per edit, each naming the document that required it. */
+  changelog?: string[]
   /** The instruction that produced it, for freeform turns. */
   note?: string
 }
@@ -85,10 +89,16 @@ export interface Settings {
   providerId: string
   model: string
   temperature: number
+  /** 0 = send no ceiling at all and let the server use its own maximum. */
   maxTokens: number
   mode: H3Mode
   selection: Selection
-  stageTemplates: Record<StageId, string>
+  /**
+   * User overrides ONLY. Storing a full copy meant a stored snapshot shadowed
+   * the shipped defaults forever, so no improvement to a stage prompt could
+   * ever reach someone who had already opened the app.
+   */
+  stageTemplates: Partial<Record<StageId, string>>
   /** Bundled skill ids already offered, so a deletion is not undone on reload. */
   seenBundled?: string[]
   onboarded: boolean

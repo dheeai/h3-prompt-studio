@@ -5,25 +5,28 @@ import { buildContext, type BuiltContext } from '../lib/context'
 import { findingsToText, lint, looksLikePrompt } from '../lib/lint'
 import { streamChat } from '../lib/llm'
 import { DEFAULT_PROVIDERS, loadProviders, probe, saveProviders } from '../lib/providers'
-import { DEFAULT_TEMPLATES, STAGE_LABEL, fillTemplate } from '../lib/stages'
+import { DEFAULT_TEMPLATES, STAGE_LABEL, fillTemplate, splitReply, templateFor } from '../lib/stages'
 import { fetchBundledSkills, loadSkills, removeSkill, saveSkill } from '../lib/skills'
 import type { Finding, ProbeResult, Provider, Selection, Settings, Skill, StageId, Version } from '../lib/types'
 
-const SETTINGS_SCHEMA = 2
+const SETTINGS_SCHEMA = 4
+
+/** Stages whose output is a prompt, as opposed to a direction sheet or notes. */
+const PROMPT_STAGES = new Set<StageId>(['draft', 'revise', 'freeform'])
 
 const DEFAULT_SETTINGS: Settings = {
   schema: SETTINGS_SCHEMA,
   providerId: 'ollama',
   model: '',
   temperature: 0.35,
-  // A six-section Ref2VA prompt is long, and a reasoning model spends tokens
-  // thinking before it writes a word. A tight ceiling does not shorten the
-  // answer — it cuts the model off mid-thought and returns a truncated or
-  // empty string.
-  maxTokens: 65536,
+  // 0 = no ceiling. A six-section Ref2VA prompt is long, and a reasoning model
+  // spends tokens thinking before it writes a word — so any fixed number is a
+  // guess that eventually truncates someone. Sending nothing lets the server
+  // apply the real limit, which is its context minus the prompt.
+  maxTokens: 0,
   mode: 'Ref2VA',
   selection: {},
-  stageTemplates: { ...DEFAULT_TEMPLATES },
+  stageTemplates: {},
   onboarded: false,
 }
 
@@ -128,7 +131,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const merged: Settings = {
         ...DEFAULT_SETTINGS,
         ...savedSettings,
-        stageTemplates: { ...DEFAULT_TEMPLATES, ...(savedSettings?.stageTemplates || {}) },
+        stageTemplates: { ...(savedSettings?.stageTemplates || {}) },
         seenBundled: [...new Set([...(savedSettings?.seenBundled ?? []), ...bundledIds])],
       }
 
@@ -137,7 +140,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // ceiling needs it lifted explicitly — once, without stamping on a limit
       // they set deliberately later.
       if ((savedSettings?.schema ?? 1) < SETTINGS_SCHEMA) {
-        if (merged.maxTokens < 16384) merged.maxTokens = DEFAULT_SETTINGS.maxTokens
+        // Every previous default was a fixed ceiling, and each one truncated
+        // something eventually. Move anyone still carrying one to no limit;
+        // it is a ceiling, so removing it cannot make an answer worse.
+        merged.maxTokens = DEFAULT_SETTINGS.maxTokens
+        // Older versions stored a full copy of every stage template, which
+        // pinned each browser to the prompts shipped on the day it first ran.
+        // Drop them so the current ones apply; overrides made from here on are
+        // stored individually and survive.
+        merged.stageTemplates = {}
         merged.schema = SETTINGS_SCHEMA
       }
       // Nothing selected yet — start with each skill's primary document, which
@@ -208,13 +219,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   )
 
   const findings = useMemo(() => {
-    if (streaming?.text) return lint(streaming.text, settings.mode)
-    // A direction sheet is not a prompt, so the prompt rules do not apply.
-    if (current) return current.stage === 'direct' ? [] : lint(current.text, settings.mode)
-    // No pass has run yet. If what was pasted is already a prompt, check it
-    // now rather than making the user run a stage to find that out.
+    // The rules describe a prompt. Run them on the prompt — not on a direction
+    // sheet, and not on critique notes, which are prose about a prompt and
+    // will "fail" every structural rule they are measured against.
+    if (streaming?.text) return PROMPT_STAGES.has(streaming.stage) ? lint(streaming.text, settings.mode) : []
+    if (current && PROMPT_STAGES.has(current.stage)) return lint(current.text, settings.mode)
+    const lastPrompt = [...session.versions].reverse().find((v) => PROMPT_STAGES.has(v.stage))
+    if (lastPrompt) return lint(lastPrompt.text, settings.mode)
     return looksLikePrompt(session.story) ? lint(session.story, settings.mode) : []
-  }, [current, streaming, settings.mode, session.story])
+  }, [current, streaming, settings.mode, session.story, session.versions])
 
   // ── actions ───────────────────────────────────────────────────────────
   const patchSettings = useCallback((p: Partial<Settings>) => setSettings((s) => ({ ...s, ...p })), [])
@@ -289,32 +302,48 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // critique straight away, the source IS the document. Without this the
       // template's PROMPT section went out empty and the model was asked to
       // audit nothing.
-      const working = current?.text ?? (stage === 'direct' ? '' : session.story)
-      if (!session.story.trim() && !current) return setError('Paste something first.')
-      if (stage !== 'direct' && !working.trim()) return setError('Nothing to work on yet.')
+      // Each stage wants a particular KIND of document, not simply whichever
+      // pass ran last. Feeding it `current` blindly meant that after Critique,
+      // Revise received the critique prose in the slot labelled PROMPT — and
+      // never saw the prompt at all.
+      const lastOf = (st: StageId) => [...session.versions].reverse().find((v) => v.stage === st) ?? null
+      const lastPrompt = () => [...session.versions].reverse().find((v) => PROMPT_STAGES.has(v.stage)) ?? null
 
-      // Critique and Revise audit a prompt's field structure. Pointed at a
-      // direction sheet they produce confident findings about fields that were
-      // never supposed to be there.
-      if (stage === 'critique' || stage === 'revise' || stage === 'freeform') {
-        const isPrompt = current ? current.stage !== 'direct' : looksLikePrompt(session.story)
-        if (!isPrompt) {
-          return setError(
-            current
-              ? `${STAGE_LABEL[stage]} works on a prompt, but the page currently holds a direction sheet. Run Draft first.`
-              : `${STAGE_LABEL[stage]} works on a prompt. Paste one, or run Direct and then Draft.`,
-          )
-        }
+      let working: string
+      if (stage === 'direct') {
+        working = ''
+      } else if (stage === 'draft') {
+        // Prefer a direction sheet — the one you are reading, else the latest.
+        working = (current?.stage === 'direct' ? current.text : lastOf('direct')?.text) ?? session.story
+      } else {
+        // Critique, Revise and a freeform note all operate on the prompt.
+        working =
+          (current && PROMPT_STAGES.has(current.stage) ? current.text : lastPrompt()?.text) ??
+          (looksLikePrompt(session.story) ? session.story : '')
       }
 
+      if (!session.story.trim() && !session.versions.length) return setError('Paste something first.')
+      if (stage !== 'direct' && !working.trim()) {
+        return setError(
+          stage === 'draft'
+            ? 'Nothing to draft from yet.'
+            : `${STAGE_LABEL[stage]} works on a prompt, and there isn’t one yet. Paste one, or run Draft first.`,
+        )
+      }
+
+      // The model's review against the loaded skills is the substance of a
+      // revise pass; the deterministic rules are a small mechanical extra.
+      const critiqueText = lastOf('critique')?.text ?? ''
+
       const ctx = context ?? (await buildContext(skills, settings.selection))
-      const template = settings.stageTemplates[stage] || DEFAULT_TEMPLATES[stage]
+      const template = templateFor(settings.stageTemplates, stage)
       const user = fillTemplate(template, {
         story: session.story,
         current: working,
         mode: settings.mode,
         notes: note,
         findings: findings.length ? findingsToText(findings) : undefined,
+        critique: critiqueText,
       })
 
       const ac = new AbortController()
@@ -348,11 +377,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
           )
         }
 
+        // Revise and freeform are asked for a prompt plus a changelog; the
+        // other stages return one document.
+        const wantsChangelog = stage === 'revise' || stage === 'freeform'
+        const { prompt: bodyText, changelog } = wantsChangelog
+          ? splitReply(result.text)
+          : { prompt: result.text.trim(), changelog: [] as string[] }
+
         const version: Version = {
           id: `v${Date.now().toString(36)}`,
           stage,
           label: STAGE_LABEL[stage],
-          text: result.text.trim(),
+          text: bodyText || result.text.trim(),
+          fromText: working || undefined,
+          changelog: changelog.length ? changelog : undefined,
           model: settings.model,
           providerId: provider.id,
           at: Date.now(),
@@ -372,6 +410,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   )
 
   const reset = useCallback(async () => {
+    abortRef.current?.abort()
+    abortRef.current = null
+    setStreaming(null)
+    setError(null)
     setSession({ story: '', versions: [], currentId: null })
     await idb.del('sessions', 'current')
   }, [])

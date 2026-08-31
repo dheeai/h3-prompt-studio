@@ -44,5 +44,11 @@ between a reference sheet and its edited variant.
 
 ---
 
-Extracted from an internal H3 integration design spec.
-The rules are verbatim; the framing is not.
+## Source
+
+The LIRA image-prompt methodology is **Higgsfield's**. What is written above is
+its model-agnostic core, restated for use with H3 and cross-referenced against
+the other skills here; the methodology itself is theirs, not ours.
+
+Higgsfield's own product routing and product names are deliberately not carried
+across — use whichever generator you are actually pointed at.

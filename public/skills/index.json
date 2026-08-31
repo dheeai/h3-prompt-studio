@@ -13,7 +13,9 @@
     {
       "dir": "h3-prompting",
       "files": [
-        "SKILL.md"
+        "SKILL.md",
+        "references/base_guide.md",
+        "references/ref_guide.md"
       ]
     },
     {

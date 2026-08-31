@@ -159,8 +159,8 @@ node scripts/bake-skills.mjs --clear
 
 ### What this deployment ships
 
-`h3-direction` in full, `h3-prompting`'s `SKILL.md`, and two reference-craft
-skills:
+`h3-direction` in full, `h3-prompting` with its two official reference guides,
+and two reference-craft skills:
 
 - **`h3-lira`** — authoring the reference *image*: identity sheets, object
   anchors, location plates, character-state edits.
@@ -173,11 +173,8 @@ ACTING governs what they do. They apply at different stages and are rarely
 wanted at the same time, so loading one should not cost you the other's
 context.
 
-`h3-prompting`'s two reference files are **not** included: they are verbatim
-copies of MiniMax's own documentation, which is published under a custom
-licence rather than a permissive one. `SKILL.md` says where they live
-(`huggingface.co/MiniMaxAI/MiniMax-H3`, under `docs/`) — fetch them from the
-source and add them through the Skills panel, and they stay in your browser.
+Not all of this is our own work — the H3 reference guides are MiniMax's and the
+LIRA/ACTING methodologies are Higgsfield's. See **[NOTICE.md](NOTICE.md)**.
 
 ---
 

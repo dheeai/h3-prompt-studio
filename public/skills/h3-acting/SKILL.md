@@ -72,5 +72,9 @@ profile verbatim into a scene.
 
 ---
 
-Extracted from an internal H3 integration design spec.
-The field vocabulary and constraints are verbatim; the framing is not.
+## Source
+
+The ACTING performance system is **Higgsfield's**. The master-profile fields,
+the per-scene and per-shot vocabulary and the constraints on them are theirs;
+the framing, the compilation notes and the cross-references to the other skills
+are ours.

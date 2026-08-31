@@ -1,0 +1,15 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "title": "A · Console", "x": 0, "y": 0, "w": 1440, "h": 900 },
+    { "file": "OptionB.dc.html", "title": "B · Manuscript", "x": 1540, "y": 0, "w": 1440, "h": 900 },
+    { "file": "FirstRun.dc.html", "title": "First run", "x": 3080, "y": 0, "w": 1440, "h": 900 },
+    { "file": "Connect.dc.html", "title": "Connect a model", "x": 0, "y": 1060, "w": 900, "h": 780 },
+    { "file": "PromptCheck.dc.html", "title": "Prompt check", "x": 1000, "y": 1060, "w": 900, "h": 780 },
+    { "file": "SkillManager.dc.html", "title": "Skills", "x": 2000, "y": 1060, "w": 900, "h": 700 }
+  ],
+  "annotations": [
+    { "id": "directions", "x": 0, "y": -190, "w": 620, "text": "Two directions for the same workspace — pick one and I'll build it.\n\nA · CONSOLE — dark, dense, instrument-like. Everything visible at once, monospace throughout, nothing hidden behind a menu. Trades approachability for control.\n\nB · MANUSCRIPT — light, editorial. The prompt is typeset as a document and the check findings sit in the margin as editorial notes. Trades density for calm; a first-time visitor understands it faster." },
+    { "id": "panels", "x": 0, "y": 950, "w": 560, "text": "Supporting panels, drawn in direction A. 'Connect a model' is the honest answer to the GitHub Pages question — it diagnoses the exact failure rather than just saying it didn't work." }
+  ],
+  "launch": { "view": "canvas" }
+}

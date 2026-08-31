@@ -1,0 +1,158 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+  <style>
+    :root {
+      --bg0: oklch(0.152 0.008 255); --bg1: oklch(0.188 0.008 255); --bg2: oklch(0.223 0.009 255);
+      --line: oklch(0.305 0.011 255); --line-soft: oklch(0.248 0.009 255);
+      --fg: oklch(0.935 0.005 255); --dim: oklch(0.735 0.008 255); --mute: oklch(0.575 0.009 255);
+      --accent: oklch(0.795 0.098 196); --accent-deep: oklch(0.505 0.072 196);
+      --warn: oklch(0.805 0.115 82); --err: oklch(0.700 0.155 22); --ok: oklch(0.790 0.105 152);
+      --mono: "IBM Plex Mono", ui-monospace, monospace; --sans: "IBM Plex Sans", system-ui, sans-serif;
+    }
+    body { margin: 0; font-family: var(--sans); background: var(--bg0); color: var(--fg); -webkit-font-smoothing: antialiased; }
+    a { color: var(--accent); text-decoration: none; } a:hover { color: var(--fg); }
+    .lbl { font-size: 9.5px; font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase; color: var(--mute); }
+    .tok { font-family: var(--mono); font-size: 10.5px; color: var(--mute); }
+    .rule { display: flex; gap: 11px; padding: 12px 14px; border-bottom: 1px solid var(--line-soft); }
+    .sev { width: 3px; flex: 0 0 auto; }
+    .quote { font-family: var(--mono); font-size: 11px; padding: 6px 9px; background: oklch(0.132 0.008 255); border: 1px solid var(--line-soft); color: var(--dim); margin-top: 7px; line-height: 1.55; }
+    .fix { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; font-size: 10.5px; font-weight: 500; border: 1px solid var(--accent-deep); color: var(--accent); background: oklch(0.20 0.024 196); margin-top: 9px; }
+    .id { font-family: var(--mono); font-size: 9.5px; color: var(--mute); letter-spacing: 0.04em; }
+  </style>
+</helmet>
+
+<div style="width: 900px; height: 780px; background: var(--bg0); display: flex; flex-direction: column; overflow: hidden; font-size: 12px;">
+
+  <div style="flex: 0 0 auto; padding: 15px 18px 0; background: var(--bg1); border-bottom: 1px solid var(--line);">
+    <div style="display: flex; align-items: flex-end; gap: 12px;">
+      <div>
+        <div style="font-size: 15px; font-weight: 600; letter-spacing: -0.01em;">Prompt check</div>
+        <div style="font-size: 11.5px; color: var(--mute); margin-top: 3px;">Runs on every edit. No model involved — these are rules with receipts.</div>
+      </div>
+      <div style="flex-grow: 1;"></div>
+      <div style="display: flex; align-items: center; gap: 14px; padding-bottom: 2px;">
+        <div style="text-align: right;"><div style="font-family: var(--mono); font-size: 19px; font-weight: 600; color: var(--err); line-height: 1;">1</div><div class="lbl" style="margin-top: 3px;">error</div></div>
+        <div style="text-align: right;"><div style="font-family: var(--mono); font-size: 19px; font-weight: 600; color: var(--warn); line-height: 1;">2</div><div class="lbl" style="margin-top: 3px;">warn</div></div>
+        <div style="text-align: right;"><div style="font-family: var(--mono); font-size: 19px; font-weight: 600; color: var(--ok); line-height: 1;">6</div><div class="lbl" style="margin-top: 3px;">pass</div></div>
+      </div>
+    </div>
+    <div style="display: flex; gap: 0; margin-top: 13px;">
+      <div style="padding: 6px 12px; font-size: 11px; font-weight: 600; color: var(--fg); border-bottom: 2px solid var(--accent);">All 9</div>
+      <div style="padding: 6px 12px; font-size: 11px; color: var(--mute); border-bottom: 2px solid transparent;">Blocking</div>
+      <div style="padding: 6px 12px; font-size: 11px; color: var(--mute); border-bottom: 2px solid transparent;">Ref2VA rules</div>
+      <div style="padding: 6px 12px; font-size: 11px; color: var(--mute); border-bottom: 2px solid transparent;">Muted 1</div>
+    </div>
+  </div>
+
+  <div style="flex-grow: 1; overflow: hidden;">
+
+    <!-- ERROR -->
+    <div class="rule" style="background: oklch(0.172 0.014 22);">
+      <div class="sev" style="background: var(--err);"></div>
+      <div style="flex-grow: 1; min-width: 0;">
+        <div style="display: flex; align-items: baseline; gap: 9px;">
+          <span style="font-size: 12.5px; font-weight: 600; color: oklch(0.92 0.05 22);">non_diegetic_music must be exactly N/A</span>
+          <div style="flex-grow: 1;"></div>
+          <span class="id">music/sentinel</span>
+        </div>
+        <div style="font-size: 11.5px; color: var(--dim); line-height: 1.6; margin-top: 5px;">
+          Anything that <em style="font-style: normal; color: var(--fg);">describes</em> the absence of music is a spec of a score with “don’t” in front of it — H3 acts on it and returns music. <span class="tok" style="color: var(--fg);">N/A</span> is a null: there is nothing to synthesise.
+        </div>
+        <div class="quote">non_diegetic_music: <span style="background: oklch(0.30 0.08 22); color: oklch(0.94 0.06 22);">None. No background score of any kind — do not generate melody, pad or drums.</span></div>
+        <div class="fix">Replace with N/A</div>
+      </div>
+    </div>
+
+    <!-- WARN 1 -->
+    <div class="rule">
+      <div class="sev" style="background: var(--warn);"></div>
+      <div style="flex-grow: 1; min-width: 0;">
+        <div style="display: flex; align-items: baseline; gap: 9px;">
+          <span style="font-size: 12.5px; font-weight: 600;">Rhythm vocabulary in a music-free prompt</span>
+          <div style="flex-grow: 1;"></div>
+          <span class="id">music/vocab-leak</span>
+        </div>
+        <div style="font-size: 11.5px; color: var(--dim); line-height: 1.6; margin-top: 5px;">
+          Setting the field is only half of it. Musical words anywhere in the prompt still hand H3 a cue — sweep the whole thing, including names of your own systems.
+        </div>
+        <div class="quote">…every cut lands <span style="background: oklch(0.32 0.09 82); color: oklch(0.96 0.04 82);">on the beat</span> at <span style="background: oklch(0.32 0.09 82); color: oklch(0.96 0.04 82);">100 BPM</span>, cold and exact as a <span style="background: oklch(0.32 0.09 82); color: oklch(0.96 0.04 82);">PRECISION INSTRUMENT</span>.</div>
+        <div style="font-size: 11px; color: var(--mute); margin-top: 7px; line-height: 1.5;">3 matches. “Precision instrument” meant a machine — the model can’t know that.</div>
+      </div>
+    </div>
+
+    <!-- WARN 2 -->
+    <div class="rule">
+      <div class="sev" style="background: var(--warn);"></div>
+      <div style="flex-grow: 1; min-width: 0;">
+        <div style="display: flex; align-items: baseline; gap: 9px;">
+          <span style="font-size: 12.5px; font-weight: 600;">Silence written as a denial</span>
+          <div style="flex-grow: 1;"></div>
+          <span class="id">dialogue/negation</span>
+        </div>
+        <div style="font-size: 11.5px; color: var(--dim); line-height: 1.6; margin-top: 5px;">
+          Same failure as music: naming the modality instructs the model to produce it. Omit the line, or use the sentinel.
+        </div>
+        <div class="quote">…<span style="background: oklch(0.32 0.09 82); color: oklch(0.96 0.04 82);">she does not speak</span> for the whole shot.</div>
+      </div>
+    </div>
+
+    <!-- PASSES -->
+    <div style="padding: 11px 14px 8px;"><span class="lbl">Passing</span></div>
+    <div style="padding: 0 14px;">
+      <div style="display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line-soft);">
+        <svg width="11" height="11" viewBox="0 0 10 10" fill="none" stroke="var(--ok)" stroke-width="1.7"><path d="M1.5 5.2L4 7.6 8.5 2.4"/></svg>
+        <span style="font-size: 11.5px; color: var(--dim); flex-grow: 1;">Cut durations sum to the declared length</span>
+        <span class="tok">10.0s / 10s</span>
+        <span class="id" style="width: 130px; text-align: right;">timing/sum</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line-soft);">
+        <svg width="11" height="11" viewBox="0 0 10 10" fill="none" stroke="var(--ok)" stroke-width="1.7"><path d="M1.5 5.2L4 7.6 8.5 2.4"/></svg>
+        <span style="font-size: 11.5px; color: var(--dim); flex-grow: 1;">Every @reference used is declared</span>
+        <span class="tok">2 / 2</span>
+        <span class="id" style="width: 130px; text-align: right;">refs/declared</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line-soft);">
+        <svg width="11" height="11" viewBox="0 0 10 10" fill="none" stroke="var(--ok)" stroke-width="1.7"><path d="M1.5 5.2L4 7.6 8.5 2.4"/></svg>
+        <span style="font-size: 11.5px; color: var(--dim); flex-grow: 1;">Required Ref2VA fields present</span>
+        <span class="tok">3 / 3</span>
+        <span class="id" style="width: 130px; text-align: right;">mode/fields</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line-soft);">
+        <svg width="11" height="11" viewBox="0 0 10 10" fill="none" stroke="var(--ok)" stroke-width="1.7"><path d="M1.5 5.2L4 7.6 8.5 2.4"/></svg>
+        <span style="font-size: 11.5px; color: var(--dim); flex-grow: 1;">On-screen text inside the glyph budget</span>
+        <span class="tok">0 glyphs</span>
+        <span class="id" style="width: 130px; text-align: right;">text/glyph-budget</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px; padding: 6px 0;">
+        <svg width="11" height="11" viewBox="0 0 10 10" fill="none" stroke="var(--ok)" stroke-width="1.7"><path d="M1.5 5.2L4 7.6 8.5 2.4"/></svg>
+        <span style="font-size: 11.5px; color: var(--dim); flex-grow: 1;">Soundscape names concrete sources, not moods</span>
+        <span class="tok">4 events</span>
+        <span class="id" style="width: 130px; text-align: right;">audio/concrete</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="flex: 0 0 auto; padding: 11px 16px; border-top: 1px solid var(--line); background: var(--bg1); display: flex; align-items: center; gap: 10px;">
+    <span class="tok" style="color: var(--dim);">rules ship with the app · uploaded skills can add their own</span>
+    <div style="flex-grow: 1;"></div>
+    <div style="display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; font-size: 11px; border: 1px solid var(--line); background: var(--bg2); color: var(--dim);">Edit rules</div>
+    <div style="display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; font-size: 11px; font-weight: 600; border: 1px solid oklch(0.60 0.08 196); background: var(--accent-deep); color: oklch(0.98 0.01 196);">Send findings to REVISE</div>
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,150 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+  <style>
+    :root {
+      --bg0: oklch(0.152 0.008 255); --bg1: oklch(0.188 0.008 255); --bg2: oklch(0.223 0.009 255);
+      --bg3: oklch(0.262 0.010 255); --line: oklch(0.305 0.011 255); --line-soft: oklch(0.248 0.009 255);
+      --fg: oklch(0.935 0.005 255); --dim: oklch(0.735 0.008 255); --mute: oklch(0.575 0.009 255);
+      --accent: oklch(0.795 0.098 196); --accent-deep: oklch(0.505 0.072 196);
+      --warn: oklch(0.805 0.115 82); --err: oklch(0.700 0.155 22); --ok: oklch(0.790 0.105 152);
+      --mono: "IBM Plex Mono", ui-monospace, monospace; --sans: "IBM Plex Sans", system-ui, sans-serif;
+    }
+    body { margin: 0; font-family: var(--sans); background: var(--bg0); color: var(--fg); -webkit-font-smoothing: antialiased; }
+    a { color: var(--accent); text-decoration: none; } a:hover { color: var(--fg); }
+    .lbl { font-size: 9.5px; font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase; color: var(--mute); }
+    .tok { font-family: var(--mono); font-size: 10.5px; color: var(--mute); }
+    .card { border: 1px solid var(--line-soft); background: var(--bg1); padding: 12px 14px; }
+    .code { font-family: var(--mono); font-size: 11px; background: oklch(0.132 0.008 255); border: 1px solid var(--line-soft); padding: 7px 9px; color: var(--dim); overflow-x: auto; white-space: pre; }
+    .badge { display: inline-flex; align-items: center; gap: 5px; padding: 2px 7px; font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.05em; border: 1px solid; }
+    .dot { width: 5px; height: 5px; border-radius: 50%; flex: 0 0 auto; }
+    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; font-size: 11px; font-weight: 500; border: 1px solid var(--line); background: var(--bg2); color: var(--dim); }
+  </style>
+</helmet>
+
+<div style="width: 900px; height: 780px; background: var(--bg0); display: flex; flex-direction: column; overflow: hidden; font-size: 12px;">
+
+  <div style="flex: 0 0 auto; padding: 16px 18px 13px; border-bottom: 1px solid var(--line); background: var(--bg1); display: flex; align-items: flex-end; gap: 12px;">
+    <div>
+      <div style="font-size: 15px; font-weight: 600; letter-spacing: -0.01em;">Connect a model</div>
+      <div style="font-size: 11.5px; color: var(--mute); margin-top: 3px;">Everything runs in your browser. Nothing you paste leaves this machine unless you pick a remote model.</div>
+    </div>
+    <div style="flex-grow: 1;"></div>
+    <div class="tok" style="color: var(--dim);">chrome 141 · page served over https</div>
+  </div>
+
+  <div style="flex-grow: 1; overflow: hidden; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px;">
+
+    <!-- OLLAMA — working -->
+    <div class="card" style="border-left: 2px solid var(--ok);">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span style="font-size: 12.5px; font-weight: 600;">Ollama</span>
+        <span class="tok" style="font-size: 11px; color: var(--dim);">http://localhost:11434</span>
+        <div style="flex-grow: 1;"></div>
+        <span class="tok">4 models</span>
+        <span class="badge" style="border-color: oklch(0.40 0.07 152); color: var(--ok);"><span class="dot" style="background: var(--ok);"></span>CONNECTED</span>
+      </div>
+      <div style="margin-top: 8px; font-size: 11.5px; color: var(--dim); line-height: 1.55;">
+        Browsers treat <span class="tok" style="color: var(--fg);">http://localhost</span> as a secure origin, so this hosted page can reach your local server directly — no proxy, no install.
+      </div>
+      <div style="margin-top: 9px;">
+        <div class="tok" style="margin-bottom: 4px;">one-time, so Ollama accepts this origin</div>
+        <div class="code">OLLAMA_ORIGINS=https://dheeai.github.io ollama serve</div>
+      </div>
+    </div>
+
+    <!-- LM STUDIO — not running -->
+    <div class="card">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span style="font-size: 12.5px; font-weight: 600; color: var(--dim);">LM Studio</span>
+        <span class="tok" style="font-size: 11px;">http://localhost:1234/v1</span>
+        <div style="flex-grow: 1;"></div>
+        <span class="badge" style="border-color: var(--line); color: var(--mute);"><span class="dot" style="background: var(--mute);"></span>NOT RUNNING</span>
+      </div>
+      <div style="margin-top: 8px; font-size: 11.5px; color: var(--mute); line-height: 1.55;">
+        Start the local server, then turn on <span style="color: var(--dim);">Enable CORS</span> in Developer ▸ Settings.
+      </div>
+    </div>
+
+    <!-- llama.cpp -->
+    <div class="card">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span style="font-size: 12.5px; font-weight: 600; color: var(--dim);">llama.cpp server</span>
+        <span class="tok" style="font-size: 11px;">http://localhost:8080/v1</span>
+        <div style="flex-grow: 1;"></div>
+        <span class="badge" style="border-color: var(--line); color: var(--mute);"><span class="dot" style="background: var(--mute);"></span>NOT RUNNING</span>
+      </div>
+    </div>
+
+    <!-- CUSTOM — blocked, the interesting case -->
+    <div class="card" style="border-left: 2px solid var(--err);">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span style="font-size: 12.5px; font-weight: 600;">Custom · OpenAI-compatible</span>
+        <span class="tok" style="font-size: 11px; color: var(--dim);">http://5090.tail3cca41.ts.net:9000/llama/v1</span>
+        <div style="flex-grow: 1;"></div>
+        <span class="badge" style="border-color: oklch(0.42 0.12 22); color: var(--err);"><span class="dot" style="background: var(--err);"></span>BLOCKED</span>
+      </div>
+      <div style="margin-top: 9px; padding: 9px 11px; background: oklch(0.19 0.03 22); border: 1px solid oklch(0.32 0.06 22);">
+        <div style="font-size: 11.5px; color: oklch(0.90 0.04 22); font-weight: 600; margin-bottom: 5px;">Mixed content — the request never leaves the browser</div>
+        <div style="font-size: 11.5px; color: var(--dim); line-height: 1.6;">
+          This page is HTTPS and the endpoint is plain HTTP on a host that isn’t <span class="tok" style="color: var(--fg);">localhost</span>. The localhost exemption does not extend to other machines, so Chrome refuses it before any request is sent. CORS headers cannot fix this.
+        </div>
+      </div>
+      <div style="margin-top: 10px; display: flex; gap: 14px;">
+        <div style="flex-grow: 1; min-width: 0;">
+          <div class="tok" style="margin-bottom: 4px; color: var(--accent);">fix 1 — give the box a real HTTPS name</div>
+          <div class="code">tailscale serve --bg 9000</div>
+          <div class="tok" style="margin-top: 4px;">→ https://5090.tail3cca41.ts.net</div>
+        </div>
+        <div style="flex-grow: 1; min-width: 0;">
+          <div class="tok" style="margin-bottom: 4px; color: var(--accent);">fix 2 — run this app over http</div>
+          <div class="code">npx h3-prompt-studio</div>
+          <div class="tok" style="margin-top: 4px;">→ http://localhost:5178 · no mixed content at all</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- OPENROUTER -->
+    <div class="card">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span style="font-size: 12.5px; font-weight: 600;">OpenRouter</span>
+        <span class="tok" style="font-size: 11px; color: var(--dim);">https://openrouter.ai/api/v1</span>
+        <div style="flex-grow: 1;"></div>
+        <span class="badge" style="border-color: oklch(0.40 0.07 152); color: var(--ok);"><span class="dot" style="background: var(--ok);"></span>KEY SAVED</span>
+      </div>
+      <div style="margin-top: 8px; display: flex; align-items: center; gap: 9px;">
+        <div style="flex-grow: 1; font-family: var(--mono); font-size: 11px; padding: 6px 9px; background: oklch(0.132 0.008 255); border: 1px solid var(--line-soft); color: var(--mute);">sk-or-v1-•••••••••••••••••••••••••••••••••••••••</div>
+        <div class="btn">Replace</div>
+        <div class="btn">Forget</div>
+      </div>
+      <div style="margin-top: 7px; font-size: 11px; color: var(--warn); line-height: 1.5;">
+        Held in this browser’s storage and sent straight to OpenRouter. Anyone with access to this machine can read it — don’t use a shared computer.
+      </div>
+    </div>
+
+    <div style="flex-grow: 1;"></div>
+
+    <div style="display: flex; align-items: flex-start; gap: 9px; padding: 10px 12px; border: 1px solid var(--line-soft); background: var(--bg1);">
+      <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="var(--warn)" stroke-width="1.4" style="margin-top: 1px; flex: 0 0 auto;"><circle cx="7" cy="7" r="5.6"/><path d="M7 4.2v3.4M7 9.6v.1"/></svg>
+      <div style="font-size: 11.5px; color: var(--dim); line-height: 1.55;">
+        <span style="color: var(--fg); font-weight: 600;">Safari can’t reach local models from a hosted page.</span> It’s the one browser that doesn’t treat <span class="tok" style="color: var(--fg);">http://localhost</span> as secure. Use Chrome, Edge or Firefox — or run the app locally with the command above.
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

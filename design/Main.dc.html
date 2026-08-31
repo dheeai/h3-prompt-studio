@@ -1,0 +1,433 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+  <style>
+    :root {
+      --bg0: oklch(0.152 0.008 255);
+      --bg1: oklch(0.188 0.008 255);
+      --bg2: oklch(0.223 0.009 255);
+      --bg3: oklch(0.262 0.010 255);
+      --line: oklch(0.305 0.011 255);
+      --line-soft: oklch(0.248 0.009 255);
+      --fg: oklch(0.935 0.005 255);
+      --dim: oklch(0.735 0.008 255);
+      --mute: oklch(0.575 0.009 255);
+      --accent: oklch(0.795 0.098 196);
+      --accent-deep: oklch(0.505 0.072 196);
+      --warn: oklch(0.805 0.115 82);
+      --err: oklch(0.700 0.155 22);
+      --ok: oklch(0.790 0.105 152);
+      --mono: "IBM Plex Mono", ui-monospace, monospace;
+      --sans: "IBM Plex Sans", system-ui, sans-serif;
+    }
+    body { margin: 0; font-family: var(--sans); background: var(--bg0); color: var(--fg); -webkit-font-smoothing: antialiased; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { color: var(--fg); }
+    .lbl { font-size: 9.5px; font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase; color: var(--mute); }
+    .row { display: flex; align-items: center; }
+    .mono { font-family: var(--mono); }
+    .tok { font-family: var(--mono); font-size: 10.5px; color: var(--mute); font-variant-numeric: tabular-nums; }
+    .sk { display: flex; align-items: center; gap: 8px; padding: 5px 10px 5px 8px; cursor: default; }
+    .sk:hover { background: var(--bg2); }
+    .box { width: 11px; height: 11px; border: 1px solid var(--line); background: transparent; flex: 0 0 auto; }
+    .box.on { border-color: var(--accent-deep); background: var(--accent-deep); }
+    .box.part { border-color: var(--accent-deep); background: linear-gradient(135deg, var(--accent-deep) 0 50%, transparent 50% 100%); }
+    .fl { display: flex; align-items: center; gap: 8px; padding: 3px 10px 3px 26px; }
+    .fl:hover { background: var(--bg2); }
+    .seg { display: flex; }
+    .seg > div { padding: 4px 11px; font-size: 10.5px; font-weight: 500; border: 1px solid var(--line); border-right: none; color: var(--dim); font-family: var(--mono); }
+    .seg > div:last-child { border-right: 1px solid var(--line); }
+    .seg > div.on { background: var(--bg3); color: var(--fg); border-color: var(--line); box-shadow: inset 0 1px 0 oklch(0.40 0.02 255); }
+    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; font-size: 11px; font-weight: 500; border: 1px solid var(--line); background: var(--bg2); color: var(--dim); }
+    .btn:hover { border-color: var(--mute); color: var(--fg); }
+    .btn.pri { background: var(--accent-deep); border-color: oklch(0.60 0.08 196); color: oklch(0.98 0.01 196); font-weight: 600; }
+    .pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; font-size: 10px; font-family: var(--mono); border: 1px solid var(--line-soft); color: var(--dim); }
+    .dot { width: 5px; height: 5px; border-radius: 50%; flex: 0 0 auto; }
+  </style>
+</helmet>
+
+<div style="width: 1440px; height: 900px; background: var(--bg0); display: flex; flex-direction: column; overflow: hidden; font-size: 12px;">
+
+  <!-- ── top chrome ───────────────────────────────────────────── -->
+  <div style="height: 42px; flex: 0 0 auto; display: flex; align-items: center; gap: 14px; padding: 0 12px; background: var(--bg1); border-bottom: 1px solid var(--line);">
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="var(--accent)" stroke-width="1.4"><path d="M2 12.5V3.5M2 8h5M7 3.5v9"/><path d="M10.5 3.5h3.5v9h-3.5" stroke="var(--accent-deep)"/></svg>
+      <span style="font-size: 11.5px; font-weight: 700; letter-spacing: 0.10em;">H3 STUDIO</span>
+    </div>
+    <div style="width: 1px; height: 18px; background: var(--line);"></div>
+    <div class="mono" style="font-size: 11px; color: var(--dim);">kishkindha-layer <span style="color: var(--mute);">/</span> trailer <span style="color: var(--mute);">/</span> <span style="color: var(--fg);">beat-03-gantry</span></div>
+
+    <div style="flex-grow: 1;"></div>
+
+    <div style="display: flex; align-items: center; gap: 6px;">
+      <div class="pill"><span class="dot" style="background: var(--ok);"></span>ollama · localhost:11434</div>
+      <div class="pill"><span class="dot" style="background: var(--warn);"></span>5090 · mixed-content</div>
+      <div class="pill"><span class="dot" style="background: var(--ok);"></span>openrouter · byo key</div>
+    </div>
+    <div style="width: 1px; height: 18px; background: var(--line);"></div>
+    <div class="btn">Export</div>
+    <div class="btn">Copy prompt</div>
+  </div>
+
+  <div style="flex-grow: 1; display: flex; min-height: 0;">
+
+    <!-- ── LEFT · skill library ───────────────────────────────── -->
+    <div style="width: 286px; flex: 0 0 auto; background: var(--bg1); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0;">
+
+      <div style="padding: 11px 10px 8px; display: flex; align-items: center; gap: 8px;">
+        <span class="lbl">Skill library</span>
+        <div style="flex-grow: 1;"></div>
+        <span class="tok">6 · <span style="color: var(--dim);">3 bundled</span></span>
+        <span style="display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px; border: 1px dashed var(--line); color: var(--dim); font-size: 10px;"><svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="var(--dim)" stroke-width="1.4"><path d="M5 1.8v6.4M1.8 5h6.4"/></svg>add</span>
+      </div>
+
+      <div style="margin: 0 8px 8px; display: flex; align-items: center; gap: 7px; padding: 5px 8px; background: var(--bg0); border: 1px solid var(--line-soft);">
+        <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="var(--mute)" stroke-width="1.3"><circle cx="5" cy="5" r="3.4"/><path d="M7.6 7.6L10.5 10.5"/></svg>
+        <span style="font-size: 11px; color: var(--mute);">filter skills and files</span>
+      </div>
+
+      <div style="flex-grow: 1; overflow: hidden;">
+
+        <!-- h3-direction : expanded, partial -->
+        <div class="sk" style="background: var(--bg2);">
+          <div class="box part"></div>
+          <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="var(--dim)" stroke-width="1.4" style="transform: rotate(90deg);"><path d="M3.5 1.5L7 5l-3.5 3.5"/></svg>
+          <span style="font-size: 11.5px; font-weight: 600; color: var(--fg);">h3-direction</span>
+          <div style="flex-grow: 1;"></div>
+          <span class="tok" style="color: var(--accent);">7.8k</span>
+        </div>
+        <div style="padding: 1px 0 5px; background: oklch(0.172 0.008 255); border-left: 2px solid var(--accent-deep);">
+          <div class="fl"><div class="box on"></div><span class="mono" style="font-size: 10.5px; color: var(--dim); flex-grow: 1;">SKILL.md</span><span class="tok">5.5k</span></div>
+          <div class="fl"><div class="box on"></div><span class="mono" style="font-size: 10.5px; color: var(--dim); flex-grow: 1;">references/rule-of-six.md</span><span class="tok">1.1k</span></div>
+          <div class="fl"><div class="box on"></div><span class="mono" style="font-size: 10.5px; color: var(--dim); flex-grow: 1;">references/visual-structure.md</span><span class="tok">1.3k</span></div>
+          <div class="fl"><div class="box"></div><span class="mono" style="font-size: 10.5px; color: var(--mute); flex-grow: 1;">references/dramaturgy.md</span><span class="tok">2.2k</span></div>
+          <div class="fl"><div class="box"></div><span class="mono" style="font-size: 10.5px; color: var(--mute); flex-grow: 1;">references/scene-analysis.md</span><span class="tok">1.6k</span></div>
+        </div>
+
+        <!-- h3-prompting : expanded, partial -->
+        <div class="sk">
+          <div class="box part"></div>
+          <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="var(--dim)" stroke-width="1.4" style="transform: rotate(90deg);"><path d="M3.5 1.5L7 5l-3.5 3.5"/></svg>
+          <span style="font-size: 11.5px; font-weight: 600; color: var(--fg);">h3-prompting</span>
+          <div style="flex-grow: 1;"></div>
+          <span class="tok" style="color: var(--accent);">8.6k</span>
+        </div>
+        <div style="padding: 1px 0 5px; background: oklch(0.172 0.008 255); border-left: 2px solid var(--accent-deep);">
+          <div class="fl"><div class="box on"></div><span class="mono" style="font-size: 10.5px; color: var(--dim); flex-grow: 1;">SKILL.md</span><span class="tok">2.8k</span></div>
+          <div class="fl"><div class="box on"></div><span class="mono" style="font-size: 10.5px; color: var(--dim); flex-grow: 1;">references/ref_guide.md</span><span class="tok">5.8k</span></div>
+          <div class="fl"><div class="box"></div><span class="mono" style="font-size: 10.5px; color: var(--mute); flex-grow: 1;">references/base_guide.md</span><span class="tok">3.9k</span></div>
+        </div>
+
+        <!-- collapsed rows -->
+        <div class="sk">
+          <div class="box on"></div>
+          <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="var(--mute)" stroke-width="1.4"><path d="M3.5 1.5L7 5l-3.5 3.5"/></svg>
+          <span style="font-size: 11.5px; font-weight: 600; color: var(--fg);">acting · lira</span>
+          <div style="flex-grow: 1;"></div>
+          <span class="tok" style="color: var(--accent);">2.0k</span>
+        </div>
+        <div class="sk">
+          <div class="box"></div>
+          <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="var(--mute)" stroke-width="1.4"><path d="M3.5 1.5L7 5l-3.5 3.5"/></svg>
+          <span style="font-size: 11.5px; color: var(--dim);">h3-shots</span>
+          <div style="flex-grow: 1;"></div>
+          <span class="tok">10.8k</span>
+        </div>
+        <div class="sk">
+          <div class="box"></div>
+          <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="var(--mute)" stroke-width="1.4"><path d="M3.5 1.5L7 5l-3.5 3.5"/></svg>
+          <span style="font-size: 11.5px; color: var(--dim);">h3-motion-graphics</span>
+          <div style="flex-grow: 1;"></div>
+          <span class="tok">18.2k</span>
+        </div>
+        <div class="sk">
+          <div class="box"></div>
+          <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="var(--mute)" stroke-width="1.4"><path d="M3.5 1.5L7 5l-3.5 3.5"/></svg>
+          <span style="font-size: 11.5px; color: var(--dim);">h3-clip-chaining</span>
+          <div style="flex-grow: 1;"></div>
+          <span class="tok">3.4k</span>
+        </div>
+        <div class="sk">
+          <div class="box"></div>
+          <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="var(--mute)" stroke-width="1.4"><path d="M3.5 1.5L7 5l-3.5 3.5"/></svg>
+          <span style="font-size: 11.5px; color: var(--dim);">h3-prompt-writing</span>
+          <div style="flex-grow: 1;"></div>
+          <span class="tok">10.2k</span>
+          <span class="tok" style="color: var(--warn); margin-left: 4px;" title="duplicate reference text">dup</span>
+        </div>
+
+        <div style="margin: 14px 10px 0; padding-top: 10px; border-top: 1px solid var(--line-soft);">
+          <div class="lbl" style="margin-bottom: 6px;">Presets</div>
+          <div style="display: flex; flex-wrap: wrap; gap: 5px;">
+            <div class="pill" style="border-color: var(--accent-deep); color: var(--accent);">film · direction+ref</div>
+            <div class="pill">motion graphics</div>
+            <div class="pill">chaining</div>
+            <div class="pill" style="border-style: dashed; color: var(--mute);">+ save current</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- cached-context meter -->
+      <div style="flex: 0 0 auto; padding: 10px; background: var(--bg0); border-top: 1px solid var(--line);">
+        <div style="display: flex; align-items: baseline; gap: 6px; margin-bottom: 7px;">
+          <span class="lbl">Cached context</span>
+          <div style="flex-grow: 1;"></div>
+          <span class="mono" style="font-size: 13px; font-weight: 600; color: var(--fg); font-variant-numeric: tabular-nums;">18.4k</span>
+          <span class="tok">/ 32k</span>
+        </div>
+        <div style="display: flex; height: 5px; background: var(--bg2); margin-bottom: 8px;">
+          <div style="width: 42%; background: var(--accent);"></div>
+          <div style="width: 46%; background: var(--accent-deep);"></div>
+          <div style="width: 11%; background: oklch(0.42 0.05 196);"></div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <div class="pill" style="border-color: oklch(0.45 0.09 152); color: var(--ok);">
+            <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="var(--ok)" stroke-width="1.6"><path d="M1.5 5.2L4 7.6 8.5 2.4"/></svg>
+            cache hit
+          </div>
+          <span class="tok">sha 9f2c1a · 9 files</span>
+          <div style="flex-grow: 1;"></div>
+          <span class="tok" style="color: var(--dim); border-bottom: 1px solid var(--line);">manage…</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── CENTRE · work surface ─────────────────────────────── -->
+    <div style="flex-grow: 1; display: flex; flex-direction: column; min-width: 0; background: var(--bg0);">
+
+      <!-- stage rail -->
+      <div style="height: 38px; flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: 0 14px; border-bottom: 1px solid var(--line); background: var(--bg1);">
+        <span class="lbl">Stage</span>
+        <div style="display: flex; align-items: center; gap: 0;">
+          <div style="display: flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--line-soft); background: var(--bg2);">
+            <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="var(--ok)" stroke-width="1.6"><path d="M1.5 5.2L4 7.6 8.5 2.4"/></svg>
+            <span class="mono" style="font-size: 10.5px; color: var(--dim);">DIRECT</span>
+          </div>
+          <div style="width: 12px; height: 1px; background: var(--line);"></div>
+          <div style="display: flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--line-soft); background: var(--bg2);">
+            <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="var(--ok)" stroke-width="1.6"><path d="M1.5 5.2L4 7.6 8.5 2.4"/></svg>
+            <span class="mono" style="font-size: 10.5px; color: var(--dim);">DRAFT</span>
+          </div>
+          <div style="width: 12px; height: 1px; background: var(--line);"></div>
+          <div style="display: flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--accent-deep); background: oklch(0.24 0.03 196);">
+            <span class="dot" style="background: var(--accent);"></span>
+            <span class="mono" style="font-size: 10.5px; font-weight: 600; color: var(--accent);">CRITIQUE</span>
+          </div>
+          <div style="width: 12px; height: 1px; background: var(--line);"></div>
+          <div style="display: flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px dashed var(--line); background: transparent;">
+            <span class="mono" style="font-size: 10.5px; color: var(--mute);">REVISE</span>
+          </div>
+        </div>
+        <div style="flex-grow: 1;"></div>
+        <span class="tok">v4 · qwen3:32b · 6.1s · 2,340 tok</span>
+        <div class="btn pri">Run stage <span style="opacity: 0.7; font-family: var(--mono);">⌘⏎</span></div>
+      </div>
+
+      <div style="flex-grow: 1; display: flex; flex-direction: column; min-height: 0;">
+
+        <!-- source -->
+        <div style="flex: 0 0 auto; border-bottom: 1px solid var(--line);">
+          <div style="display: flex; align-items: center; gap: 8px; padding: 8px 14px 6px;">
+            <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="var(--dim)" stroke-width="1.4" style="transform: rotate(90deg);"><path d="M3.5 1.5L7 5l-3.5 3.5"/></svg>
+            <span class="lbl">Source</span>
+            <div style="flex-grow: 1;"></div>
+            <span class="tok">412 chars · pasted 14:02</span>
+          </div>
+          <div class="mono" style="padding: 0 14px 12px 31px; font-size: 12px; line-height: 1.65; color: var(--dim); max-width: 780px;">
+            Lira finds the last fragment in the gantry bay. She already knows what it means — the layer never closed. She doesn't say anything about it. She just stops moving, and the cold does the rest.
+          </div>
+        </div>
+
+        <!-- output -->
+        <div style="flex-grow: 1; min-height: 0; display: flex; flex-direction: column;">
+          <div style="display: flex; align-items: center; gap: 10px; padding: 9px 14px 7px; border-bottom: 1px solid var(--line-soft);">
+            <span class="lbl">Refined prompt</span>
+            <span class="pill" style="border-color: var(--accent-deep); color: var(--accent);">v4 · REVISE</span>
+            <div style="flex-grow: 1;"></div>
+            <span class="tok" style="color: var(--dim);">diff vs v3</span>
+            <div style="width: 24px; height: 13px; background: var(--accent-deep); position: relative; border: 1px solid oklch(0.55 0.07 196);">
+              <div style="position: absolute; right: 1px; top: 1px; width: 9px; height: 9px; background: oklch(0.97 0.01 196);"></div>
+            </div>
+          </div>
+
+          <div style="flex-grow: 1; overflow: hidden; padding: 12px 14px; background: oklch(0.140 0.008 255);">
+            <pre class="mono" style="margin: 0; font-size: 12.2px; line-height: 1.68; color: var(--dim); white-space: pre-wrap;"><span style="color: var(--mute);">[ H3 · Ref2VA · 10s · 1080p24 · @char_lira @env_gantry ]</span>
+
+<span style="color: var(--accent);">integrated_multimodal_description:</span>
+  <span style="color: var(--fg);">0.0–3.2s</span>  MCU. Lira <span style="color: var(--accent)">@char_lira</span>, half-lit by console glow,
+            holds the fragment. She does not look up. The hand
+            enters frame before the face does.
+  <span style="color: var(--fg);">3.2–6.4s</span>  CUT. Wide, low. The gantry behind her is empty.
+            Camera locked off. She turns her head — nothing
+            else in frame moves.
+  <span style="color: var(--fg);">6.4–10.0s</span> CUT. ECU on the fragment as it dulls. Her breath
+            fogs the casing once, then clears.
+
+<span style="color: var(--accent);">overall_soundscape:</span>
+  Room tone of a cold hangar — a low 40 Hz floor, one distant
+  metal tick at 4.1s, cloth movement at 6.9s. Breath audible
+  and close in the final beat.
+
+<span style="color: var(--accent);">non_diegetic_music:</span> <span style="background: oklch(0.30 0.06 152); color: var(--ok); padding: 0 4px;">N/A</span></pre>
+          </div>
+
+          <!-- version history -->
+          <div style="flex: 0 0 auto; display: flex; align-items: stretch; gap: 0; border-top: 1px solid var(--line); background: var(--bg1);">
+            <div style="padding: 9px 12px; display: flex; align-items: center;"><span class="lbl">History</span></div>
+            <div style="display: flex; align-items: stretch; flex-grow: 1; overflow: hidden;">
+              <div style="padding: 8px 12px; border-left: 1px solid var(--line-soft); min-width: 0;">
+                <div class="mono" style="font-size: 10.5px; color: var(--mute);">v1 · DIRECT</div>
+                <div class="tok" style="color: var(--mute);">qwen3:32b · 14:02</div>
+              </div>
+              <div style="padding: 8px 12px; border-left: 1px solid var(--line-soft);">
+                <div class="mono" style="font-size: 10.5px; color: var(--mute);">v2 · DRAFT</div>
+                <div class="tok" style="color: var(--mute);">qwen3:32b · 14:05</div>
+              </div>
+              <div style="padding: 8px 12px; border-left: 1px solid var(--line-soft);">
+                <div class="mono" style="font-size: 10.5px; color: var(--mute);">v3 · CRITIQUE</div>
+                <div class="tok" style="color: var(--mute);">deepseek-v4-pro · 14:07</div>
+              </div>
+              <div style="padding: 8px 12px; border-left: 1px solid var(--accent-deep); background: var(--bg2);">
+                <div class="mono" style="font-size: 10.5px; color: var(--accent); font-weight: 600;">v4 · REVISE</div>
+                <div class="tok" style="color: var(--dim);">qwen3:32b · 14:09</div>
+              </div>
+              <div style="flex-grow: 1; border-left: 1px solid var(--line-soft);"></div>
+            </div>
+          </div>
+
+          <!-- composer -->
+          <div style="flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: 9px 14px; background: var(--bg1); border-top: 1px solid var(--line);">
+            <span class="mono" style="font-size: 12px; color: var(--accent);">›</span>
+            <span class="mono" style="font-size: 12px; color: var(--mute); flex-grow: 1;">tell it what to change — “lose the second cut, hold on her hand longer”</span>
+            <span class="tok">⇧⏎ newline</span>
+            <div class="btn">Send</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── RIGHT · inspector ─────────────────────────────────── -->
+    <div style="width: 296px; flex: 0 0 auto; background: var(--bg1); border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0;">
+
+      <div style="padding: 11px 12px 8px;"><span class="lbl">Model</span></div>
+
+      <div style="padding: 0 8px 12px;">
+        <div style="padding: 3px 4px 5px;"><span class="tok" style="color: var(--mute); letter-spacing: 0.06em;">OLLAMA <span style="color: var(--ok);">localhost:11434</span></span></div>
+        <div style="display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--accent-deep); background: oklch(0.225 0.028 196);">
+          <div style="width: 10px; height: 10px; border: 1px solid var(--accent); border-radius: 50%; display: flex; align-items: center; justify-content: center; flex: 0 0 auto;"><div style="width: 4px; height: 4px; border-radius: 50%; background: var(--accent);"></div></div>
+          <span class="mono" style="font-size: 11px; color: var(--fg); flex-grow: 1;">qwen3:32b</span>
+          <span class="tok" style="color: var(--dim);">local</span>
+        </div>
+        <div style="padding: 4px 8px 0 26px;"><span class="tok" style="color: var(--ok);">CORS ok · prefix cache warm</span></div>
+
+        <div style="display: flex; align-items: center; gap: 8px; padding: 6px 8px; margin-top: 2px;">
+          <div style="width: 10px; height: 10px; border: 1px solid var(--line); border-radius: 50%; flex: 0 0 auto;"></div>
+          <span class="mono" style="font-size: 11px; color: var(--dim); flex-grow: 1;">gemma3:27b</span>
+          <span class="tok">local</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; padding: 6px 8px;">
+          <div style="width: 10px; height: 10px; border: 1px solid var(--line); border-radius: 50%; flex: 0 0 auto;"></div>
+          <span class="mono" style="font-size: 11px; color: var(--dim); flex-grow: 1;">llama3.3:70b</span>
+          <span class="tok">local</span>
+        </div>
+
+        <div style="padding: 10px 4px 5px;"><span class="tok" style="color: var(--mute); letter-spacing: 0.06em;">LM STUDIO <span style="color: var(--ok);">localhost:1234</span></span></div>
+        <div style="display: flex; align-items: center; gap: 8px; padding: 6px 8px;">
+          <div style="width: 10px; height: 10px; border: 1px solid var(--line-soft); border-radius: 50%; flex: 0 0 auto;"></div>
+          <span class="mono" style="font-size: 11px; color: var(--mute); flex-grow: 1;">server not running</span>
+          <span class="tok" style="color: var(--dim); border-bottom: 1px solid var(--line);">retry</span>
+        </div>
+
+        <div style="padding: 10px 4px 5px;"><span class="tok" style="color: var(--mute); letter-spacing: 0.06em;">OPENROUTER <span style="color: var(--warn);">REMOTE · your key</span></span></div>
+        <div style="display: flex; align-items: center; gap: 8px; padding: 6px 8px;">
+          <div style="width: 10px; height: 10px; border: 1px solid var(--line); border-radius: 50%; flex: 0 0 auto;"></div>
+          <span class="mono" style="font-size: 11px; color: var(--dim); flex-grow: 1;">deepseek-v4-pro</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; padding: 6px 8px;">
+          <div style="width: 10px; height: 10px; border: 1px solid var(--line); border-radius: 50%; flex: 0 0 auto;"></div>
+          <span class="mono" style="font-size: 11px; color: var(--dim); flex-grow: 1;">mimo-v2.5</span>
+          <span class="tok">vision</span>
+        </div>
+      </div>
+
+      <div style="border-top: 1px solid var(--line-soft); padding: 11px 12px 10px;">
+        <div class="lbl" style="margin-bottom: 8px;">H3 mode</div>
+        <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px;">
+          <div style="text-align: center; padding: 5px 0; font-family: var(--mono); font-size: 10.5px; color: var(--dim); border: 1px solid var(--line);">T2VA</div>
+          <div style="text-align: center; padding: 5px 0; font-family: var(--mono); font-size: 10.5px; color: var(--dim); border: 1px solid var(--line);">I2VA</div>
+          <div style="text-align: center; padding: 5px 0; font-family: var(--mono); font-size: 10.5px; color: var(--dim); border: 1px solid var(--line);">FL2VA</div>
+          <div style="text-align: center; padding: 5px 0; font-family: var(--mono); font-size: 10.5px; color: var(--dim); border: 1px solid var(--line);">L2VA</div>
+          <div style="text-align: center; padding: 5px 0; font-family: var(--mono); font-size: 10.5px; font-weight: 600; color: var(--accent); border: 1px solid var(--accent-deep); background: oklch(0.225 0.028 196);">Ref2VA</div>
+          <div style="text-align: center; padding: 5px 0; font-family: var(--mono); font-size: 10.5px; color: var(--dim); border: 1px solid var(--line);">MoGr</div>
+        </div>
+      </div>
+
+      <div style="border-top: 1px solid var(--line-soft); padding: 11px 12px 12px;">
+        <div class="lbl" style="margin-bottom: 9px;">Parameters</div>
+        <div style="display: flex; align-items: baseline; margin-bottom: 5px;">
+          <span style="font-size: 11px; color: var(--dim); flex-grow: 1;">temperature</span>
+          <span class="mono" style="font-size: 11px; color: var(--fg); font-variant-numeric: tabular-nums;">0.35</span>
+        </div>
+        <div style="height: 3px; background: var(--bg3); margin-bottom: 12px; position: relative;">
+          <div style="width: 35%; height: 3px; background: var(--accent-deep);"></div>
+          <div style="position: absolute; left: 35%; top: -3px; width: 3px; height: 9px; background: var(--accent);"></div>
+        </div>
+        <div style="display: flex; align-items: baseline; margin-bottom: 5px;">
+          <span style="font-size: 11px; color: var(--dim); flex-grow: 1;">max tokens</span>
+          <span class="mono" style="font-size: 11px; color: var(--fg); font-variant-numeric: tabular-nums;">4096</span>
+        </div>
+        <div style="height: 3px; background: var(--bg3); position: relative;">
+          <div style="width: 62%; height: 3px; background: var(--accent-deep);"></div>
+          <div style="position: absolute; left: 62%; top: -3px; width: 3px; height: 9px; background: var(--accent);"></div>
+        </div>
+        <div style="padding-top: 9px;"><span class="tok" style="color: var(--mute);">reasoning models truncate badly — leave headroom</span></div>
+      </div>
+
+      <!-- prompt check summary -->
+      <div style="border-top: 1px solid var(--line); margin-top: auto; background: var(--bg0);">
+        <div style="display: flex; align-items: center; gap: 8px; padding: 10px 12px 8px;">
+          <span class="lbl">Prompt check</span>
+          <div style="flex-grow: 1;"></div>
+          <span class="pill" style="border-color: oklch(0.42 0.12 22); color: var(--err);">1</span>
+          <span class="pill" style="border-color: oklch(0.45 0.08 82); color: var(--warn);">2</span>
+          <span class="pill" style="border-color: oklch(0.40 0.07 152); color: var(--ok);">6</span>
+        </div>
+        <div style="padding: 0 12px 12px;">
+          <div style="display: flex; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line-soft);">
+            <span class="dot" style="background: var(--err); margin-top: 5px;"></span>
+            <div style="min-width: 0;">
+              <div style="font-size: 11px; color: var(--fg); line-height: 1.4;">Rhythm vocabulary in a music-free prompt</div>
+              <div class="tok" style="color: var(--mute);">“locked off” ok · flagged: <span style="color: var(--err);">tick at 4.1s</span></div>
+            </div>
+          </div>
+          <div style="display: flex; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line-soft);">
+            <span class="dot" style="background: var(--warn); margin-top: 5px;"></span>
+            <div>
+              <div style="font-size: 11px; color: var(--dim); line-height: 1.4;">Dialogue stated as a negation</div>
+              <div class="tok" style="color: var(--mute);">“She does not look up” — safe, but review</div>
+            </div>
+          </div>
+          <div style="padding-top: 8px;"><span class="tok" style="color: var(--dim); border-bottom: 1px solid var(--line);">open full check ⌘K</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

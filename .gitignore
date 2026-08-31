@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.DS_Store
+# Baked skills are a local step — see README. Nothing private ships by default.
+public/skills/*
+!public/skills/.gitkeep

@@ -1,0 +1,159 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+  <style>
+    :root {
+      --bg0: oklch(0.152 0.008 255); --bg1: oklch(0.188 0.008 255); --bg2: oklch(0.223 0.009 255);
+      --bg3: oklch(0.262 0.010 255); --line: oklch(0.305 0.011 255); --line-soft: oklch(0.248 0.009 255);
+      --fg: oklch(0.935 0.005 255); --dim: oklch(0.735 0.008 255); --mute: oklch(0.575 0.009 255);
+      --accent: oklch(0.795 0.098 196); --accent-deep: oklch(0.505 0.072 196);
+      --warn: oklch(0.805 0.115 82); --err: oklch(0.700 0.155 22); --ok: oklch(0.790 0.105 152);
+      --mono: "IBM Plex Mono", ui-monospace, monospace; --sans: "IBM Plex Sans", system-ui, sans-serif;
+    }
+    body { margin: 0; font-family: var(--sans); background: var(--bg0); color: var(--fg); -webkit-font-smoothing: antialiased; }
+    a { color: var(--accent); text-decoration: none; } a:hover { color: var(--fg); }
+    .lbl { font-size: 9.5px; font-weight: 600; letter-spacing: 0.13em; text-transform: uppercase; color: var(--mute); }
+    .tok { font-family: var(--mono); font-size: 10.5px; color: var(--mute); font-variant-numeric: tabular-nums; }
+    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; font-size: 11px; font-weight: 500; border: 1px solid var(--line); background: var(--bg2); color: var(--dim); }
+    .btn.pri { background: var(--accent-deep); border-color: oklch(0.60 0.08 196); color: oklch(0.98 0.01 196); font-weight: 600; }
+    .badge { display: inline-flex; align-items: center; padding: 1px 6px; font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.04em; border: 1px solid var(--line); color: var(--mute); }
+    .r { display: flex; align-items: center; gap: 11px; padding: 9px 12px; border-bottom: 1px solid var(--line-soft); }
+    .r:hover { background: var(--bg2); }
+  </style>
+</helmet>
+
+<div style="width: 900px; height: 700px; background: var(--bg0); display: flex; flex-direction: column; overflow: hidden; font-size: 12px;">
+
+  <div style="flex: 0 0 auto; padding: 15px 18px 13px; border-bottom: 1px solid var(--line); background: var(--bg1); display: flex; align-items: flex-end;">
+    <div>
+      <div style="font-size: 15px; font-weight: 600; letter-spacing: -0.01em;">Skills</div>
+      <div style="font-size: 11.5px; color: var(--mute); margin-top: 3px;">Kept in this browser. They’ll be here next time you open the page.</div>
+    </div>
+    <div style="flex-grow: 1;"></div>
+    <div style="display: flex; gap: 6px;">
+      <div class="btn">Export all</div>
+      <div class="btn">Import…</div>
+    </div>
+  </div>
+
+  <!-- drop zone -->
+  <div style="flex: 0 0 auto; margin: 14px 18px 0; padding: 20px; border: 1px dashed var(--accent-deep); background: oklch(0.185 0.020 196); display: flex; align-items: center; gap: 16px;">
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.3" style="flex: 0 0 auto;"><path d="M12 15.5V4M12 4L7.5 8.5M12 4l4.5 4.5"/><path d="M3.5 15v3.5a1.5 1.5 0 001.5 1.5h14a1.5 1.5 0 001.5-1.5V15" stroke="var(--accent-deep)"/></svg>
+    <div style="flex-grow: 1;">
+      <div style="font-size: 12.5px; font-weight: 600; color: var(--fg);">Drop a skill folder, a .md file, or a .zip</div>
+      <div style="font-size: 11.5px; color: var(--dim); margin-top: 4px; line-height: 1.5;">A folder with a <span class="tok" style="color: var(--fg);">SKILL.md</span> at its root becomes one skill with its references intact. Loose markdown files each become a skill of their own.</div>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 6px;">
+      <div class="btn pri">Choose folder</div>
+      <div class="btn">Add from URL</div>
+    </div>
+  </div>
+
+  <!-- installed list -->
+  <div style="flex-grow: 1; min-height: 0; margin: 16px 18px 0; border: 1px solid var(--line-soft); display: flex; flex-direction: column; overflow: hidden;">
+    <div style="display: flex; align-items: center; gap: 11px; padding: 7px 12px; background: var(--bg1); border-bottom: 1px solid var(--line);">
+      <span class="lbl" style="flex-grow: 1;">Installed</span>
+      <span class="lbl" style="width: 62px;">Files</span>
+      <span class="lbl" style="width: 62px;">Tokens</span>
+      <span class="lbl" style="width: 96px;">Source</span>
+      <span style="width: 46px;"></span>
+    </div>
+
+    <div style="flex-grow: 1; overflow: hidden; background: var(--bg0);">
+      <div class="r">
+        <div style="flex-grow: 1; min-width: 0;">
+          <div style="font-size: 12px; font-weight: 600;">h3-direction</div>
+          <div style="font-size: 11px; color: var(--mute); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Decide what to show before writing a single H3 prompt word.</div>
+        </div>
+        <span class="tok" style="width: 62px;">5</span>
+        <span class="tok" style="width: 62px;">11.7k</span>
+        <span style="width: 96px;"><span class="badge">bundled</span></span>
+        <span style="width: 46px;" class="tok">—</span>
+      </div>
+
+      <div class="r">
+        <div style="flex-grow: 1; min-width: 0;">
+          <div style="font-size: 12px; font-weight: 600;">h3-prompting</div>
+          <div style="font-size: 11px; color: var(--mute); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Write an H3 prompt in the official format — full-reference or base.</div>
+        </div>
+        <span class="tok" style="width: 62px;">3</span>
+        <span class="tok" style="width: 62px;">12.5k</span>
+        <span style="width: 96px;"><span class="badge">bundled</span></span>
+        <span style="width: 46px;" class="tok">—</span>
+      </div>
+
+      <div class="r" style="background: var(--bg2);">
+        <div style="flex-grow: 1; min-width: 0;">
+          <div style="font-size: 12px; font-weight: 600;">acting · lira <span class="tok" style="color: var(--accent); margin-left: 5px;">just added</span></div>
+          <div style="font-size: 11px; color: var(--mute); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Performance notes for a withheld, non-verbal lead.</div>
+        </div>
+        <span class="tok" style="width: 62px;">1</span>
+        <span class="tok" style="width: 62px;">2.0k</span>
+        <span style="width: 96px;"><span class="badge" style="border-color: var(--accent-deep); color: var(--accent);">uploaded</span></span>
+        <span style="width: 46px;" class="tok" style="color: var(--dim);">remove</span>
+      </div>
+
+      <div class="r">
+        <div style="flex-grow: 1; min-width: 0;">
+          <div style="font-size: 12px; font-weight: 600;">house-style · dhee</div>
+          <div style="font-size: 11px; color: var(--mute); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">github.com/dheeai/dhee-skills · synced 2 days ago</div>
+        </div>
+        <span class="tok" style="width: 62px;">4</span>
+        <span class="tok" style="width: 62px;">6.3k</span>
+        <span style="width: 96px;"><span class="badge" style="border-color: oklch(0.40 0.07 152); color: var(--ok);">url</span></span>
+        <span style="width: 46px;" class="tok">remove</span>
+      </div>
+
+      <div class="r">
+        <div style="flex-grow: 1; min-width: 0;">
+          <div style="font-size: 12px; font-weight: 600; color: var(--dim);">h3-shots</div>
+          <div style="font-size: 11px; color: var(--mute); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Multi-clip film from a script whose dialogue must survive verbatim.</div>
+        </div>
+        <span class="tok" style="width: 62px;">1</span>
+        <span class="tok" style="width: 62px;">10.8k</span>
+        <span style="width: 96px;"><span class="badge">bundled</span></span>
+        <span style="width: 46px;" class="tok">—</span>
+      </div>
+
+      <div class="r" style="border-bottom: none;">
+        <div style="flex-grow: 1; min-width: 0;">
+          <div style="font-size: 12px; font-weight: 600; color: var(--dim);">h3-motion-graphics</div>
+          <div style="font-size: 11px; color: var(--mute); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Author an H3 prompt for a graphic-design video.</div>
+        </div>
+        <span class="tok" style="width: 62px;">3</span>
+        <span class="tok" style="width: 62px;">18.2k</span>
+        <span style="width: 96px;"><span class="badge">bundled</span></span>
+        <span style="width: 46px;" class="tok">—</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- storage footer -->
+  <div style="flex: 0 0 auto; margin: 12px 18px 16px; display: flex; align-items: center; gap: 14px;">
+    <div style="flex-grow: 1;">
+      <div style="display: flex; align-items: baseline; gap: 7px; margin-bottom: 6px;">
+        <span class="lbl">Browser storage</span>
+        <div style="flex-grow: 1;"></div>
+        <span class="tok" style="color: var(--dim);">1.4 MB used · 6 skills · 17 files</span>
+      </div>
+      <div style="height: 4px; background: var(--bg2);"><div style="width: 9%; height: 4px; background: var(--accent-deep);"></div></div>
+    </div>
+    <div class="tok" style="max-width: 250px; line-height: 1.5;">Clearing site data removes uploaded skills. Export first if they only exist here.</div>
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

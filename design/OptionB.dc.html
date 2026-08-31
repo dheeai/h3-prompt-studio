@@ -1,0 +1,179 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap">
+  <style>
+    :root {
+      --paper: oklch(0.973 0.008 88); --panel: oklch(0.946 0.011 85); --sunk: oklch(0.930 0.013 85);
+      --ink: oklch(0.255 0.016 62); --ink2: oklch(0.435 0.014 62); --ink3: oklch(0.605 0.013 65);
+      --rule: oklch(0.875 0.012 78); --rule2: oklch(0.815 0.016 78);
+      --ox: oklch(0.470 0.135 27); --ox-soft: oklch(0.930 0.030 30);
+      --grn: oklch(0.480 0.090 152); --amb: oklch(0.560 0.110 72);
+      --serif: "Instrument Serif", Georgia, serif;
+      --sans: "IBM Plex Sans", system-ui, sans-serif;
+      --mono: "IBM Plex Mono", ui-monospace, monospace;
+    }
+    body { margin: 0; font-family: var(--sans); background: var(--paper); color: var(--ink); -webkit-font-smoothing: antialiased; }
+    a { color: var(--ox); text-decoration: none; } a:hover { color: var(--ink); }
+    .lbl { font-size: 9.5px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink3); }
+    .tok { font-family: var(--mono); font-size: 10.5px; color: var(--ink3); font-variant-numeric: tabular-nums; }
+    .chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; font-size: 11px; border: 1px solid var(--rule2); background: var(--paper); color: var(--ink2); }
+    .chip.on { border-color: var(--ox); background: var(--ox-soft); color: var(--ox); font-weight: 500; }
+    .chip.off { color: var(--ink3); border-style: dashed; background: transparent; }
+    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 13px; font-size: 11.5px; font-weight: 500; border: 1px solid var(--rule2); background: var(--paper); color: var(--ink2); }
+    .btn.pri { background: var(--ox); border-color: var(--ox); color: oklch(0.98 0.01 30); font-weight: 600; }
+    .marg { padding: 11px 0 12px; border-bottom: 1px solid var(--rule); }
+  </style>
+</helmet>
+
+<div style="width: 1440px; height: 900px; background: var(--paper); display: flex; flex-direction: column; overflow: hidden; font-size: 12px;">
+
+  <!-- masthead -->
+  <div style="flex: 0 0 auto; padding: 14px 30px 12px; border-bottom: 1px solid var(--rule2); display: flex; align-items: baseline; gap: 16px;">
+    <div style="font-family: var(--serif); font-size: 21px; letter-spacing: -0.005em;">H3 Prompt Studio</div>
+    <div style="font-family: var(--serif); font-style: italic; font-size: 15px; color: var(--ink3);">kishkindha-layer · beat 03, gantry</div>
+    <div style="flex-grow: 1;"></div>
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <span class="tok">qwen3:32b · ollama</span>
+      <span style="width: 5px; height: 5px; border-radius: 50%; background: var(--grn);"></span>
+      <div class="btn">Copy prompt</div>
+    </div>
+  </div>
+
+  <!-- loaded documents strip -->
+  <div style="flex: 0 0 auto; padding: 11px 30px; background: var(--panel); border-bottom: 1px solid var(--rule); display: flex; align-items: center; gap: 9px;">
+    <span class="lbl" style="margin-right: 3px;">Reading</span>
+    <div class="chip on">h3-direction <span class="tok" style="color: var(--ox); opacity: 0.8;">7.8k</span></div>
+    <div class="chip on">h3-prompting <span class="tok" style="color: var(--ox); opacity: 0.8;">8.6k</span></div>
+    <div class="chip on">acting · lira <span class="tok" style="color: var(--ox); opacity: 0.8;">2.0k</span></div>
+    <div class="chip off">h3-shots</div>
+    <div class="chip off">h3-motion-graphics</div>
+    <div class="chip off">＋ add</div>
+    <div style="flex-grow: 1;"></div>
+    <span class="tok">18.4k of 32k · <span style="color: var(--grn);">cached</span></span>
+  </div>
+
+  <div style="flex-grow: 1; display: flex; min-height: 0;">
+
+    <!-- manuscript column -->
+    <div style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; border-right: 1px solid var(--rule);">
+
+      <!-- stage line -->
+      <div style="flex: 0 0 auto; padding: 13px 30px 0; display: flex; align-items: center; gap: 0;">
+        <span style="font-family: var(--serif); font-size: 14px; color: var(--ink3);">Direct</span>
+        <span style="width: 26px; height: 1px; background: var(--rule2); margin: 0 10px;"></span>
+        <span style="font-family: var(--serif); font-size: 14px; color: var(--ink3);">Draft</span>
+        <span style="width: 26px; height: 1px; background: var(--rule2); margin: 0 10px;"></span>
+        <span style="font-family: var(--serif); font-size: 14px; color: var(--ink3);">Critique</span>
+        <span style="width: 26px; height: 1px; background: var(--ox); margin: 0 10px;"></span>
+        <span style="font-family: var(--serif); font-size: 16px; color: var(--ox); border-bottom: 2px solid var(--ox); padding-bottom: 1px;">Revise</span>
+        <div style="flex-grow: 1;"></div>
+        <span class="tok">fourth pass · 14:09</span>
+        <div class="btn pri" style="margin-left: 14px;">Run</div>
+      </div>
+
+      <!-- source, set as an epigraph -->
+      <div style="flex: 0 0 auto; padding: 22px 30px 18px;">
+        <div style="max-width: 620px; padding-left: 15px; border-left: 2px solid var(--rule2);">
+          <div style="font-family: var(--serif); font-size: 16px; line-height: 1.55; color: var(--ink2);">
+            Lira finds the last fragment in the gantry bay. She already knows what it means — the layer never closed. She doesn’t say anything about it. She just stops moving, and the cold does the rest.
+          </div>
+          <div class="tok" style="margin-top: 8px;">source · 412 characters</div>
+        </div>
+      </div>
+
+      <!-- the prompt, typeset -->
+      <div style="flex-grow: 1; min-height: 0; padding: 0 30px; overflow: hidden;">
+        <div style="border-top: 1px solid var(--rule); padding-top: 16px;">
+          <div style="display: flex; align-items: baseline; gap: 10px; margin-bottom: 13px;">
+            <span class="lbl">Ref2VA · 10s · 1080p24</span>
+            <div style="flex-grow: 1;"></div>
+            <span class="tok">v4</span>
+          </div>
+          <pre style="margin: 0; font-family: var(--mono); font-size: 12.4px; line-height: 1.72; color: var(--ink2); white-space: pre-wrap; max-width: 660px;"><span style="color: var(--ox); font-weight: 500;">integrated_multimodal_description</span>
+  <span style="color: var(--ink);">0.0–3.2s</span>  MCU. Lira <span style="color: var(--ox);">@char_lira</span>, half-lit by console glow,
+            holds the fragment. She does not look up. The
+            hand enters frame before the face does.
+  <span style="color: var(--ink);">3.2–6.4s</span>  CUT. Wide, low. The gantry behind her is empty.
+            Camera locked off. She turns her head — nothing
+            else in frame moves.
+  <span style="color: var(--ink);">6.4–10.0s</span> CUT. ECU on the fragment as it dulls. Her breath
+            fogs the casing once, then clears.
+
+<span style="color: var(--ox); font-weight: 500;">overall_soundscape</span>
+  Room tone of a cold hangar — a low 40 Hz floor, one
+  distant metal tick at 4.1s, cloth movement at 6.9s.
+
+<span style="color: var(--ox); font-weight: 500;">non_diegetic_music</span>  <span style="background: oklch(0.90 0.06 152); color: var(--grn); padding: 0 5px;">N/A</span></pre>
+        </div>
+      </div>
+
+      <!-- composer -->
+      <div style="flex: 0 0 auto; padding: 13px 30px 16px; border-top: 1px solid var(--rule); display: flex; align-items: center; gap: 12px; background: var(--panel);">
+        <span style="font-family: var(--serif); font-style: italic; font-size: 15px; color: var(--ink3); flex-grow: 1;">lose the second cut, hold on her hand longer…</span>
+        <div class="btn">Send</div>
+      </div>
+    </div>
+
+    <!-- marginalia -->
+    <div style="width: 348px; flex: 0 0 auto; padding: 16px 24px; background: var(--panel); display: flex; flex-direction: column; min-height: 0;">
+      <div class="lbl" style="margin-bottom: 4px;">Notes on this draft</div>
+
+      <div class="marg">
+        <div style="display: flex; align-items: baseline; gap: 7px;">
+          <span style="font-family: var(--serif); font-size: 15px; color: var(--ox);">Music</span>
+          <span class="tok" style="color: var(--ox);">must fix</span>
+        </div>
+        <div style="font-size: 11.5px; color: var(--ink2); line-height: 1.6; margin-top: 5px;">
+          The field describes an absence instead of stating <span style="font-family: var(--mono); color: var(--ink);">N/A</span>. A described absence is a score with “don’t” in front of it — the model will write one.
+        </div>
+      </div>
+
+      <div class="marg">
+        <div style="display: flex; align-items: baseline; gap: 7px;">
+          <span style="font-family: var(--serif); font-size: 15px;">Rhythm words</span>
+          <span class="tok" style="color: var(--amb);">3 found</span>
+        </div>
+        <div style="font-size: 11.5px; color: var(--ink2); line-height: 1.6; margin-top: 5px;">
+          “on the beat”, “100 BPM”, “precision instrument” — musical cues survive even after the field is right.
+        </div>
+      </div>
+
+      <div class="marg">
+        <div style="display: flex; align-items: baseline; gap: 7px;">
+          <span style="font-family: var(--serif); font-size: 15px;">Timing</span>
+          <span class="tok" style="color: var(--grn);">10.0s exact</span>
+        </div>
+      </div>
+
+      <div class="marg" style="border-bottom: none;">
+        <div style="font-family: var(--serif); font-size: 15px; margin-bottom: 6px;">Earlier passes</div>
+        <div style="display: flex; flex-direction: column; gap: 7px;">
+          <div style="display: flex; align-items: baseline; gap: 8px;"><span class="tok" style="width: 20px;">v3</span><span style="font-size: 11.5px; color: var(--ink2); flex-grow: 1;">Critique</span><span class="tok">14:07</span></div>
+          <div style="display: flex; align-items: baseline; gap: 8px;"><span class="tok" style="width: 20px;">v2</span><span style="font-size: 11.5px; color: var(--ink2); flex-grow: 1;">Draft</span><span class="tok">14:05</span></div>
+          <div style="display: flex; align-items: baseline; gap: 8px;"><span class="tok" style="width: 20px;">v1</span><span style="font-size: 11.5px; color: var(--ink2); flex-grow: 1;">Direct</span><span class="tok">14:02</span></div>
+        </div>
+      </div>
+
+      <div style="flex-grow: 1;"></div>
+      <div style="padding-top: 12px; border-top: 1px solid var(--rule);">
+        <div class="btn" style="width: 100%; justify-content: center;">Apply notes and revise</div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

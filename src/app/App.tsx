@@ -9,6 +9,7 @@ import { STAGE_LABEL, STAGE_ORDER } from '../lib/stages'
 import { skillTokens } from '../lib/skills'
 import { fmtTokens } from '../lib/tokens'
 import { wasSent } from '../lib/context'
+import { looksLikePrompt } from '../lib/lint'
 import type { StageId } from '../lib/types'
 
 const EXAMPLES: { label: string; text: string }[] = [
@@ -38,6 +39,7 @@ export function App() {
   const [modal, setModal] = useState<'connect' | 'skills' | 'settings' | null>(null)
   const [copied, setCopied] = useState(false)
   const [note, setNote] = useState('')
+  const [editingSource, setEditingSource] = useState(false)
   const storyRef = useRef<HTMLTextAreaElement>(null)
   const noteRef = useRef<HTMLTextAreaElement>(null)
   const docRef = useRef<HTMLDivElement>(null)
@@ -47,12 +49,16 @@ export function App() {
   const connected = probe?.state === 'ok' && !!settings.model
   const busy = !!streaming
 
+  // A pasted prompt does not need directing — the useful next move is a
+  // critique of what is already there.
+  const pastedPrompt = !current && !streaming && looksLikePrompt(story)
+
   const nextStage: StageId = useMemo(() => {
-    if (!current) return 'direct'
+    if (!current) return pastedPrompt ? 'critique' : 'direct'
     const i = STAGE_ORDER.indexOf(current.stage)
     if (i === -1) return 'revise'
     return STAGE_ORDER[Math.min(i + 1, STAGE_ORDER.length - 1)]
-  }, [current])
+  }, [current, pastedPrompt])
 
   const reached = useMemo(() => new Set(versions.map((v) => v.stage)), [versions])
 
@@ -79,13 +85,6 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [app, busy, connected, nextStage])
 
-  const copy = async () => {
-    if (!current) return
-    await navigator.clipboard.writeText(current.text)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1400)
-  }
-
   const send = () => {
     const text = note.trim()
     if (!text || busy || !connected) return
@@ -93,8 +92,19 @@ export function App() {
     void app.run('freeform', text)
   }
 
-  const shown = streaming?.text ?? current?.text ?? ''
+  // When a finished prompt is pasted it IS the document — show it typeset
+  // rather than leaving the page looking empty below a wall of source text.
+  const shown = streaming?.text ?? current?.text ?? (pastedPrompt ? story : '')
+  const longSource = story.length > 600
+  const collapseSource = (pastedPrompt || longSource) && !editingSource
   const loadedSkills = skills.filter((s) => settings.selection[s.id]?.length)
+
+  const copy = async () => {
+    if (!shown) return
+    await navigator.clipboard.writeText(shown)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1400)
+  }
 
   if (!ready) {
     return (
@@ -122,7 +132,7 @@ export function App() {
         <button className="btn ghost" onClick={() => setModal('settings')}>
           Settings
         </button>
-        <button className="btn" onClick={() => void copy()} disabled={!current}>
+        <button className="btn" onClick={() => void copy()} disabled={!shown}>
           {copied ? 'Copied' : 'Copy prompt'}
         </button>
       </div>
@@ -190,18 +200,31 @@ export function App() {
           </div>
 
           {/* ── source ───────────────────────────────────────────────── */}
-          <div style={{ flex: '0 0 auto', padding: '22px 26px 18px' }}>
+          <div style={{ flex: '0 0 auto', padding: '22px 26px 18px', minHeight: 0 }}>
             <div className="epigraph">
-              <textarea
-                ref={storyRef}
-                value={story}
-                onChange={(e) => app.setStory(e.target.value)}
-                placeholder="Paste a story, a beat sheet, a script, or a half-written prompt…"
-                rows={1}
-                aria-label="Source story"
-              />
-              <div className="tok" style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span>source · {story.length} characters</span>
+              {collapseSource ? (
+                <div className={`epigraph-preview ${pastedPrompt ? 'one' : 'two'}`} onClick={() => setEditingSource(true)}>
+                  {story}
+                </div>
+              ) : (
+                <textarea
+                  ref={storyRef}
+                  value={story}
+                  onChange={(e) => app.setStory(e.target.value)}
+                  placeholder="Paste a story, a beat sheet, a script, or a half-written prompt…"
+                  rows={1}
+                  aria-label="Source story"
+                />
+              )}
+              <div className="tok" style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span>
+                  source · {pastedPrompt ? 'a prompt already' : 'story'} · {story.length.toLocaleString()} characters
+                </span>
+                {(pastedPrompt || longSource) && (
+                  <button className="btn sm ghost" style={{ padding: '1px 6px' }} onClick={() => setEditingSource((v) => !v)}>
+                    {collapseSource ? 'edit' : 'collapse'}
+                  </button>
+                )}
                 {!story && (
                   <>
                     <span>·</span>
@@ -223,10 +246,16 @@ export function App() {
                 <>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 13 }}>
                     <span className="lbl">
-                      {streaming ? STAGE_LABEL[streaming.stage] : `${settings.mode} · ${STAGE_LABEL[current!.stage]}`}
+                      {streaming
+                        ? STAGE_LABEL[streaming.stage]
+                        : current
+                          ? `${settings.mode} · ${STAGE_LABEL[current.stage]}`
+                          : `${settings.mode} · as pasted`}
                     </span>
                     <div style={{ flexGrow: 1 }} />
-                    <span className="tok">{streaming ? 'writing…' : `pass ${versions.findIndex((v) => v.id === current!.id) + 1}`}</span>
+                    <span className="tok">
+                      {streaming ? 'writing…' : current ? `pass ${versions.findIndex((v) => v.id === current.id) + 1}` : 'not yet refined'}
+                    </span>
                   </div>
                   <PromptDoc text={shown} streaming={!!streaming} />
                 </>
@@ -271,10 +300,10 @@ export function App() {
               }}
               placeholder={connected ? 'lose the second cut, hold on her hand longer…' : 'connect a model to begin'}
               rows={1}
-              disabled={!connected || !current}
+              disabled={!connected || (!current && !pastedPrompt)}
               aria-label="Refinement instruction"
             />
-            <button className="btn" onClick={send} disabled={!note.trim() || busy || !connected || !current}>
+            <button className="btn" onClick={send} disabled={!note.trim() || busy || !connected || (!current && !pastedPrompt)}>
               Send
             </button>
           </div>

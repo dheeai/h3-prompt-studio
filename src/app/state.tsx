@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { ReactNode } from 'react'
 import { idb } from '../lib/db'
 import { buildContext, type BuiltContext } from '../lib/context'
-import { findingsToText, lint } from '../lib/lint'
+import { findingsToText, lint, looksLikePrompt } from '../lib/lint'
 import { streamChat } from '../lib/llm'
 import { DEFAULT_PROVIDERS, loadProviders, probe, saveProviders } from '../lib/providers'
 import { DEFAULT_TEMPLATES, STAGE_LABEL, fillTemplate } from '../lib/stages'
@@ -165,11 +165,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   )
 
   const findings = useMemo(() => {
-    const text = streaming?.text ?? current?.text ?? ''
-    // Only lint something that looks like a prompt, not a direction sheet.
-    if (!text || (current && current.stage === 'direct' && !streaming)) return []
-    return lint(text, settings.mode)
-  }, [current, streaming, settings.mode])
+    if (streaming?.text) return lint(streaming.text, settings.mode)
+    // A direction sheet is not a prompt, so the prompt rules do not apply.
+    if (current) return current.stage === 'direct' ? [] : lint(current.text, settings.mode)
+    // No pass has run yet. If what was pasted is already a prompt, check it
+    // now rather than making the user run a stage to find that out.
+    return looksLikePrompt(session.story) ? lint(session.story, settings.mode) : []
+  }, [current, streaming, settings.mode, session.story])
 
   // ── actions ───────────────────────────────────────────────────────────
   const patchSettings = useCallback((p: Partial<Settings>) => setSettings((s) => ({ ...s, ...p })), [])
@@ -238,13 +240,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const provider = providers.find((p) => p.id === settings.providerId)
       if (!provider) return setError('Pick a provider first.')
       if (!settings.model) return setError('Pick a model first.')
-      if (!session.story.trim() && stage === 'direct') return setError('Paste a story first.')
+
+      // Stages after Direct work on a document. Usually that is the previous
+      // pass — but when someone pastes a finished prompt and asks for a
+      // critique straight away, the source IS the document. Without this the
+      // template's PROMPT section went out empty and the model was asked to
+      // audit nothing.
+      const working = current?.text ?? (stage === 'direct' ? '' : session.story)
+      if (!session.story.trim() && !current) return setError('Paste something first.')
+      if (stage !== 'direct' && !working.trim()) return setError('Nothing to work on yet.')
 
       const ctx = context ?? (await buildContext(skills, settings.selection))
       const template = settings.stageTemplates[stage] || DEFAULT_TEMPLATES[stage]
       const user = fillTemplate(template, {
         story: session.story,
-        current: current?.text ?? '',
+        current: working,
         mode: settings.mode,
         notes: note,
         findings: findings.length ? findingsToText(findings) : undefined,

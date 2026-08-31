@@ -156,6 +156,10 @@ input[type='range'] { accent-color: var(--ox); }
 .column {
   flex: 1 1 auto;
   min-width: 0;
+  /* Without min-height a tall child (a long pasted source) grows the column
+     past the viewport and carries the masthead and stage rail off-screen. */
+  min-height: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--rule);
@@ -211,9 +215,25 @@ input[type='range'] { accent-color: var(--ox); }
   background: transparent;
   padding: 0;
   resize: none;
-  overflow: hidden;
+  /* Auto-grow, but never past a third of the screen — beyond that it scrolls
+     inside itself rather than displacing the rest of the page. */
+  max-height: 32vh;
+  overflow-y: auto;
   min-height: 26px;
 }
+
+.epigraph-preview {
+  font-family: var(--serif);
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--ink2);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  cursor: text;
+}
+.epigraph-preview.one { -webkit-line-clamp: 1; }
+.epigraph-preview.two { -webkit-line-clamp: 2; }
 .epigraph textarea::placeholder { color: var(--ink3); font-style: italic; }
 
 .doc {

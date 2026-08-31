@@ -40,7 +40,48 @@ const MUSIC_VOCAB =
 const DIALOGUE_NEGATION =
   /\b(?:does not|doesn'?t|will not|won'?t|never)\s+(?:speak|talk|say|utter)\w*\b|\bno (?:dialogue|lines|speech|words)\b|\bsays nothing\b|\bwordless\b|\bin silence\b/i
 
-const REQUIRED_FIELDS = ['integrated_multimodal_description', 'overall_soundscape', 'non_diegetic_music']
+/**
+ * Required sections differ by mode, and getting this wrong flags a correct
+ * prompt as broken.
+ *
+ * Full-reference (Ref2VA) output is six named sections in a fixed order —
+ * subject_definitions, summary, retention_analysis, detailed_description,
+ * overall_soundscape, non_diegetic_music — and does NOT use
+ * integrated_multimodal_description, which belongs to the base modes.
+ */
+const BASE_FIELDS = ['integrated_multimodal_description', 'overall_soundscape', 'non_diegetic_music']
+const REF_FIELDS = [
+  'subject_definitions',
+  'summary',
+  'retention_analysis',
+  'detailed_description',
+  'overall_soundscape',
+  'non_diegetic_music',
+]
+
+function requiredFields(mode: H3Mode): string[] {
+  return mode === 'Ref2VA' ? REF_FIELDS : BASE_FIELDS
+}
+
+/**
+ * Full-reference mode labels content as <Subject N> / <Picture N> / <Video N> /
+ * <Audio N>. The @name form belongs to our own shorthand, so both count.
+ */
+function referenceLabels(text: string): string[] {
+  const angle = [...text.matchAll(/<\s*(Subject|Picture|Video|Audio)\s+\d+\s*>/gi)].map((m) => m[0].replace(/\s+/g, ' '))
+  const at = [...text.matchAll(/@[a-z0-9_]+/gi)].map((m) => m[0])
+  return [...new Set([...angle, ...at])]
+}
+
+/**
+ * Is this text already a prompt rather than a story? Used to decide whether a
+ * pasted source can be critiqued directly instead of being directed first.
+ */
+export function looksLikePrompt(text: string): boolean {
+  return /(^|\n)[ \t]*(integrated_multimodal_description|overall_soundscape|non_diegetic_music|detailed_description|retention_analysis|subject_definitions)[ \t]*:/i.test(
+    text,
+  )
+}
 
 export function lint(prompt: string, mode: H3Mode): Finding[] {
   const findings: Finding[] = []
@@ -48,16 +89,17 @@ export function lint(prompt: string, mode: H3Mode): Finding[] {
   if (!text) return findings
 
   // ── required fields ─────────────────────────────────────────────────────
-  const missing = REQUIRED_FIELDS.filter((f) => fieldValue(text, f) === null)
+  const required = requiredFields(mode)
+  const missing = required.filter((f) => fieldValue(text, f) === null)
   findings.push(
     missing.length
       ? {
           id: 'mode/fields',
           severity: 'error',
           title: `${mode} is missing a required field`,
-          detail: `The structure needs ${REQUIRED_FIELDS.join(', ')}. Missing: ${missing.join(', ')}.`,
+          detail: `The ${mode} structure needs ${required.join(', ')}. Missing: ${missing.join(', ')}.`,
           matches: [],
-          metric: `${REQUIRED_FIELDS.length - missing.length} / ${REQUIRED_FIELDS.length}`,
+          metric: `${required.length - missing.length} / ${required.length}`,
         }
       : {
           id: 'mode/fields',
@@ -65,7 +107,7 @@ export function lint(prompt: string, mode: H3Mode): Finding[] {
           title: `Required ${mode} fields present`,
           detail: '',
           matches: [],
-          metric: `${REQUIRED_FIELDS.length} / ${REQUIRED_FIELDS.length}`,
+          metric: `${required.length} / ${required.length}`,
         },
   )
 
@@ -160,7 +202,7 @@ export function lint(prompt: string, mode: H3Mode): Finding[] {
   }
 
   // ── reference labels ────────────────────────────────────────────────────
-  const refs = [...new Set([...text.matchAll(/@([a-z0-9_]+)/gi)].map((m) => m[0]))]
+  const refs = referenceLabels(text)
   if (mode === 'Ref2VA') {
     findings.push(
       refs.length
@@ -169,7 +211,8 @@ export function lint(prompt: string, mode: H3Mode): Finding[] {
             id: 'refs/declared',
             severity: 'warn',
             title: 'Ref2VA with no reference labels',
-            detail: 'Full-reference mode without a single @label means nothing is actually being referenced. Either declare the references or use a base mode.',
+            detail:
+              'Full-reference mode with no <Subject N>, <Picture N>, <Video N> or <Audio N> label means nothing is actually being referenced. Either declare the references or use a base mode.',
             matches: [],
             metric: '0',
           },

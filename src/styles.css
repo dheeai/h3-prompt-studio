@@ -348,6 +348,81 @@ input[type='range'] { accent-color: var(--ox); }
 .kw.swatch { width: 9px; height: 9px; padding: 0; display: inline-block; border-radius: 2px; }
 .kw.time.swatch { background: var(--ink); }
 
+/* ── prose (Direct, Critique, and composer answers) ───────────────────── */
+
+.prose { max-width: 720px; font-size: 13px; line-height: 1.62; color: var(--ink2); }
+.prose > *:first-child { margin-top: 0; }
+.prose > *:last-child { margin-bottom: 0; }
+.prose h3, .prose h4, .prose h5, .prose h6 {
+  font-family: var(--serif);
+  font-weight: 400;
+  color: var(--ink);
+  margin: 20px 0 8px;
+  line-height: 1.25;
+}
+.prose h3 { font-size: 19px; }
+.prose h4 { font-size: 16px; }
+.prose h5, .prose h6 { font-size: 14px; }
+.prose p { margin: 0 0 11px; }
+.prose ul, .prose ol { margin: 0 0 12px; padding-left: 22px; }
+.prose li { margin-bottom: 5px; }
+.prose li::marker { color: var(--ox); }
+.prose ol > li::marker { font-family: var(--mono); font-size: 11px; }
+.prose blockquote {
+  margin: 0 0 12px;
+  padding: 2px 0 2px 13px;
+  border-left: 2px solid var(--rule2);
+  color: var(--ink3);
+}
+.prose code {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  background: var(--sunk);
+  padding: 1px 4px;
+  border-radius: 2px;
+  color: var(--ink);
+}
+.prose .prose-code {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  background: var(--sunk);
+  border: 1px solid var(--rule);
+  padding: 9px 11px;
+  margin: 0 0 12px;
+  overflow-x: auto;
+  white-space: pre;
+}
+.prose hr { border: none; border-top: 1px solid var(--rule); margin: 18px 0; }
+.prose strong { color: var(--ink); font-weight: 600; }
+
+/* ── composer thread ──────────────────────────────────────────────────── */
+
+.thread { margin-top: 14px; }
+.turn { padding: 11px 0; border-top: 1px solid var(--rule); }
+.turn-role {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink3);
+  margin-bottom: 5px;
+}
+.turn.you .turn-role { color: var(--ox); }
+.turn.you .turn-body { font-family: var(--serif); font-size: 15.5px; line-height: 1.5; color: var(--ink); }
+.turn-body { font-size: 12.5px; line-height: 1.6; color: var(--ink2); }
+.turn-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 6px;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  border: 1px solid var(--rule2);
+  color: var(--ink3);
+}
+
 /* ── diff ─────────────────────────────────────────────────────────────── */
 
 .diff-summary { display: flex; flex-wrap: wrap; gap: 14px; align-items: baseline; margin-bottom: 12px; }

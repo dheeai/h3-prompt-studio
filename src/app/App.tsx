@@ -3,6 +3,7 @@ import { useApp } from './state'
 import { Marginalia } from '../components/Marginalia'
 import { Legend, PromptDoc } from '../components/PromptDoc'
 import { DiffView } from '../components/DiffView'
+import { ProseDoc } from '../components/ProseDoc'
 import { ConnectPanel } from '../components/ConnectPanel'
 import { SkillsPanel } from '../components/SkillsPanel'
 import { SettingsPanel } from '../components/SettingsPanel'
@@ -36,7 +37,7 @@ function autosize(el: HTMLTextAreaElement | null) {
 
 export function App() {
   const app = useApp()
-  const { ready, skills, settings, providers, probes, story, versions, current, streaming, error, failedReasoning, context } = app
+  const { ready, skills, settings, providers, probes, story, versions, current, streaming, chat, error, failedReasoning, context } = app
   const [modal, setModal] = useState<'connect' | 'skills' | 'settings' | null>(null)
   const [copied, setCopied] = useState(false)
   const [note, setNote] = useState('')
@@ -196,6 +197,11 @@ export function App() {
     : null
   // A pass can only be diffed against what it actually worked from.
   const diffable = !streaming && current?.fromText ? { before: current.fromText, after: current.text } : null
+
+  // Direct and Critique return prose. Rendering markdown as one monospace
+  // block made a structured critique read as an undifferentiated wall.
+  const shownStage: StageId = streaming?.stage ?? current?.stage ?? (pastedPrompt ? 'draft' : 'direct')
+  const shownIsProse = shownStage === 'direct' || shownStage === 'critique'
   const longSource = story.length > 600
   const collapseSource = (pastedPrompt || longSource) && !editingSource
   const loadedSkills = skills.filter((s) => settings.selection[s.id]?.length)
@@ -484,7 +490,7 @@ export function App() {
                       )}
                     </div>
                   )}
-                  {!streaming && (
+                  {!streaming && !shownIsProse && (
                     <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--rule)', background: 'var(--paper)' }}>
                       <Legend text={shown} />
                     </div>
@@ -492,6 +498,8 @@ export function App() {
                   <div className="pane-body">
                     {diffable && view === 'diff' ? (
                       <DiffView before={diffable.before} after={diffable.after} changelog={current?.changelog} />
+                    ) : shownIsProse ? (
+                      <ProseDoc text={shown} streaming={!!streaming} />
                     ) : (
                       <PromptDoc text={shown} streaming={!!streaming} />
                     )}
@@ -510,6 +518,31 @@ export function App() {
                   <div style={{ fontSize: 11.5, color: 'var(--ink3)', marginTop: 12, lineHeight: 1.6, borderTop: '1px solid var(--rule)', paddingTop: 11 }}>
                     Checked against the rules before you copy it — including the ones that only show up after you’ve wasted a render.
                   </div>
+                </div>
+              )}
+
+              {chat.length > 0 && (
+                <div className="thread">
+                  <div className="lbl" style={{ marginBottom: 2 }}>Conversation</div>
+                  {chat.map((t, i) => (
+                    <div className={`turn${t.role === 'user' ? ' you' : ''}`} key={i}>
+                      <div className="turn-role">
+                        {t.role === 'user' ? 'You' : 'Reply'}
+                        {t.versionId && <span className="turn-badge">updated the prompt · pass {versions.findIndex((v) => v.id === t.versionId) + 1}</span>}
+                      </div>
+                      <div className="turn-body">
+                        {t.role === 'user' ? t.text : <ProseDoc text={t.text} />}
+                      </div>
+                    </div>
+                  ))}
+                  {streaming?.stage === 'freeform' && (
+                    <div className="turn">
+                      <div className="turn-role">Reply</div>
+                      <div className="turn-body">
+                        <ProseDoc text={streaming.text} streaming />
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 

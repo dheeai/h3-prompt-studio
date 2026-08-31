@@ -11,10 +11,15 @@ copies of MiniMax's own H3 documentation**, from
 
 - https://huggingface.co/MiniMaxAI/MiniMax-H3
 
-They are redistributed here unmodified, with permission of this repository's
-owner, so the prompt format is available to the model at authoring time. The
-MiniMax-H3 model card lists its licence as "other" — consult MiniMax's terms
-before redistributing these documents yourself.
+They are redistributed here unmodified, and verified byte-identical against
+upstream, so the prompt format is available to the model at authoring time.
+`docs/` upstream holds exactly these two guides plus a licence Q&A:
+
+- https://huggingface.co/MiniMaxAI/MiniMax-H3/blob/main/docs/QA-about-License.md
+
+That Q&A concerns regional restrictions on the model weights rather than the
+documentation. The model card lists the licence as "other" — consult MiniMax's
+terms before redistributing these documents yourself.
 
 `h3-prompting/SKILL.md` is ours: it is our synthesis of those guides plus
 failure modes measured on our own runs.

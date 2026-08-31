@@ -85,6 +85,14 @@ export interface Version {
   note?: string
 }
 
+export interface ChatTurn {
+  role: 'user' | 'assistant'
+  text: string
+  at: number
+  /** Set when this turn produced a new pass rather than just an answer. */
+  versionId?: string
+}
+
 export type H3Mode = 'T2VA' | 'I2VA' | 'FL2VA' | 'L2VA' | 'Ref2VA' | 'MoGr'
 
 export interface Settings {

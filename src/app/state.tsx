@@ -5,10 +5,10 @@ import { buildContext, type BuiltContext } from '../lib/context'
 import { findingsToText, lint, looksLikePrompt } from '../lib/lint'
 import { streamChat } from '../lib/llm'
 import { DEFAULT_PROVIDERS, loadProviders, probe, saveProviders } from '../lib/providers'
-import { DEFAULT_TEMPLATES, STAGE_LABEL, fillTemplate, splitReply, templateFor } from '../lib/stages'
+import { DEFAULT_TEMPLATES, STAGE_LABEL, fillTemplate, hasPromptBlock, splitReply, templateFor } from '../lib/stages'
 import { fetchBundledSkills, loadSkills, removeSkill, saveSkill } from '../lib/skills'
 import { estTokens } from '../lib/tokens'
-import type { Finding, ProbeResult, Provider, Selection, Settings, Skill, StageId, Version } from '../lib/types'
+import type { ChatTurn, Finding, ProbeResult, Provider, Selection, Settings, Skill, StageId, Version } from '../lib/types'
 
 const SETTINGS_SCHEMA = 4
 
@@ -35,6 +35,8 @@ interface Session {
   story: string
   versions: Version[]
   currentId: string | null
+  /** The composer thread. Carried into every freeform turn so it continues. */
+  chat?: ChatTurn[]
 }
 
 interface Api {
@@ -47,6 +49,7 @@ interface Api {
   versions: Version[]
   current: Version | null
   streaming: { stage: StageId; text: string; reasoning: string; startedAt: number } | null
+  chat: ChatTurn[]
   error: string | null
   /** Thinking from a run that produced no answer, kept so it is not lost. */
   failedReasoning: string | null
@@ -82,7 +85,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
   const [providers, setProvidersState] = useState<Provider[]>(DEFAULT_PROVIDERS)
   const [probes, setProbes] = useState<Record<string, ProbeResult>>({})
-  const [session, setSession] = useState<Session>({ story: '', versions: [], currentId: null })
+  const [session, setSession] = useState<Session>({ story: '', versions: [], currentId: null, chat: [] })
   const [streaming, setStreaming] = useState<{ stage: StageId; text: string; reasoning: string; startedAt: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [context, setContext] = useState<BuiltContext | null>(null)
@@ -365,9 +368,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
           signal: ac.signal,
           // The cached block is always first and byte-identical between calls;
           // everything that varies goes in the user turn after it.
+          // The skills stay first and byte-identical so the prefix cache holds;
+          // the frame and the thread follow, which is what makes a composer
+          // turn a continuation rather than a cold single-shot request.
           messages: [
             { role: 'system', content: ctx.text },
             { role: 'user', content: user },
+            ...(stage === 'freeform'
+              ? [
+                  ...(session.chat ?? []).map((t) => ({ role: t.role, content: t.text })),
+                  { role: 'user' as const, content: note ?? '' },
+                ]
+              : []),
           ],
           onDelta: (chunk) => setStreaming((s) => (s ? { ...s, text: s.text + chunk } : s)),
           onReasoning: (chunk) => setStreaming((s) => (s ? { ...s, reasoning: s.reasoning + chunk } : s)),
@@ -400,6 +412,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
         setFailedReasoning(null)
 
+        // A composer turn may simply be a question. Answering it is a valid
+        // outcome — forcing every turn to emit a prompt is what made asking
+        // one rewrite the document instead of replying.
+        if (stage === 'freeform' && !hasPromptBlock(result.text)) {
+          const answer = result.text.trim()
+          setSession((sn) => ({
+            ...sn,
+            chat: [
+              ...(sn.chat ?? []),
+              { role: 'user', text: note ?? '', at: Date.now() },
+              { role: 'assistant', text: answer, at: Date.now() },
+            ],
+          }))
+          return
+        }
+
         // Revise and freeform are asked for a prompt plus a changelog; the
         // other stages return one document.
         const wantsChangelog = stage === 'revise' || stage === 'freeform'
@@ -423,7 +451,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
           tokensEstimated: result.usage?.completion === undefined,
           note,
         }
-        setSession((s) => ({ ...s, versions: [...s.versions, version], currentId: version.id }))
+        setSession((s) => ({
+          ...s,
+          versions: [...s.versions, version],
+          currentId: version.id,
+          chat:
+            stage === 'freeform'
+              ? [
+                  ...(s.chat ?? []),
+                  { role: 'user', text: note ?? '', at: Date.now() },
+                  {
+                    role: 'assistant',
+                    text: changelog.length ? changelog.map((c) => `- ${c}`).join('\n') : 'Updated the prompt.',
+                    at: Date.now(),
+                    versionId: version.id,
+                  },
+                ]
+              : s.chat,
+        }))
       } catch (e) {
         if ((e as Error).name !== 'AbortError') setError(String((e as Error).message || e))
       } finally {
@@ -439,7 +484,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     abortRef.current = null
     setStreaming(null)
     setError(null)
-    setSession({ story: '', versions: [], currentId: null })
+    setSession({ story: '', versions: [], currentId: null, chat: [] })
     await idb.del('sessions', 'current')
   }, [])
 
@@ -453,6 +498,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     versions: session.versions,
     current,
     streaming,
+    chat: session.chat ?? [],
     error,
     failedReasoning,
     findings,

@@ -157,23 +157,28 @@ DETERMINISTIC CHECK
 PROMPT
 {{current}}`,
 
-  freeform: `Apply this instruction to the prompt.
+  freeform: `You are working on this prompt with me, in conversation. What
+follows is where it stands; my messages continue from here.
 
-Change only what the instruction asks for. Keep the field structure, the
-formatting and every untouched line exactly as they are. Where the loaded
-documents constrain how the change should be made, follow them.
+The loaded documents govern any craft judgement you make. Keep answers short
+and concrete.
 
-Output exactly two blocks, in this order, and nothing outside them:
+If I ASK SOMETHING — why a choice was made, what a rule means, whether an idea
+would work — just answer in plain prose. Do not restate the prompt and do not
+rewrite it.
+
+If I ASK FOR A CHANGE, make it and reply with exactly two blocks, nothing
+outside them:
 
 <<<PROMPT>>>
-the complete corrected prompt
+the complete updated prompt
 <<<CHANGES>>>
 - one line per edit: what you changed, and why
 
-INSTRUCTION
-{{notes}}
+Change only what I asked for. Keep the field structure, the formatting and
+every untouched line exactly as they are.
 
-PROMPT
+THE PROMPT AS IT STANDS
 {{current}}`,
 }
 
@@ -188,6 +193,11 @@ const CHANGES_MARK = '<<<CHANGES>>>'
  * produces a usable prompt, so an unmarked reply is treated as all prompt
  * rather than being rejected.
  */
+/** Did the model choose to rewrite, or just answer? */
+export function hasPromptBlock(raw: string): boolean {
+  return raw.includes(PROMPT_MARK)
+}
+
 export function splitReply(raw: string): { prompt: string; changelog: string[] } {
   const text = raw.trim()
   const ci = text.indexOf(CHANGES_MARK)

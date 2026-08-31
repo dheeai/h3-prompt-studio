@@ -16,12 +16,69 @@ export interface StreamOptions {
   contextHash?: string
   signal?: AbortSignal
   onDelta: (chunk: string) => void
+  /** Thinking tokens, streamed separately from the answer. */
+  onReasoning?: (chunk: string) => void
 }
 
 export interface StreamResult {
   text: string
+  reasoning: string
   ms: number
   cacheReused: boolean
+}
+
+const THINK_OPEN = '<think>'
+const THINK_CLOSE = '</think>'
+
+/** Longest k where the tail of `s` equals the first k chars of `tag`. */
+function partialTagTail(s: string, tag: string): number {
+  for (let k = Math.min(tag.length - 1, s.length); k > 0; k--) {
+    if (s.endsWith(tag.slice(0, k))) return k
+  }
+  return 0
+}
+
+/**
+ * Splits a content stream into answer and thinking.
+ *
+ * Reasoning arrives two different ways depending on the server: as a separate
+ * `reasoning` / `reasoning_content` delta key, or inline in the content wrapped
+ * in <think>…</think>. Both are handled, and a tag split across chunk
+ * boundaries is held back rather than leaking half a tag into the answer.
+ */
+function makeThinkSplitter(onText: (s: string) => void, onThink: (s: string) => void) {
+  let buf = ''
+  let thinking = false
+
+  const emit = (s: string) => {
+    if (!s) return
+    if (thinking) onThink(s)
+    else onText(s)
+  }
+
+  return {
+    push(chunk: string) {
+      buf += chunk
+      for (;;) {
+        const tag = thinking ? THINK_CLOSE : THINK_OPEN
+        const idx = buf.indexOf(tag)
+        if (idx !== -1) {
+          emit(buf.slice(0, idx))
+          buf = buf.slice(idx + tag.length)
+          thinking = !thinking
+          continue
+        }
+        const hold = partialTagTail(buf, tag)
+        emit(buf.slice(0, buf.length - hold))
+        buf = hold ? buf.slice(buf.length - hold) : ''
+        return
+      }
+    },
+    end() {
+      emit(buf)
+      buf = ''
+    },
+  }
 }
 
 /**
@@ -33,7 +90,7 @@ export interface StreamResult {
  * unknown field — so it is opt-in per provider rather than always sent.
  */
 export async function streamChat(opts: StreamOptions): Promise<StreamResult> {
-  const { provider, model, messages, temperature, maxTokens, signal, onDelta } = opts
+  const { provider, model, messages, temperature, maxTokens, signal, onDelta, onReasoning } = opts
   const started = performance.now()
   const cacheReused = !!opts.contextHash && wasSent(opts.contextHash)
 
@@ -76,10 +133,23 @@ export async function streamChat(opts: StreamOptions): Promise<StreamResult> {
     throw new Error(`${res.status} ${res.statusText}${detail ? ` — ${detail.slice(0, 300)}` : ''}`)
   }
 
+  let text = ''
+  let reasoning = ''
+
+  const splitter = makeThinkSplitter(
+    (s) => {
+      text += s
+      onDelta(s)
+    },
+    (s) => {
+      reasoning += s
+      onReasoning?.(s)
+    },
+  )
+
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
-  let text = ''
 
   for (;;) {
     const { done, value } = await reader.read()
@@ -99,23 +169,30 @@ export async function streamChat(opts: StreamOptions): Promise<StreamResult> {
         if (!payload || payload === '[DONE]') continue
         try {
           const json = JSON.parse(payload) as {
-            choices?: { delta?: { content?: string; reasoning?: string }; text?: string }[]
+            choices?: {
+              delta?: { content?: string; reasoning?: string; reasoning_content?: string }
+              text?: string
+            }[]
           }
           const choice = json.choices?.[0]
-          // Reasoning models stream their thinking on a separate key; it is
-          // not part of the answer, so it is dropped rather than shown.
-          const piece = choice?.delta?.content ?? choice?.text ?? ''
-          if (piece) {
-            text += piece
-            onDelta(piece)
+
+          // Servers disagree on the key; both mean the same thing.
+          const think = choice?.delta?.reasoning ?? choice?.delta?.reasoning_content
+          if (think) {
+            reasoning += think
+            onReasoning?.(think)
           }
+
+          const piece = choice?.delta?.content ?? choice?.text ?? ''
+          if (piece) splitter.push(piece)
         } catch {
           // A partial frame that slipped through — ignore and keep reading.
         }
       }
     }
   }
+  splitter.end()
 
   if (opts.contextHash) markSent(opts.contextHash)
-  return { text, ms: Math.round(performance.now() - started), cacheReused }
+  return { text, reasoning, ms: Math.round(performance.now() - started), cacheReused }
 }

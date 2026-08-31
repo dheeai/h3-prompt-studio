@@ -10,7 +10,7 @@ import { skillTokens } from '../lib/skills'
 import { fmtTokens } from '../lib/tokens'
 import { wasSent } from '../lib/context'
 import { looksLikePrompt } from '../lib/lint'
-import type { StageId } from '../lib/types'
+import type { StageId, Version } from '../lib/types'
 
 const EXAMPLES: { label: string; text: string }[] = [
   {
@@ -41,6 +41,8 @@ export function App() {
   const [note, setNote] = useState('')
   const [editingSource, setEditingSource] = useState(false)
   const [hoveredStage, setHoveredStage] = useState<StageId | null>(null)
+  const [thinkOpen, setThinkOpen] = useState(false)
+  const thinkRef = useRef<HTMLDivElement>(null)
   const storyRef = useRef<HTMLTextAreaElement>(null)
   const noteRef = useRef<HTMLTextAreaElement>(null)
   const docRef = useRef<HTMLDivElement>(null)
@@ -61,7 +63,17 @@ export function App() {
     return STAGE_ORDER[Math.min(i + 1, STAGE_ORDER.length - 1)]
   }, [current, pastedPrompt])
 
+  // The rail is a timeline of passes, so clicking one navigates to it. Running
+  // is the button's job — conflating the two meant a completed pass could only
+  // ever be re-run, never re-read.
+  const passesByStage = useMemo(() => {
+    const m = new Map<StageId, Version[]>()
+    for (const v of versions) m.set(v.stage, [...(m.get(v.stage) ?? []), v])
+    return m
+  }, [versions])
+
   const reached = useMemo(() => new Set(versions.map((v) => v.stage)), [versions])
+  const viewingStage = current?.stage ?? null
 
   // Critique and Revise operate on a prompt. A direction sheet is prose, and
   // auditing it for prompt fields produces confident nonsense — so say what is
@@ -75,6 +87,25 @@ export function App() {
       return current ? 'Needs a prompt — the page currently holds a direction sheet. Run Draft first.' : 'Needs a prompt. Paste one, or run Direct then Draft.'
     }
     return null
+  }
+
+  const openStage = (s: StageId) => {
+    const passes = passesByStage.get(s)
+    if (passes?.length) {
+      app.selectVersion(passes[passes.length - 1].id)
+      return
+    }
+    if (!busy && connected && !blockedReason(s)) void app.run(s)
+  }
+
+  const stageNote = (s: StageId): string => {
+    const passes = passesByStage.get(s)?.length ?? 0
+    if (passes && s === viewingStage) return 'You are reading this pass.'
+    if (passes) return `Click to read ${passes > 1 ? `the latest of ${passes} passes` : 'this pass'}.`
+    const blocked = blockedReason(s)
+    if (blocked) return blocked
+    if (!connected) return 'Connect a model to run it.'
+    return 'Not run yet — click to run it.'
   }
 
   useEffect(() => autosize(storyRef.current), [story, ready, editingSource])
@@ -91,6 +122,18 @@ export function App() {
     }
   }, [ready])
   useEffect(() => autosize(noteRef.current), [note])
+
+  // While the model is still thinking there is nothing else to look at, so the
+  // panel opens itself — and folds away once real output starts arriving.
+  useEffect(() => {
+    if (streaming?.reasoning && !streaming.text) setThinkOpen(true)
+    if (streaming?.text) setThinkOpen(false)
+  }, [streaming?.reasoning, streaming?.text])
+
+  useEffect(() => {
+    const el = thinkRef.current
+    if (el && thinkOpen) el.scrollTop = el.scrollHeight
+  }, [streaming?.reasoning, thinkOpen])
 
   // Follow the stream, but only while the user is already at the bottom.
   useEffect(() => {
@@ -125,6 +168,8 @@ export function App() {
   // holds an empty string, which `??` would happily show — blanking the page
   // until the first token lands. Keep the previous pass up until then.
   const shown = streaming?.text || current?.text || (pastedPrompt ? story : '')
+  const reasoning = streaming ? streaming.reasoning : (current?.reasoning ?? '')
+  const reasoningStreaming = !!streaming && !streaming.text
   const longSource = story.length > 600
   const collapseSource = (pastedPrompt || longSource) && !editingSource
   const loadedSkills = skills.filter((s) => settings.selection[s.id]?.length)
@@ -217,9 +262,9 @@ export function App() {
                     >
                       <span className="stage-num">{done ? '✓' : i + 1}</span>
                       <button
-                        className={`stage${isNext ? ' on' : done ? ' done' : ''}`}
-                        onClick={() => !busy && connected && !blocked && void app.run(s)}
-                        disabled={busy || !connected || !!blocked}
+                        className={`stage${isNext ? ' on' : done ? ' done' : ''}${s === viewingStage ? ' viewing' : ''}`}
+                        onClick={() => openStage(s)}
+                        disabled={busy || (!done && (!connected || !!blocked))}
                       >
                         {STAGE_LABEL[s]}
                       </button>
@@ -234,29 +279,40 @@ export function App() {
                   <button className="btn" onClick={app.cancel}>Stop</button>
                 </>
               ) : (
-                <button
-                  className="btn pri"
-                  onClick={() => void app.run(nextStage)}
-                  disabled={!connected || !!blockedReason(nextStage)}
-                  title={blockedReason(nextStage) ?? undefined}
-                >
-                  {connected ? `Run ${STAGE_LABEL[nextStage]}` : 'Connect a model'}
-                </button>
+                <>
+                  {current && (
+                    <button
+                      className="btn"
+                      style={{ marginRight: 7 }}
+                      onClick={() => void app.run(current.stage)}
+                      disabled={!connected || !!blockedReason(current.stage)}
+                      title={`Run ${STAGE_LABEL[current.stage]} again on the same input`}
+                    >
+                      Re-run {STAGE_LABEL[current.stage]}
+                    </button>
+                  )}
+                  <button
+                    className="btn pri"
+                    onClick={() => void app.run(nextStage)}
+                    disabled={!connected || !!blockedReason(nextStage)}
+                    title={blockedReason(nextStage) ?? `Continue from the pass you are reading`}
+                  >
+                    {connected ? `Run ${STAGE_LABEL[nextStage]}` : 'Connect a model'}
+                  </button>
+                </>
               )}
             </div>
 
             <div className="stagenote">
               {(() => {
-                const s = hoveredStage ?? nextStage
-                const blocked = blockedReason(s)
-                if (blocked) return <><b>{STAGE_LABEL[s]}</b> — {blocked}</>
+                const s = hoveredStage ?? viewingStage ?? nextStage
                 return (
                   <>
                     <b>
                       {STAGE_LABEL[s]} → {STAGE_INFO[s].produces}
                     </b>{' '}
-                    {STAGE_INFO[s].blurb}
-                    {!versions.length && ' Each pass works on what is on the page — run them in order, or jump straight to the one you need.'}
+                    {STAGE_INFO[s].blurb} <span style={{ color: 'var(--ink3)' }}>{stageNote(s)}</span>
+                    {!versions.length && ' Run them in order, or jump straight to the one you need.'}
                   </>
                 )
               })()}
@@ -310,7 +366,7 @@ export function App() {
           {/* ── the document ─────────────────────────────────────────── */}
           <div className="scroll" ref={docRef} style={{ flex: '1 1 auto', padding: '0 26px', minHeight: 0 }}>
             <div style={{ paddingTop: 14, paddingBottom: 20 }}>
-              {shown ? (
+              {shown || reasoning ? (
                 <div className="pane output">
                   <div className="pane-head">
                     <span className="pane-tag out">OUTPUT</span>
@@ -336,6 +392,24 @@ export function App() {
                       </button>
                     )}
                   </div>
+                  {reasoning && (
+                    <div className="think">
+                      <div className="think-head" onClick={() => setThinkOpen((v) => !v)}>
+                        <span className="tok" style={{ color: 'var(--ink3)' }}>{thinkOpen ? '▾' : '▸'}</span>
+                        <span className="lbl">Thinking</span>
+                        <span className="tok">
+                          {reasoningStreaming ? 'working…' : `${reasoning.length.toLocaleString()} characters, not part of the prompt`}
+                        </span>
+                        {reasoningStreaming && <span className="spin" />}
+                      </div>
+                      {thinkOpen && (
+                        <div className="think-body" ref={thinkRef}>
+                          {reasoning}
+                          {reasoningStreaming && <span className="think-caret" />}
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {!streaming && (
                     <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--rule)', background: 'var(--paper)' }}>
                       <Legend text={shown} />

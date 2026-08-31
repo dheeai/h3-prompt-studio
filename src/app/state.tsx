@@ -42,7 +42,7 @@ interface Api {
   story: string
   versions: Version[]
   current: Version | null
-  streaming: { stage: StageId; text: string } | null
+  streaming: { stage: StageId; text: string; reasoning: string } | null
   error: string | null
   findings: Finding[]
   context: BuiltContext | null
@@ -77,7 +77,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [providers, setProvidersState] = useState<Provider[]>(DEFAULT_PROVIDERS)
   const [probes, setProbes] = useState<Record<string, ProbeResult>>({})
   const [session, setSession] = useState<Session>({ story: '', versions: [], currentId: null })
-  const [streaming, setStreaming] = useState<{ stage: StageId; text: string } | null>(null)
+  const [streaming, setStreaming] = useState<{ stage: StageId; text: string; reasoning: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [context, setContext] = useState<BuiltContext | null>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -85,6 +85,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // ── boot ──────────────────────────────────────────────────────────────
   useEffect(() => {
     ;(async () => {
+      let bundledIds: string[] = []
       const [savedSettings, savedSession, savedProviders] = await Promise.all([
         idb.get<Settings>('settings', 'settings'),
         idb.get<Session>('sessions', 'current'),
@@ -92,17 +93,43 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ])
       let stored = await loadSkills()
 
-      // First visit: pull in whatever this deployment ships with.
-      if (!stored.length) {
-        const bundled = await fetchBundledSkills()
-        for (const s of bundled) await saveSkill(s)
-        stored = bundled
+      // Sync whatever this deployment ships with — not just on a first visit,
+      // or a skill added to the deployment later would never reach anyone who
+      // had already opened the app.
+      const bundled = await fetchBundledSkills()
+      if (bundled.length) {
+        const byId = new Map(stored.map((s) => [s.id, s]))
+        const seen = new Set(savedSettings?.seenBundled ?? [])
+        const writes: Skill[] = []
+        for (const b of bundled) {
+          const existing = byId.get(b.id)
+          if (existing) {
+            // A bundled skill belongs to the deployment, so refresh its text —
+            // but never touch one the user uploaded or fetched themselves.
+            if (existing.source === 'bundled' && JSON.stringify(existing.files) !== JSON.stringify(b.files)) writes.push(b)
+          } else if (!seen.has(b.id)) {
+            writes.push(b)
+          }
+          // Anything already seen and since deleted stays deleted.
+        }
+        for (const w of writes) await saveSkill(w)
+
+        // A bundled skill dropped from the deployment should disappear with it
+        // — it is the deployment's, not the user's. Only ever prune when the
+        // manifest actually loaded, so a failed fetch cannot wipe the library.
+        bundledIds = bundled.map((b) => b.id)
+        const shipped = new Set(bundledIds)
+        const stale = stored.filter((s) => s.source === 'bundled' && !shipped.has(s.id))
+        for (const s of stale) await removeSkill(s.id)
+
+        if (writes.length || stale.length) stored = await loadSkills()
       }
 
       const merged: Settings = {
         ...DEFAULT_SETTINGS,
         ...savedSettings,
         stageTemplates: { ...DEFAULT_TEMPLATES, ...(savedSettings?.stageTemplates || {}) },
+        seenBundled: [...new Set([...(savedSettings?.seenBundled ?? []), ...bundledIds])],
       }
 
       // Settings persist per browser, so raising a default only reaches people
@@ -292,7 +319,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       const ac = new AbortController()
       abortRef.current = ac
-      setStreaming({ stage, text: '' })
+      setStreaming({ stage, text: '', reasoning: '' })
       setError(null)
 
       try {
@@ -310,9 +337,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
             { role: 'user', content: user },
           ],
           onDelta: (chunk) => setStreaming((s) => (s ? { ...s, text: s.text + chunk } : s)),
+          onReasoning: (chunk) => setStreaming((s) => (s ? { ...s, reasoning: s.reasoning + chunk } : s)),
         })
 
-        if (!result.text.trim()) throw new Error('The model returned nothing. Reasoning models truncate badly — try raising max tokens.')
+        if (!result.text.trim()) {
+          throw new Error(
+            result.reasoning.trim()
+              ? 'The model spent its whole budget thinking and never wrote an answer. Raise max tokens.'
+              : 'The model returned nothing.',
+          )
+        }
 
         const version: Version = {
           id: `v${Date.now().toString(36)}`,
@@ -323,6 +357,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           providerId: provider.id,
           at: Date.now(),
           ms: result.ms,
+          reasoning: result.reasoning.trim() || undefined,
           note,
         }
         setSession((s) => ({ ...s, versions: [...s.versions, version], currentId: version.id }))

@@ -71,6 +71,8 @@ export interface Version {
   providerId: string
   at: number
   ms: number
+  /** Thinking tokens, when the model emitted any. */
+  reasoning?: string
   /** The instruction that produced it, for freeform turns. */
   note?: string
 }
@@ -87,6 +89,8 @@ export interface Settings {
   mode: H3Mode
   selection: Selection
   stageTemplates: Record<StageId, string>
+  /** Bundled skill ids already offered, so a deletion is not undone on reload. */
+  seenBundled?: string[]
   onboarded: boolean
 }
 

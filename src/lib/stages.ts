@@ -13,12 +13,13 @@ export const STAGE_INFO: Record<StageId, { produces: string; needs: 'story' | 'a
   direct: {
     produces: 'a direction sheet',
     needs: 'story',
-    blurb: 'Works out what to show — the anchors, the escalation, a beat grid and a card per cut. Writes no prompt fields.',
+    blurb:
+      'Works out what to show — anchors, escalation, a beat grid, a card per cut. Reads a story, or re-reads a prompt someone already wrote and re-decides it. Writes no prompt fields.',
   },
   draft: {
     produces: 'the prompt',
     needs: 'anything',
-    blurb: 'Turns what is on the page into a prompt, in the official field structure for the chosen mode.',
+    blurb: 'Rebuilds the prompt from the direction sheet, in the official field structure — not an edit of what came before.',
   },
   critique: {
     produces: 'notes',
@@ -28,7 +29,7 @@ export const STAGE_INFO: Record<StageId, { produces: string; needs: 'story' | 'a
   revise: {
     produces: 'a corrected prompt',
     needs: 'prompt',
-    blurb: 'Applies the notes and leaves every untouched line exactly as it was.',
+    blurb: 'Surgical: applies the notes and leaves every untouched line exactly as it was. For a rebuild, run Direct then Draft instead.',
   },
   freeform: {
     produces: 'a corrected prompt',
@@ -58,8 +59,18 @@ export const STAGE_LABEL: Record<StageId, string> = {
 export const DEFAULT_TEMPLATES: Record<StageId, string> = {
   direct: `You are directing, not writing prompts yet.
 
-Read the source below and produce a DIRECTION SHEET, following the loaded craft
-documents exactly where they specify a structure.
+The source below is either a story to direct, or a prompt somebody already
+wrote. Work out which, and read it accordingly.
+
+If it is ALREADY A PROMPT, do not treat its choices as settled. Read through it
+to what it is actually trying to show, then judge it: does it escalate, does
+each beat earn its screen time, is the camera doing anything, is the
+performance observable. State what it is getting wrong. Then direct it again
+from the underlying intent — you are re-deciding the film, not preserving the
+prompt. Say plainly where your direction departs from what is there and why.
+
+Produce a DIRECTION SHEET, following the loaded craft documents exactly where
+they specify a structure.
 
 Decide and state:
 - what this is actually about, in one line
@@ -84,8 +95,13 @@ Apply every craft rule they state about shot construction, camera, performance,
 sound and suppressed modalities, including any failure mode they record from
 real measurements.
 
-Render the direction sheet below; do not re-direct it, and do not invent beats
-it does not contain.
+This is a REBUILD. Write the prompt from the direction sheet, not from any
+earlier prompt — do not carry over its wording, its beats, or its structure
+except where the direction sheet calls for them. If the source contained a
+prompt, treat it as superseded.
+
+Render the direction sheet; do not re-direct it, and do not invent beats it
+does not contain.
 
 Output the prompt and nothing else — no preamble, no explanation, no fences.
 

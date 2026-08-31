@@ -64,7 +64,9 @@ interface Api {
   deleteSkill: (id: string) => Promise<void>
   setProviders: (p: Provider[]) => Promise<void>
   refreshProbe: (id: string) => Promise<void>
-  run: (stage: StageId, note?: string) => Promise<void>
+  run: (stage: StageId, note?: string) => Promise<Version | null>
+  /** Direct then Draft — a full re-synthesis rather than an edit. */
+  rebuild: () => Promise<void>
   cancel: () => void
   selectVersion: (id: string) => void
   clearError: () => void
@@ -91,6 +93,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [context, setContext] = useState<BuiltContext | null>(null)
   const [failedReasoning, setFailedReasoning] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+  // run() closes over session, so chaining two stages in one turn would read
+  // state from before the first one finished. The ref always holds the latest.
+  const sessionRef = useRef(session)
+  sessionRef.current = session
 
   // ── boot ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -299,10 +305,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const run = useCallback(
-    async (stage: StageId, note?: string) => {
+    async (stage: StageId, note?: string): Promise<Version | null> => {
+      const snap = sessionRef.current
+      const cur = snap.versions.find((v) => v.id === snap.currentId) ?? snap.versions[snap.versions.length - 1] ?? null
       const provider = providers.find((p) => p.id === settings.providerId)
-      if (!provider) return setError('Pick a provider first.')
-      if (!settings.model) return setError('Pick a model first.')
+      if (!provider) {
+        setError('Pick a provider first.')
+        return null
+      }
+      if (!settings.model) {
+        setError('Pick a model first.')
+        return null
+      }
 
       // Stages after Direct work on a document. Usually that is the previous
       // pass — but when someone pastes a finished prompt and asks for a
@@ -313,29 +327,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // pass ran last. Feeding it `current` blindly meant that after Critique,
       // Revise received the critique prose in the slot labelled PROMPT — and
       // never saw the prompt at all.
-      const lastOf = (st: StageId) => [...session.versions].reverse().find((v) => v.stage === st) ?? null
-      const lastPrompt = () => [...session.versions].reverse().find((v) => PROMPT_STAGES.has(v.stage)) ?? null
+      const lastOf = (st: StageId) => [...snap.versions].reverse().find((v) => v.stage === st) ?? null
+      const lastPrompt = () => [...snap.versions].reverse().find((v) => PROMPT_STAGES.has(v.stage)) ?? null
 
       let working: string
       if (stage === 'direct') {
         working = ''
       } else if (stage === 'draft') {
         // Prefer a direction sheet — the one you are reading, else the latest.
-        working = (current?.stage === 'direct' ? current.text : lastOf('direct')?.text) ?? session.story
+        working = (cur?.stage === 'direct' ? cur.text : lastOf('direct')?.text) ?? snap.story
       } else {
         // Critique, Revise and a freeform note all operate on the prompt.
         working =
-          (current && PROMPT_STAGES.has(current.stage) ? current.text : lastPrompt()?.text) ??
-          (looksLikePrompt(session.story) ? session.story : '')
+          (cur && PROMPT_STAGES.has(cur.stage) ? cur.text : lastPrompt()?.text) ??
+          (looksLikePrompt(snap.story) ? snap.story : '')
       }
 
-      if (!session.story.trim() && !session.versions.length) return setError('Paste something first.')
+      if (!snap.story.trim() && !snap.versions.length) {
+        setError('Paste something first.')
+        return null
+      }
       if (stage !== 'direct' && !working.trim()) {
-        return setError(
+        setError(
           stage === 'draft'
             ? 'Nothing to draft from yet.'
             : `${STAGE_LABEL[stage]} works on a prompt, and there isn’t one yet. Paste one, or run Draft first.`,
         )
+        return null
       }
 
       // The model's review against the loaded skills is the substance of a
@@ -345,7 +363,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const ctx = context ?? (await buildContext(skills, settings.selection))
       const template = templateFor(settings.stageTemplates, stage)
       const user = fillTemplate(template, {
-        story: session.story,
+        story: snap.story,
         current: working,
         mode: settings.mode,
         notes: note,
@@ -376,7 +394,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             { role: 'user', content: user },
             ...(stage === 'freeform'
               ? [
-                  ...(session.chat ?? []).map((t) => ({ role: t.role, content: t.text })),
+                  ...(snap.chat ?? []).map((t) => ({ role: t.role, content: t.text })),
                   { role: 'user' as const, content: note ?? '' },
                 ]
               : []),
@@ -425,7 +443,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
               { role: 'assistant', text: answer, at: Date.now() },
             ],
           }))
-          return
+          return null
         }
 
         // Revise and freeform are asked for a prompt plus a changelog; the
@@ -469,15 +487,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 ]
               : s.chat,
         }))
+        return version
       } catch (e) {
         if ((e as Error).name !== 'AbortError') setError(String((e as Error).message || e))
+        return null
       } finally {
         abortRef.current = null
         setStreaming(null)
       }
     },
-    [providers, settings, session.story, current, context, skills, findings],
+    [providers, settings, context, skills, findings],
   )
+
+  const rebuild = useCallback(async () => {
+    const sheet = await run('direct')
+    if (sheet) await run('draft')
+  }, [run])
 
   const reset = useCallback(async () => {
     abortRef.current?.abort()
@@ -512,6 +537,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setProviders,
     refreshProbe,
     run,
+    rebuild,
     cancel,
     selectVersion,
     clearError: () => {

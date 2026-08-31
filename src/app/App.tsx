@@ -339,6 +339,17 @@ export function App() {
                 </>
               ) : (
                 <>
+                  {documentIsPrompt && (
+                    <button
+                      className="btn"
+                      style={{ marginRight: 7 }}
+                      onClick={() => void app.rebuild()}
+                      disabled={!connected || !story.trim()}
+                      title="Re-read what is here, re-decide the film, and write the prompt again from scratch — not an edit"
+                    >
+                      Rebuild
+                    </button>
+                  )}
                   {current && (
                     <button
                       className="btn"
@@ -372,6 +383,11 @@ export function App() {
                     </b>{' '}
                     {STAGE_INFO[s].blurb} <span style={{ color: 'var(--ink3)' }}>{stageNote(s)}</span>
                     {!versions.length && ' Run them in order, or jump straight to the one you need.'}
+                    {documentIsPrompt && (s === 'revise' || s === 'direct') && (
+                      <span style={{ color: 'var(--ink3)' }}>
+                        {' '}Revise edits surgically; Direct → Draft rebuilds from scratch.
+                      </span>
+                    )}
                   </>
                 )
               })()}

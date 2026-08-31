@@ -1,0 +1,148 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap">
+  <style>
+    :root {
+      --paper: oklch(0.973 0.008 88); --panel: oklch(0.946 0.011 85); --sunk: oklch(0.930 0.013 85);
+      --ink: oklch(0.255 0.016 62); --ink2: oklch(0.435 0.014 62); --ink3: oklch(0.605 0.013 65);
+      --rule: oklch(0.875 0.012 78); --rule2: oklch(0.815 0.016 78);
+      --ox: oklch(0.470 0.135 27); --ox-soft: oklch(0.930 0.030 30);
+      --grn: oklch(0.480 0.090 152); --grn-soft: oklch(0.930 0.045 152);
+      --amb: oklch(0.560 0.110 72); --amb-soft: oklch(0.940 0.050 80);
+      --kw-picture: oklch(0.45 0.115 252); --kw-picture-bg: oklch(0.938 0.030 252);
+      --serif: "Instrument Serif", Georgia, serif;
+      --sans: "IBM Plex Sans", system-ui, sans-serif;
+      --mono: "IBM Plex Mono", ui-monospace, monospace;
+    }
+    body { margin: 0; font-family: var(--sans); background: var(--paper); color: var(--ink); -webkit-font-smoothing: antialiased; }
+    a { color: var(--ox); text-decoration: none; } a:hover { color: var(--ink); text-decoration: underline; }
+    .lbl { font-size: 9.5px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink3); }
+    .tok { font-family: var(--mono); font-size: 10.5px; color: var(--ink3); font-variant-numeric: tabular-nums; }
+    .chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; font-size: 11px; border: 1px solid var(--rule2); background: var(--paper); color: var(--ink2); white-space: nowrap; }
+    .chip.on { border-color: var(--ox); background: var(--ox-soft); color: var(--ox); font-weight: 500; }
+    .chip.off { color: var(--ink3); border-style: dashed; background: transparent; }
+    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 13px; font-size: 11.5px; font-weight: 500; border: 1px solid var(--rule2); background: var(--paper); color: var(--ink2); white-space: nowrap; }
+    .btn.pri { background: var(--ox); border-color: var(--ox); color: oklch(0.98 0.01 30); font-weight: 600; }
+    .btn.sm { padding: 3px 9px; font-size: 10.5px; }
+    .btn.ghost { border-color: transparent; background: transparent; }
+    .dot { width: 5px; height: 5px; border-radius: 50%; flex: 0 0 auto; }
+    .marg { padding: 11px 0 12px; border-bottom: 1px solid var(--rule); }
+    .plate { background: linear-gradient(150deg, oklch(0.30 0.020 62) 0%, oklch(0.20 0.014 62) 55%, oklch(0.15 0.010 62) 100%); position: relative; overflow: hidden; }
+    .plate .key { position: absolute; inset: 0; background: radial-gradient(ellipse 46% 62% at 28% 42%, oklch(0.58 0.075 62 / 0.55) 0%, transparent 68%); }
+    .plate .grain { position: absolute; inset: 0; opacity: 0.16; background-image: repeating-linear-gradient(0deg, oklch(1 0 0 / 0.10) 0 1px, transparent 1px 3px); }
+    .row { display: flex; align-items: baseline; gap: 8px; }
+    .kv { display: flex; align-items: baseline; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--rule); }
+    .kv .k { font-size: 11px; color: var(--ink3); width: 74px; flex: 0 0 auto; }
+    .kv .v { font-size: 11.5px; color: var(--ink2); flex-grow: 1; min-width: 0; }
+  </style>
+</helmet>
+
+<div style="width: 1040px; height: 820px; background: var(--paper); display: flex; flex-direction: column; overflow: hidden; font-size: 12px;">
+
+  <div style="flex: 0 0 auto; padding: 16px 28px 13px; border-bottom: 1px solid var(--rule2); display: flex; align-items: baseline; gap: 12px;">
+    <div style="font-family: var(--serif); font-size: 19px;">Recipe</div>
+    <div style="font-family: var(--serif); font-style: italic; font-size: 14px; color: var(--ink3);">a workflow, and what each part of it is for</div>
+    <div style="flex-grow: 1;"></div>
+    <span class="tok">minimax_h3_r2v.json &middot; 23 nodes</span>
+  </div>
+
+  <div style="flex-grow: 1; padding: 20px 28px; display: flex; flex-direction: column; min-height: 0; overflow: hidden;">
+
+    <div style="border: 1px dashed var(--rule2); background: var(--panel); padding: 15px 18px; display: flex; align-items: center; gap: 14px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--ink3)" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4M8 8l4-4 4 4M4 16v3h16v-3"/></svg>
+      <div style="flex-grow: 1;">
+        <div style="font-size: 12.5px; color: var(--ink2);">Drop a ComfyUI workflow &mdash; <b style="font-weight: 600;">saved in API format</b>.</div>
+        <div class="tok" style="display: block; margin-top: 3px;">The UI export won't run. In ComfyUI: Workflow &rsaquo; Export (API).</div>
+      </div>
+      <div class="chip on">minimax_h3_r2v.json</div>
+    </div>
+
+    <div style="display: flex; align-items: baseline; gap: 10px; margin: 20px 0 4px;">
+      <span class="lbl">What it found</span>
+      <span class="tok" style="color: var(--grn);">5 of 6 bound automatically</span>
+      <div style="flex-grow: 1;"></div>
+      <span class="tok">every row is editable</span>
+    </div>
+    <div class="tok" style="display: block; margin-bottom: 12px; line-height: 1.6;">
+      Matched on node type, not node number &mdash; so the turbo, 8-step and SLA variants of this graph all bind without touching anything.
+    </div>
+
+    <div style="border: 1px solid var(--rule); border-bottom: none;">
+      <div style="display: flex; padding: 8px 14px; background: var(--panel); border-bottom: 1px solid var(--rule);">
+        <span class="lbl" style="width: 132px;">Slot</span>
+        <span class="lbl" style="flex-grow: 1;">Node</span>
+        <span class="lbl" style="width: 168px;">Field</span>
+        <span class="lbl" style="width: 72px; text-align: right;">Status</span>
+      </div>
+
+      <div style="display: flex; align-items: center; padding: 9px 14px; border-bottom: 1px solid var(--rule);">
+        <span style="width: 132px; font-size: 11.5px; color: var(--ink); font-weight: 500;">Prompt</span>
+        <span style="flex-grow: 1;" class="tok">23 &middot; MiniMaxH3ReferenceToVideo</span>
+        <span class="tok" style="width: 168px; color: var(--ink2);">prompt</span>
+        <span style="width: 72px; text-align: right;"><span class="tok" style="color: var(--grn);">bound</span></span>
+      </div>
+
+      <div style="display: flex; align-items: center; padding: 9px 14px; border-bottom: 1px solid var(--rule);">
+        <span style="width: 132px; font-size: 11.5px; color: var(--ink); font-weight: 500;">Plates</span>
+        <span style="flex-grow: 1;" class="tok">23 &middot; autogrow group</span>
+        <span style="width: 168px;" class="tok">ref_images.ref_image_<span style="color: var(--ox);">N</span></span>
+        <span style="width: 72px; text-align: right;"><span class="tok" style="color: var(--grn);">bound</span></span>
+      </div>
+
+      <div style="display: flex; align-items: center; padding: 9px 14px; border-bottom: 1px solid var(--rule);">
+        <span style="width: 132px; font-size: 11.5px; color: var(--ink); font-weight: 500;">Geometry</span>
+        <span style="flex-grow: 1;" class="tok">23 &middot; MiniMaxH3ReferenceToVideo</span>
+        <span style="width: 168px;" class="tok">width, height, length</span>
+        <span style="width: 72px; text-align: right;"><span class="tok" style="color: var(--grn);">bound</span></span>
+      </div>
+
+      <div style="display: flex; align-items: center; padding: 9px 14px; border-bottom: 1px solid var(--rule);">
+        <span style="width: 132px; font-size: 11.5px; color: var(--ink); font-weight: 500;">Seed</span>
+        <span style="flex-grow: 1;" class="tok">46 &middot; RandomNoise</span>
+        <span style="width: 168px;" class="tok">noise_seed</span>
+        <span style="width: 72px; text-align: right;"><span class="tok" style="color: var(--grn);">bound</span></span>
+      </div>
+
+      <div style="display: flex; align-items: center; padding: 9px 14px; border-bottom: 1px solid var(--rule);">
+        <span style="width: 132px; font-size: 11.5px; color: var(--ink); font-weight: 500;">Output</span>
+        <span style="flex-grow: 1;" class="tok">47 &middot; SaveVideo</span>
+        <span style="width: 168px;" class="tok">&mdash;</span>
+        <span style="width: 72px; text-align: right;"><span class="tok" style="color: var(--grn);">bound</span></span>
+      </div>
+
+      <div style="display: flex; align-items: center; padding: 9px 14px; border-bottom: 1px solid var(--rule); background: var(--amb-soft);">
+        <span style="width: 132px; font-size: 11.5px; color: var(--ink); font-weight: 500;">Steps</span>
+        <span class="tok" style="flex-grow: 1; color: var(--ink3);">two candidates &mdash; 57 BasicScheduler, 60 TurboSampler</span>
+        <span style="width: 168px;"><span class="chip" style="padding: 2px 8px; font-size: 10.5px;">57 &middot; steps &nbsp;&or;</span></span>
+        <span style="width: 72px; text-align: right;"><span class="tok" style="color: var(--amb);">pick one</span></span>
+      </div>
+    </div>
+
+    <div style="display: flex; align-items: baseline; gap: 10px; margin: 22px 0 10px;">
+      <span class="lbl">Left alone</span>
+      <span class="tok">loaders, LoRA, attention, sigma shift, VAE &mdash; 17 nodes</span>
+    </div>
+    <div style="font-size: 11.5px; color: var(--ink2); line-height: 1.65; max-width: 700px;">
+      The studio writes only the slots above and sends the rest of the graph back exactly as it arrived. Your recipe stays the thing you tuned in ComfyUI &mdash; the model, the LoRA stack, the step count, the sampler.
+    </div>
+
+    <div style="flex-grow: 1;"></div>
+
+    <div style="padding-top: 15px; border-top: 1px solid var(--rule); display: flex; align-items: center; gap: 10px;">
+      <div class="btn pri">Save as recipe</div>
+      <input type="text" value="minimax_h3_r2v &middot; turbo 4-step" style="width: 250px;">
+      <div style="flex-grow: 1;"></div>
+      <span class="tok">stored in this browser, with the graph</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

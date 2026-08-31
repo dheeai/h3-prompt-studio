@@ -4,6 +4,7 @@
       "dir": "h3-direction",
       "files": [
         "SKILL.md",
+        "references/action-continuity.md",
         "references/dramaturgy.md",
         "references/rule-of-six.md",
         "references/scene-analysis.md",
@@ -26,6 +27,12 @@
     },
     {
       "dir": "h3-acting",
+      "files": [
+        "SKILL.md"
+      ]
+    },
+    {
+      "dir": "h3-two-hander",
       "files": [
         "SKILL.md"
       ]

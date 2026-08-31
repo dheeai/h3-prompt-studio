@@ -49,6 +49,9 @@ contract**. This skill never overrides it. A direction sheet is input to it.
   pass. Use it to *grade* a direction sheet or a render.
 - `references/visual-structure.md` — Bruce Block's contrast & affinity: how to
   make the picture's intensity graph the story's intensity.
+- `references/action-continuity.md` — cutting on action: how to make one
+  physical movement survive a cut instead of being rendered twice. Read it
+  whenever a single action crosses a framing change.
 - `references/scene-analysis.md` — the eight questions that survive from Peter
   Marshall's 30-column breakdown, plus Mamet's uninflected-image rule.
 
@@ -301,7 +304,9 @@ The deliverable. Emit this **before** any prompt prose. One sheet per clip.
   - Micro-action: <emotion on a body>
   - Sound anchor: <the audible hook — H3 synthesises this>
   - Light/color:  <per the escalation curve>
-  - Ends on:      <the state at the cut>
+  - Ends on:      <the state at the cut — position, phase, speed, screen direction>
+  - Next opens:   <that SAME state from the next framing, when the cut is on
+                   action; leave blank when the cut is meant to be felt>
 
 ### Gates
 - [ ] Scene formula complete (all five named)
@@ -310,6 +315,8 @@ The deliverable. Emit this **before** any prompt prose. One sheet per clip.
 - [ ] Every camera move has a named reason, start and stop
 - [ ] Geometry readable in one sentence
 - [ ] Five anchors named, exactly five
+- [ ] Every cut that carries one continuous movement has `Next opens` matching
+      the previous `Ends on` word for word — see `references/action-continuity.md`
 - [ ] No banned words
 - [ ] Marker count within the register's cut budget
 - [ ] Final beat has an explicit freeze

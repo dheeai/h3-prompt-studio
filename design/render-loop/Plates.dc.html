@@ -1,0 +1,143 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap">
+  <style>
+    :root {
+      --paper: oklch(0.973 0.008 88); --panel: oklch(0.946 0.011 85); --sunk: oklch(0.930 0.013 85);
+      --ink: oklch(0.255 0.016 62); --ink2: oklch(0.435 0.014 62); --ink3: oklch(0.605 0.013 65);
+      --rule: oklch(0.875 0.012 78); --rule2: oklch(0.815 0.016 78);
+      --ox: oklch(0.470 0.135 27); --ox-soft: oklch(0.930 0.030 30);
+      --grn: oklch(0.480 0.090 152); --grn-soft: oklch(0.930 0.045 152);
+      --amb: oklch(0.560 0.110 72); --amb-soft: oklch(0.940 0.050 80);
+      --kw-picture: oklch(0.45 0.115 252); --kw-picture-bg: oklch(0.938 0.030 252);
+      --serif: "Instrument Serif", Georgia, serif;
+      --sans: "IBM Plex Sans", system-ui, sans-serif;
+      --mono: "IBM Plex Mono", ui-monospace, monospace;
+    }
+    body { margin: 0; font-family: var(--sans); background: var(--paper); color: var(--ink); -webkit-font-smoothing: antialiased; }
+    a { color: var(--ox); text-decoration: none; } a:hover { color: var(--ink); text-decoration: underline; }
+    .lbl { font-size: 9.5px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink3); }
+    .tok { font-family: var(--mono); font-size: 10.5px; color: var(--ink3); font-variant-numeric: tabular-nums; }
+    .chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; font-size: 11px; border: 1px solid var(--rule2); background: var(--paper); color: var(--ink2); white-space: nowrap; }
+    .chip.on { border-color: var(--ox); background: var(--ox-soft); color: var(--ox); font-weight: 500; }
+    .chip.off { color: var(--ink3); border-style: dashed; background: transparent; }
+    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 13px; font-size: 11.5px; font-weight: 500; border: 1px solid var(--rule2); background: var(--paper); color: var(--ink2); white-space: nowrap; }
+    .btn.pri { background: var(--ox); border-color: var(--ox); color: oklch(0.98 0.01 30); font-weight: 600; }
+    .btn.sm { padding: 3px 9px; font-size: 10.5px; }
+    .btn.ghost { border-color: transparent; background: transparent; }
+    .dot { width: 5px; height: 5px; border-radius: 50%; flex: 0 0 auto; }
+    .marg { padding: 11px 0 12px; border-bottom: 1px solid var(--rule); }
+    .plate { background: linear-gradient(150deg, oklch(0.30 0.020 62) 0%, oklch(0.20 0.014 62) 55%, oklch(0.15 0.010 62) 100%); position: relative; overflow: hidden; }
+    .plate .key { position: absolute; inset: 0; background: radial-gradient(ellipse 46% 62% at 28% 42%, oklch(0.58 0.075 62 / 0.55) 0%, transparent 68%); }
+    .plate .grain { position: absolute; inset: 0; opacity: 0.16; background-image: repeating-linear-gradient(0deg, oklch(1 0 0 / 0.10) 0 1px, transparent 1px 3px); }
+    .row { display: flex; align-items: baseline; gap: 8px; }
+    .kv { display: flex; align-items: baseline; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--rule); }
+    .kv .k { font-size: 11px; color: var(--ink3); width: 74px; flex: 0 0 auto; }
+    .kv .v { font-size: 11.5px; color: var(--ink2); flex-grow: 1; min-width: 0; }
+  </style>
+</helmet>
+
+<div style="width: 900px; height: 760px; background: var(--paper); display: flex; flex-direction: column; overflow: hidden; font-size: 12px;">
+
+  <div style="flex: 0 0 auto; padding: 16px 26px 13px; border-bottom: 1px solid var(--rule2); display: flex; align-items: baseline; gap: 12px;">
+    <div style="font-family: var(--serif); font-size: 19px;">Plates</div>
+    <div style="font-family: var(--serif); font-style: italic; font-size: 14px; color: var(--ink3);">every reference gets a job, or it drifts</div>
+    <div style="flex-grow: 1;"></div>
+    <span class="tok">3 of 9 &middot; H3 caps at nine</span>
+  </div>
+
+  <div style="flex-grow: 1; padding: 18px 26px; display: flex; flex-direction: column; min-height: 0; overflow: hidden;">
+
+    <div style="font-size: 11.5px; color: var(--ink2); line-height: 1.65; max-width: 640px; margin-bottom: 18px;">
+      The binding clause is built from this table, in this order, and prepended to the prompt &mdash; the model is never handed an unexplained image. Naming the job measurably beats not naming it.
+    </div>
+
+    <!-- plate 1 -->
+    <div style="display: flex; gap: 14px; padding-bottom: 15px; border-bottom: 1px solid var(--rule);">
+      <div class="plate" style="width: 148px; height: 84px; flex: 0 0 auto; border: 2px solid var(--kw-picture);">
+        <div class="key" style="background: radial-gradient(ellipse 40% 56% at 50% 44%, oklch(0.54 0.062 62 / 0.50) 0%, transparent 72%);"></div><div class="grain"></div>
+      </div>
+      <div style="flex-grow: 1; min-width: 0;">
+        <div style="display: flex; align-items: baseline; gap: 9px;">
+          <span class="tok" style="color: var(--kw-picture); background: var(--kw-picture-bg); padding: 1px 5px;">&lt;Picture 1&gt;</span>
+          <span style="font-size: 12.5px; color: var(--ink); font-weight: 500;">clip 3 &middot; last frame</span>
+          <div style="flex-grow: 1;"></div>
+          <span class="chip on" style="padding: 2px 8px; font-size: 10px;">replaced each clip</span>
+        </div>
+        <div style="border: 1px solid var(--rule2); background: var(--paper); padding: 8px 10px; margin-top: 8px;">
+          <span style="font-size: 11.5px; color: var(--ink2); line-height: 1.55;">Use it for the room, the light and where she is standing. Do not take her expression from it.</span>
+        </div>
+        <div class="tok" style="display: block; margin-top: 6px;">written by Continue &middot; 1344&times;768 &middot; uploaded 14:22</div>
+      </div>
+    </div>
+
+    <!-- plate 2 -->
+    <div style="display: flex; gap: 14px; padding: 15px 0; border-bottom: 1px solid var(--rule);">
+      <div class="plate" style="width: 148px; height: 84px; flex: 0 0 auto; border: 1px solid var(--rule2);">
+        <div class="key" style="background: radial-gradient(ellipse 52% 64% at 46% 36%, oklch(0.60 0.058 62 / 0.46) 0%, transparent 70%);"></div><div class="grain"></div>
+      </div>
+      <div style="flex-grow: 1; min-width: 0;">
+        <div style="display: flex; align-items: baseline; gap: 9px;">
+          <span class="tok" style="color: var(--kw-picture); background: var(--kw-picture-bg); padding: 1px 5px;">&lt;Picture 2&gt;</span>
+          <span style="font-size: 12.5px; color: var(--ink); font-weight: 500;">Lira &middot; identity plate</span>
+          <div style="flex-grow: 1;"></div>
+          <span class="chip" style="padding: 2px 8px; font-size: 10px;">carried, every clip</span>
+        </div>
+        <div style="border: 1px solid var(--rule2); background: var(--paper); padding: 8px 10px; margin-top: 8px;">
+          <span style="font-size: 11.5px; color: var(--ink2); line-height: 1.55;">Use it for face and wardrobe only. Ignore its background and its lighting.</span>
+        </div>
+        <div class="tok" style="display: block; margin-top: 6px;">uploaded once &middot; held across all four clips</div>
+      </div>
+    </div>
+
+    <!-- plate 3 -->
+    <div style="display: flex; gap: 14px; padding: 15px 0; border-bottom: 1px solid var(--rule);">
+      <div class="plate" style="width: 148px; height: 84px; flex: 0 0 auto; border: 1px solid var(--rule2);">
+        <div class="key" style="background: radial-gradient(ellipse 34% 42% at 56% 58%, oklch(0.62 0.090 72 / 0.52) 0%, transparent 66%);"></div><div class="grain"></div>
+      </div>
+      <div style="flex-grow: 1; min-width: 0;">
+        <div style="display: flex; align-items: baseline; gap: 9px;">
+          <span class="tok" style="color: var(--kw-picture); background: var(--kw-picture-bg); padding: 1px 5px;">&lt;Picture 3&gt;</span>
+          <span style="font-size: 12.5px; color: var(--ink); font-weight: 500;">the fragment</span>
+          <div style="flex-grow: 1;"></div>
+          <span class="chip" style="padding: 2px 8px; font-size: 10px;">carried, every clip</span>
+        </div>
+        <div style="border: 1px solid var(--rule2); background: var(--paper); padding: 8px 10px; margin-top: 8px;">
+          <span style="font-size: 11.5px; color: var(--ink2); line-height: 1.55;">Use it for the object's shape and the way it holds light. It is the size of a hand.</span>
+        </div>
+        <div class="tok" style="display: block; margin-top: 6px;">uploaded once &middot; held across all four clips</div>
+      </div>
+    </div>
+
+    <div style="display: flex; gap: 14px; padding: 15px 0;">
+      <div style="width: 148px; height: 84px; flex: 0 0 auto; border: 1px dashed var(--rule2); display: flex; align-items: center; justify-content: center; gap: 7px;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink3)" stroke-width="1.4" stroke-linecap="round"><path d="M12 6v12M6 12h12"/></svg>
+        <span style="font-size: 11px; color: var(--ink3);">drop</span>
+      </div>
+      <div style="flex-grow: 1; padding-top: 4px;">
+        <div style="font-size: 11.5px; color: var(--ink3); line-height: 1.6; max-width: 520px;">
+          Anything dropped here is uploaded to ComfyUI once and reused by id. A plate with no job written is refused &mdash; an unexplained reference is the failure this table exists to prevent.
+        </div>
+      </div>
+    </div>
+
+    <div style="flex-grow: 1;"></div>
+
+    <div style="padding-top: 14px; border-top: 1px solid var(--rule); display: flex; align-items: center; gap: 10px;">
+      <span class="lbl">Order is the numbering</span>
+      <span class="tok">drag to reorder &mdash; the clause renumbers with it</span>
+      <div style="flex-grow: 1;"></div>
+      <div class="btn">Done</div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

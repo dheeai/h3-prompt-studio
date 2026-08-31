@@ -1,0 +1,179 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap">
+  <style>
+    :root {
+      --paper: oklch(0.973 0.008 88); --panel: oklch(0.946 0.011 85); --sunk: oklch(0.930 0.013 85);
+      --ink: oklch(0.255 0.016 62); --ink2: oklch(0.435 0.014 62); --ink3: oklch(0.605 0.013 65);
+      --rule: oklch(0.875 0.012 78); --rule2: oklch(0.815 0.016 78);
+      --ox: oklch(0.470 0.135 27); --ox-soft: oklch(0.930 0.030 30);
+      --grn: oklch(0.480 0.090 152); --grn-soft: oklch(0.930 0.045 152);
+      --amb: oklch(0.560 0.110 72); --amb-soft: oklch(0.940 0.050 80);
+      --kw-picture: oklch(0.45 0.115 252); --kw-picture-bg: oklch(0.938 0.030 252);
+      --serif: "Instrument Serif", Georgia, serif;
+      --sans: "IBM Plex Sans", system-ui, sans-serif;
+      --mono: "IBM Plex Mono", ui-monospace, monospace;
+    }
+    body { margin: 0; font-family: var(--sans); background: var(--paper); color: var(--ink); -webkit-font-smoothing: antialiased; }
+    a { color: var(--ox); text-decoration: none; } a:hover { color: var(--ink); text-decoration: underline; }
+    .lbl { font-size: 9.5px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink3); }
+    .tok { font-family: var(--mono); font-size: 10.5px; color: var(--ink3); font-variant-numeric: tabular-nums; }
+    .chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; font-size: 11px; border: 1px solid var(--rule2); background: var(--paper); color: var(--ink2); white-space: nowrap; }
+    .chip.on { border-color: var(--ox); background: var(--ox-soft); color: var(--ox); font-weight: 500; }
+    .chip.off { color: var(--ink3); border-style: dashed; background: transparent; }
+    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 13px; font-size: 11.5px; font-weight: 500; border: 1px solid var(--rule2); background: var(--paper); color: var(--ink2); white-space: nowrap; }
+    .btn.pri { background: var(--ox); border-color: var(--ox); color: oklch(0.98 0.01 30); font-weight: 600; }
+    .btn.sm { padding: 3px 9px; font-size: 10.5px; }
+    .btn.ghost { border-color: transparent; background: transparent; }
+    .dot { width: 5px; height: 5px; border-radius: 50%; flex: 0 0 auto; }
+    .marg { padding: 11px 0 12px; border-bottom: 1px solid var(--rule); }
+    .plate { background: linear-gradient(150deg, oklch(0.30 0.020 62) 0%, oklch(0.20 0.014 62) 55%, oklch(0.15 0.010 62) 100%); position: relative; overflow: hidden; }
+    .plate .key { position: absolute; inset: 0; background: radial-gradient(ellipse 46% 62% at 28% 42%, oklch(0.58 0.075 62 / 0.55) 0%, transparent 68%); }
+    .plate .grain { position: absolute; inset: 0; opacity: 0.16; background-image: repeating-linear-gradient(0deg, oklch(1 0 0 / 0.10) 0 1px, transparent 1px 3px); }
+    .row { display: flex; align-items: baseline; gap: 8px; }
+    .kv { display: flex; align-items: baseline; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--rule); }
+    .kv .k { font-size: 11px; color: var(--ink3); width: 74px; flex: 0 0 auto; }
+    .kv .v { font-size: 11.5px; color: var(--ink2); flex-grow: 1; min-width: 0; }
+  </style>
+</helmet>
+
+<div style="width: 1440px; height: 760px; background: var(--paper); overflow: hidden; font-size: 12px; position: relative;">
+
+  <!-- header -->
+  <div style="position: absolute; left: 40px; top: 22px; right: 40px; display: flex; align-items: baseline; gap: 12px;">
+    <div style="font-family: var(--serif); font-size: 19px;">The loop</div>
+    <div style="font-family: var(--serif); font-style: italic; font-size: 14px; color: var(--ink3);">who calls what, in order &mdash; there is no server of ours anywhere in it</div>
+  </div>
+
+  <!-- lanes -->
+  <div style="position: absolute; left: 40px; top: 66px; width: 250px;"><span class="lbl">Phase</span></div>
+  <div style="position: absolute; left: 258px; top: 62px; width: 190px; text-align: center;">
+    <div style="font-size: 12.5px; color: var(--ink); font-weight: 600;">The studio</div><div class="tok">your browser tab</div>
+  </div>
+  <div style="position: absolute; left: 706px; top: 62px; width: 190px; text-align: center;">
+    <div style="font-size: 12.5px; color: var(--ink); font-weight: 600;">Your model</div><div class="tok">ollama &middot; llama.cpp</div>
+  </div>
+  <div style="position: absolute; left: 1116px; top: 62px; width: 190px; text-align: center;">
+    <div style="font-size: 12.5px; color: var(--ink); font-weight: 600;">Your ComfyUI</div><div class="tok">the 5090</div>
+  </div>
+
+  <div style="position: absolute; left: 352px; top: 108px; width: 1px; height: 566px; background: var(--rule2);"></div>
+  <div style="position: absolute; left: 800px; top: 108px; width: 1px; height: 566px; background: var(--rule2);"></div>
+  <div style="position: absolute; left: 1210px; top: 108px; width: 1px; height: 566px; background: var(--rule2);"></div>
+
+  <!-- phase brackets -->
+  <div style="position: absolute; left: 40px; top: 132px; width: 240px; padding-left: 13px; border-left: 2px solid var(--rule2); height: 96px;">
+    <div class="lbl">Draft &mdash; already built</div>
+    <div style="font-size: 11px; color: var(--ink3); line-height: 1.55; margin-top: 4px;">Direct, Draft, Critique, Revise. Your skills ride in front as a byte-stable cached block.</div>
+  </div>
+  <div style="position: absolute; left: 40px; top: 250px; width: 240px; padding-left: 13px; border-left: 2px solid var(--ox); height: 216px;">
+    <div class="lbl" style="color: var(--ox);">Render &mdash; new</div>
+    <div style="font-size: 11px; color: var(--ink3); line-height: 1.55; margin-top: 4px;">The graph you tuned in ComfyUI, with five slots written and every other node passed through untouched.</div>
+  </div>
+  <div style="position: absolute; left: 40px; top: 488px; width: 240px; padding-left: 13px; border-left: 2px solid var(--ox); height: 176px;">
+    <div class="lbl" style="color: var(--ox);">Continue &mdash; new</div>
+    <div style="font-size: 11px; color: var(--ink3); line-height: 1.55; margin-top: 4px;">The clip becomes the next clip's starting conditions &mdash; as a picture, and as a paragraph.</div>
+  </div>
+
+  <!-- row 1: studio -> model -->
+  <div style="position: absolute; left: 352px; top: 152px; width: 448px;">
+    <div style="font-size: 11.5px; color: var(--ink2); text-align: center; margin-bottom: 5px;">the stage template, your source, the film context</div>
+    <div style="height: 1px; background: var(--ink3); position: relative;">
+      <div style="position: absolute; right: -1px; top: -3.5px;"><svg width="8" height="8" viewBox="0 0 8 8"><path d="M0 0 8 4 0 8z" fill="var(--ink3)"/></svg></div>
+    </div>
+  </div>
+
+  <!-- row 2: model -> studio -->
+  <div style="position: absolute; left: 352px; top: 200px; width: 448px;">
+    <div style="font-size: 11.5px; color: var(--ink2); text-align: center; margin-bottom: 5px;">the H3 prompt, streamed</div>
+    <div style="height: 1px; background: var(--ink3); position: relative;">
+      <div style="position: absolute; left: -1px; top: -3.5px;"><svg width="8" height="8" viewBox="0 0 8 8"><path d="M8 0 0 4 8 8z" fill="var(--ink3)"/></svg></div>
+    </div>
+  </div>
+
+  <!-- row 3: plates -->
+  <div style="position: absolute; left: 352px; top: 270px; width: 858px;">
+    <div style="text-align: center; margin-bottom: 5px;"><span class="tok" style="color: var(--ox); font-weight: 500;">POST /upload/image</span> <span style="font-size: 11.5px; color: var(--ink2);">&mdash; each plate, once, then held by name</span></div>
+    <div style="height: 1px; background: var(--ox); position: relative;">
+      <div style="position: absolute; right: -1px; top: -3.5px;"><svg width="8" height="8" viewBox="0 0 8 8"><path d="M0 0 8 4 0 8z" fill="var(--ox)"/></svg></div>
+    </div>
+  </div>
+
+  <!-- row 4: prompt -->
+  <div style="position: absolute; left: 352px; top: 330px; width: 858px;">
+    <div style="text-align: center; margin-bottom: 5px;"><span class="tok" style="color: var(--ox); font-weight: 500;">POST /prompt</span> <span style="font-size: 11.5px; color: var(--ink2);">&mdash; your graph with prompt, plates, geometry and seed written in</span></div>
+    <div style="height: 1px; background: var(--ox); position: relative;">
+      <div style="position: absolute; right: -1px; top: -3.5px;"><svg width="8" height="8" viewBox="0 0 8 8"><path d="M0 0 8 4 0 8z" fill="var(--ox)"/></svg></div>
+    </div>
+  </div>
+
+  <!-- row 5: poll -->
+  <div style="position: absolute; left: 352px; top: 390px; width: 858px;">
+    <div style="text-align: center; margin-bottom: 5px;"><span class="tok" style="color: var(--ink3);">GET /history/{id}</span> <span style="font-size: 11.5px; color: var(--ink3);">&mdash; or the websocket, until it lands &middot; ~90s</span></div>
+    <div style="height: 0; border-top: 1px dashed var(--rule2); position: relative;">
+      <div style="position: absolute; right: -1px; top: -4px;"><svg width="8" height="8" viewBox="0 0 8 8"><path d="M0 0 8 4 0 8z" fill="var(--rule2)"/></svg></div>
+    </div>
+  </div>
+
+  <!-- row 6: view -->
+  <div style="position: absolute; left: 352px; top: 440px; width: 858px;">
+    <div style="text-align: center; margin-bottom: 5px;"><span class="tok" style="color: var(--ox); font-weight: 500;">GET /view</span> <span style="font-size: 11.5px; color: var(--ink2);">&mdash; the mp4, played straight from the box in a &lt;video&gt;</span></div>
+    <div style="height: 1px; background: var(--ox); position: relative;">
+      <div style="position: absolute; left: -1px; top: -3.5px;"><svg width="8" height="8" viewBox="0 0 8 8"><path d="M8 0 0 4 8 8z" fill="var(--ox)"/></svg></div>
+    </div>
+  </div>
+
+  <!-- row 7: self -->
+  <div style="position: absolute; left: 258px; top: 508px; width: 300px;">
+    <div style="border: 1px solid var(--rule2); background: var(--panel); padding: 7px 10px;">
+      <span style="font-size: 11.5px; color: var(--ink2);">last frame &rarr; canvas &rarr; PNG</span>
+      <div class="tok" style="display: block; margin-top: 2px;">in the page &mdash; no ffmpeg</div>
+    </div>
+  </div>
+
+  <!-- row 8: upload new picture 1 -->
+  <div style="position: absolute; left: 352px; top: 572px; width: 858px;">
+    <div style="text-align: center; margin-bottom: 5px;"><span class="tok" style="color: var(--ox); font-weight: 500;">POST /upload/image</span> <span style="font-size: 11.5px; color: var(--ink2);">&mdash; that frame, as the next clip's <span style="color: var(--kw-picture);">&lt;Picture 1&gt;</span></span></div>
+    <div style="height: 1px; background: var(--ox); position: relative;">
+      <div style="position: absolute; right: -1px; top: -3.5px;"><svg width="8" height="8" viewBox="0 0 8 8"><path d="M0 0 8 4 0 8z" fill="var(--ox)"/></svg></div>
+    </div>
+  </div>
+
+  <!-- row 9: back to model -->
+  <div style="position: absolute; left: 352px; top: 626px; width: 448px;">
+    <div style="font-size: 11.5px; color: var(--ink2); text-align: center; margin-bottom: 5px;">the hand-off, the advanced role, and your note</div>
+    <div style="height: 1px; background: var(--ink3); position: relative;">
+      <div style="position: absolute; right: -1px; top: -3.5px;"><svg width="8" height="8" viewBox="0 0 8 8"><path d="M0 0 8 4 0 8z" fill="var(--ink3)"/></svg></div>
+    </div>
+  </div>
+
+  <!-- the loop back -->
+  <div style="position: absolute; left: 296px; top: 156px; width: 1px; height: 486px; background: var(--ox);"></div>
+  <div style="position: absolute; left: 296px; top: 642px; width: 56px; height: 1px; background: var(--ox);"></div>
+  <div style="position: absolute; left: 296px; top: 152px;"><svg width="9" height="9" viewBox="0 0 8 8"><path d="M0 8 4 0 8 8z" fill="var(--ox)"/></svg></div>
+  <div style="position: absolute; left: 152px; top: 372px; width: 132px; text-align: right;">
+    <div style="font-family: var(--serif); font-style: italic; font-size: 15px; color: var(--ox); line-height: 1.35;">and round again, as clip 5</div>
+  </div>
+
+  <!-- footnote -->
+  <div style="position: absolute; left: 40px; top: 694px; right: 40px; padding-top: 12px; border-top: 1px solid var(--rule); display: flex; gap: 30px;">
+    <div style="max-width: 620px;">
+      <span class="lbl">What this does not do</span>
+      <div style="font-size: 11.5px; color: var(--ink2); line-height: 1.6; margin-top: 4px;">Continuity of <b style="font-weight: 600;">direction</b>, not of pixels. A last-frame plate holds the room; it does not weld the seam. Motion context and latent masking live in the renderer, and belong there.</div>
+    </div>
+    <div style="max-width: 480px;">
+      <span class="lbl">Why it stays in the browser</span>
+      <div style="font-size: 11.5px; color: var(--ink2); line-height: 1.6; margin-top: 4px;">Every call above is one the page can already make. Adding a backend would buy nothing here and cost the thing the studio is: open the file, it runs.</div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

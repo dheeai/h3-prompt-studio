@@ -1,0 +1,261 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap">
+  <style>
+    :root {
+      --paper: oklch(0.973 0.008 88); --panel: oklch(0.946 0.011 85); --sunk: oklch(0.930 0.013 85);
+      --ink: oklch(0.255 0.016 62); --ink2: oklch(0.435 0.014 62); --ink3: oklch(0.605 0.013 65);
+      --rule: oklch(0.875 0.012 78); --rule2: oklch(0.815 0.016 78);
+      --ox: oklch(0.470 0.135 27); --ox-soft: oklch(0.930 0.030 30);
+      --grn: oklch(0.480 0.090 152); --grn-soft: oklch(0.930 0.045 152);
+      --amb: oklch(0.560 0.110 72); --amb-soft: oklch(0.940 0.050 80);
+      --kw-picture: oklch(0.45 0.115 252); --kw-picture-bg: oklch(0.938 0.030 252);
+      --serif: "Instrument Serif", Georgia, serif;
+      --sans: "IBM Plex Sans", system-ui, sans-serif;
+      --mono: "IBM Plex Mono", ui-monospace, monospace;
+    }
+    body { margin: 0; font-family: var(--sans); background: var(--paper); color: var(--ink); -webkit-font-smoothing: antialiased; }
+    a { color: var(--ox); text-decoration: none; } a:hover { color: var(--ink); text-decoration: underline; }
+    .lbl { font-size: 9.5px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink3); }
+    .tok { font-family: var(--mono); font-size: 10.5px; color: var(--ink3); font-variant-numeric: tabular-nums; }
+    .chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; font-size: 11px; border: 1px solid var(--rule2); background: var(--paper); color: var(--ink2); white-space: nowrap; }
+    .chip.on { border-color: var(--ox); background: var(--ox-soft); color: var(--ox); font-weight: 500; }
+    .chip.off { color: var(--ink3); border-style: dashed; background: transparent; }
+    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 13px; font-size: 11.5px; font-weight: 500; border: 1px solid var(--rule2); background: var(--paper); color: var(--ink2); white-space: nowrap; }
+    .btn.pri { background: var(--ox); border-color: var(--ox); color: oklch(0.98 0.01 30); font-weight: 600; }
+    .btn.sm { padding: 3px 9px; font-size: 10.5px; }
+    .btn.ghost { border-color: transparent; background: transparent; }
+    .dot { width: 5px; height: 5px; border-radius: 50%; flex: 0 0 auto; }
+    .marg { padding: 11px 0 12px; border-bottom: 1px solid var(--rule); }
+    .plate { background: linear-gradient(150deg, oklch(0.30 0.020 62) 0%, oklch(0.20 0.014 62) 55%, oklch(0.15 0.010 62) 100%); position: relative; overflow: hidden; }
+    .plate .key { position: absolute; inset: 0; background: radial-gradient(ellipse 46% 62% at 28% 42%, oklch(0.58 0.075 62 / 0.55) 0%, transparent 68%); }
+    .plate .grain { position: absolute; inset: 0; opacity: 0.16; background-image: repeating-linear-gradient(0deg, oklch(1 0 0 / 0.10) 0 1px, transparent 1px 3px); }
+    .row { display: flex; align-items: baseline; gap: 8px; }
+    .kv { display: flex; align-items: baseline; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--rule); }
+    .kv .k { font-size: 11px; color: var(--ink3); width: 74px; flex: 0 0 auto; }
+    .kv .v { font-size: 11.5px; color: var(--ink2); flex-grow: 1; min-width: 0; }
+  </style>
+</helmet>
+
+<div style="width: 1440px; height: 900px; background: var(--paper); display: flex; flex-direction: column; overflow: hidden; font-size: 12px;">
+
+  <!-- masthead -->
+  <div style="flex: 0 0 auto; padding: 14px 30px 12px; border-bottom: 1px solid var(--rule2); display: flex; align-items: baseline; gap: 16px;">
+    <div style="font-family: var(--serif); font-size: 21px; letter-spacing: -0.005em;">H3 Prompt Studio</div>
+    <div style="font-family: var(--serif); font-style: italic; font-size: 15px; color: var(--ink3);">kishkindha-layer &middot; a film in four clips, so far</div>
+    <div style="flex-grow: 1;"></div>
+    <div style="display: flex; align-items: center; gap: 9px;">
+      <span class="tok">qwen3:32b &middot; ollama</span>
+      <span class="dot" style="background: var(--grn);"></span>
+      <span class="tok" style="margin-left: 6px;">5090 &middot; comfyui</span>
+      <span class="dot" style="background: var(--grn);"></span>
+      <div class="btn" style="margin-left: 6px;">Copy prompt</div>
+    </div>
+  </div>
+
+  <!-- loaded documents -->
+  <div style="flex: 0 0 auto; padding: 10px 30px; background: var(--panel); border-bottom: 1px solid var(--rule); display: flex; align-items: center; gap: 9px;">
+    <span class="lbl" style="margin-right: 3px;">Reading</span>
+    <div class="chip on">h3-direction <span class="tok" style="color: var(--ox); opacity: 0.8;">7.8k</span></div>
+    <div class="chip on">h3-prompting <span class="tok" style="color: var(--ox); opacity: 0.8;">8.6k</span></div>
+    <div class="chip on">acting &middot; lira <span class="tok" style="color: var(--ox); opacity: 0.8;">2.0k</span></div>
+    <div class="chip off">h3-shots</div>
+    <div style="flex-grow: 1;"></div>
+    <span class="tok">18.4k of 32k &middot; <span style="color: var(--grn);">cached</span></span>
+  </div>
+
+  <div style="flex-grow: 1; display: flex; min-height: 0;">
+
+    <!-- manuscript column -->
+    <div style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; border-right: 1px solid var(--rule);">
+
+      <div style="flex: 0 0 auto; padding: 13px 26px 0; display: flex; align-items: center;">
+        <span style="font-family: var(--serif); font-size: 14px; color: var(--ink2);">Direct</span>
+        <span style="width: 22px; height: 1px; background: var(--rule2); margin: 0 9px;"></span>
+        <span style="font-family: var(--serif); font-size: 14px; color: var(--ink2);">Draft</span>
+        <span style="width: 22px; height: 1px; background: var(--rule2); margin: 0 9px;"></span>
+        <span style="font-family: var(--serif); font-size: 14px; color: var(--ink2);">Critique</span>
+        <span style="width: 22px; height: 1px; background: var(--rule2); margin: 0 9px;"></span>
+        <span style="font-family: var(--serif); font-size: 14px; color: var(--ink2);">Revise</span>
+        <span style="width: 22px; height: 1px; background: var(--ox); margin: 0 9px;"></span>
+        <span style="font-family: var(--serif); font-size: 16px; color: var(--ox); border-bottom: 2px solid var(--ox); padding-bottom: 1px;">Render</span>
+        <div style="flex-grow: 1;"></div>
+        <span class="tok">clip 4 &middot; v6</span>
+      </div>
+
+      <div style="flex: 0 0 auto; padding: 18px 26px 14px;">
+        <div style="max-width: 560px; padding-left: 14px; border-left: 2px solid var(--rule2);">
+          <div style="font-family: var(--serif); font-size: 15.5px; line-height: 1.5; color: var(--ink2);">
+            Carried from clip 3 &mdash; she is mid-stride in the gantry bay, the fragment still on the floor behind her, unlit. She has not seen it.
+          </div>
+          <div class="tok" style="margin-top: 7px;">hand-off &middot; written by Continue, editable</div>
+        </div>
+      </div>
+
+      <div style="flex-grow: 1; min-height: 0; padding: 0 26px; overflow: hidden;">
+        <div style="border-top: 1px solid var(--rule); padding-top: 14px;">
+          <div style="display: flex; align-items: baseline; gap: 10px; margin-bottom: 11px;">
+            <span class="lbl">Ref2VA &middot; 7.3s &middot; 1344&times;768 &middot; 175f</span>
+            <div style="flex-grow: 1;"></div>
+            <span class="tok">seed 42 &middot; locked</span>
+          </div>
+          <pre style="margin: 0; font-family: var(--mono); font-size: 11.6px; line-height: 1.66; color: var(--ink2); white-space: pre-wrap; max-width: 620px;"><span style="color: var(--ox); font-weight: 500;">reference_binding</span>
+  <span style="background: var(--kw-picture-bg); color: var(--kw-picture); padding: 0 4px;">&lt;Picture 1&gt;</span> last frame of clip 3. Use it for the room,
+               the light, and where she is standing.
+  <span style="background: var(--kw-picture-bg); color: var(--kw-picture); padding: 0 4px;">&lt;Picture 2&gt;</span> Lira. Use it for face and wardrobe only.
+
+<span style="color: var(--ox); font-weight: 500;">integrated_multimodal_description</span>
+  <span style="color: var(--ink);">0.0&ndash;3.4s</span>  She is already walking when we join her. Locked
+             off, wide. She passes the fragment without
+             looking down. Nothing else in frame moves.
+  <span style="color: var(--ink);">3.4&ndash;7.3s</span>  CUT. ECU, floor. The fragment sits where she
+             left it and begins, very slowly, to dull.
+
+<span style="color: var(--ox); font-weight: 500;">overall_soundscape</span>
+  Cold hangar room tone, 40 Hz floor. Her steps recede
+  and stop at 3.1s. One metal tick at 5.4s, close.
+
+<span style="color: var(--ox); font-weight: 500;">non_diegetic_music</span>  <span style="background: var(--grn-soft); color: var(--grn); padding: 0 5px;">N/A</span></pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- the clip -->
+    <div style="width: 430px; flex: 0 0 auto; display: flex; flex-direction: column; border-right: 1px solid var(--rule); min-height: 0;">
+      <div style="flex: 0 0 auto; padding: 13px 22px 0; display: flex; align-items: baseline; gap: 9px;">
+        <span class="lbl">Clip 4</span>
+        <span class="tok" style="color: var(--grn);">landed 14:22</span>
+        <div style="flex-grow: 1;"></div>
+        <span class="tok">96s to render</span>
+      </div>
+
+      <div style="flex: 0 0 auto; padding: 11px 22px 0;">
+        <div class="plate" style="width: 386px; height: 217px; border: 1px solid var(--rule2);">
+          <div class="key"></div>
+          <div class="grain"></div>
+          <div style="position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);">
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="oklch(0.97 0.01 88 / 0.82)" stroke-width="1.2" stroke-linejoin="round"><path d="M9 7.5 17 12l-8 4.5V7.5z"/></svg>
+          </div>
+          <div style="position: absolute; left: 10px; bottom: 8px;"><span class="tok" style="color: oklch(0.90 0.01 88 / 0.72);">1344&times;768 &middot; 24fps</span></div>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 10px; margin-top: 9px;">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--ink2)" stroke-width="1.6" stroke-linejoin="round"><path d="M9 7.5 17 12l-8 4.5V7.5z"/></svg>
+          <div style="flex-grow: 1; height: 2px; background: var(--rule2); position: relative;">
+            <div style="position: absolute; left: 0; top: 0; height: 2px; width: 42%; background: var(--ox);"></div>
+            <div style="position: absolute; left: 42%; top: -2px; width: 2px; height: 6px; background: var(--ox);"></div>
+          </div>
+          <span class="tok">03.1 / 07.3</span>
+        </div>
+      </div>
+
+      <div style="flex: 0 0 auto; padding: 13px 22px 0;">
+        <div style="border-top: 1px solid var(--rule); padding-top: 13px;">
+          <div class="lbl" style="margin-bottom: 8px;">Direct the next one</div>
+          <div style="border: 1px solid var(--rule2); background: var(--paper); padding: 10px 11px; min-height: 76px;">
+            <div style="font-family: var(--serif); font-style: italic; font-size: 15px; line-height: 1.5; color: var(--ink3);">
+              Good, but she reads as calm. Have her hesitate at the door instead &mdash; one beat, then leave anyway. Keep the fragment where it is.
+            </div>
+          </div>
+          <div style="display: flex; gap: 8px; margin-top: 10px;">
+            <div class="btn pri" style="flex-grow: 1; justify-content: center;">Continue from here</div>
+            <div class="btn">Branch</div>
+          </div>
+          <div class="tok" style="margin-top: 8px; line-height: 1.5; display: block;">Takes the last frame as <span style="color: var(--kw-picture);">&lt;Picture 1&gt;</span>, writes the hand-off, then Direct &rarr; Draft.</div>
+        </div>
+      </div>
+      <div style="flex-grow: 1;"></div>
+    </div>
+
+    <!-- render margin -->
+    <div style="width: 306px; flex: 0 0 auto; padding: 14px 22px; background: var(--panel); display: flex; flex-direction: column; min-height: 0;">
+      <div class="lbl" style="margin-bottom: 4px;">Render</div>
+
+      <div class="kv"><span class="k">Recipe</span><span class="v">minimax_h3_r2v <span class="tok">turbo &middot; 4 step</span></span></div>
+      <div class="kv"><span class="k">Endpoint</span><span class="v" style="display: flex; align-items: center; gap: 6px;">5090 &middot; comfyui <span class="dot" style="background: var(--grn);"></span></span></div>
+      <div class="kv"><span class="k">Plates</span><span class="v">2 bound <span class="tok">of 9</span></span></div>
+      <div class="kv"><span class="k">Seed</span><span class="v">42 <span class="tok">locked across clips</span></span></div>
+      <div class="kv" style="border-bottom: none;"><span class="k">Length</span><span class="v">175f <span class="tok">7.3s &middot; on the 17k+5 grid</span></span></div>
+
+      <div class="lbl" style="margin: 16px 0 7px;">Queue</div>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="dot" style="background: var(--grn);"></span>
+          <span style="font-size: 11.5px; color: var(--ink2); flex-grow: 1;">clip 4</span>
+          <span class="tok">96s</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="dot" style="background: var(--grn);"></span>
+          <span style="font-size: 11.5px; color: var(--ink2); flex-grow: 1;">clip 3</span>
+          <span class="tok">94s</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="dot" style="background: var(--rule2);"></span>
+          <span style="font-size: 11.5px; color: var(--ink3); flex-grow: 1;">idle</span>
+        </div>
+      </div>
+
+      <div style="flex-grow: 1;"></div>
+      <div style="padding-top: 12px; border-top: 1px solid var(--rule); display: flex; gap: 8px;">
+        <div class="btn" style="flex-grow: 1; justify-content: center;">Recipe</div>
+        <div class="btn" style="flex-grow: 1; justify-content: center;">Plates</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- the film -->
+  <div style="flex: 0 0 auto; height: 150px; border-top: 1px solid var(--rule2); background: var(--panel); padding: 11px 30px 0; display: flex; flex-direction: column;">
+    <div style="display: flex; align-items: baseline; gap: 10px; margin-bottom: 9px;">
+      <span class="lbl">The film</span>
+      <span class="tok">4 clips &middot; 27.4s delivered</span>
+      <div style="flex-grow: 1;"></div>
+      <span class="tok">seed 42 throughout &middot; plates carried</span>
+    </div>
+    <div style="display: flex; gap: 12px; align-items: flex-start;">
+
+      <div style="width: 152px;">
+        <div class="plate" style="height: 66px; border: 1px solid var(--rule2);"><div class="key" style="background: radial-gradient(ellipse 50% 60% at 62% 38%, oklch(0.58 0.075 62 / 0.42) 0%, transparent 70%);"></div><div class="grain"></div></div>
+        <div class="row" style="margin-top: 6px;"><span class="tok" style="color: var(--ink2);">1</span><span style="font-size: 11px; color: var(--ink3);">opening</span><div style="flex-grow: 1;"></div><span class="tok">6.9s</span></div>
+      </div>
+
+      <div style="width: 152px;">
+        <div class="plate" style="height: 66px; border: 1px solid var(--rule2);"><div class="key" style="background: radial-gradient(ellipse 44% 58% at 34% 52%, oklch(0.56 0.070 62 / 0.46) 0%, transparent 70%);"></div><div class="grain"></div></div>
+        <div class="row" style="margin-top: 6px;"><span class="tok" style="color: var(--ink2);">2</span><span style="font-size: 11px; color: var(--ink3);">rising</span><div style="flex-grow: 1;"></div><span class="tok">6.4s</span></div>
+      </div>
+
+      <div style="width: 152px;">
+        <div class="plate" style="height: 66px; border: 1px solid var(--rule2);"><div class="key" style="background: radial-gradient(ellipse 40% 56% at 50% 44%, oklch(0.54 0.062 62 / 0.44) 0%, transparent 72%);"></div><div class="grain"></div></div>
+        <div class="row" style="margin-top: 6px;"><span class="tok" style="color: var(--ink2);">3</span><span style="font-size: 11px; color: var(--ink3);">rising</span><div style="flex-grow: 1;"></div><span class="chip" style="padding: 1px 6px; font-size: 9.5px; color: var(--ink3);">2 takes</span></div>
+      </div>
+
+      <div style="width: 152px;">
+        <div class="plate" style="height: 66px; border: 2px solid var(--ox);"><div class="key"></div><div class="grain"></div></div>
+        <div class="row" style="margin-top: 6px;"><span class="tok" style="color: var(--ox);">4</span><span style="font-size: 11px; color: var(--ox); font-weight: 500;">turn</span><div style="flex-grow: 1;"></div><span class="tok" style="color: var(--ox);">7.3s</span></div>
+      </div>
+
+      <div style="width: 152px;">
+        <div style="height: 66px; border: 1px dashed var(--rule2); display: flex; align-items: center; justify-content: center; gap: 7px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ink3)" stroke-width="1.4" stroke-linecap="round"><path d="M12 6v12M6 12h12"/></svg>
+          <span style="font-size: 11px; color: var(--ink3);">continue</span>
+        </div>
+        <div class="row" style="margin-top: 6px;"><span style="font-size: 11px; color: var(--ink3);">falling &middot; closing</span></div>
+      </div>
+
+      <div style="flex-grow: 1;"></div>
+      <div style="width: 210px; padding-left: 16px; border-left: 1px solid var(--rule);">
+        <div class="lbl" style="margin-bottom: 6px;">Spine</div>
+        <div style="font-family: var(--serif); font-style: italic; font-size: 14px; line-height: 1.45; color: var(--ink2);">She keeps choosing not to look, until the cost of not looking arrives.</div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

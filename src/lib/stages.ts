@@ -2,6 +2,9 @@ import type { ClipRole, FilmContext, StageId } from './types'
 
 export const STAGE_ORDER: StageId[] = ['direct', 'draft', 'critique', 'revise']
 
+/** Stages that are actions rather than steps in the chain. */
+export const OFF_CHAIN: StageId[] = ['freeform', 'handoff']
+
 /**
  * What each pass consumes and produces.
  *
@@ -36,6 +39,12 @@ export const STAGE_INFO: Record<StageId, { produces: string; needs: 'story' | 'a
     needs: 'prompt',
     blurb: 'Applies one instruction you type, and nothing else.',
   },
+  handoff: {
+    produces: 'the state the next clip inherits',
+    needs: 'prompt',
+    blurb:
+      'Reads the clip that just landed and writes what the next one opens on — the frame, what is unresolved, and what must not be re-established. Writes no prompt.',
+  },
 }
 
 export const STAGE_LABEL: Record<StageId, string> = {
@@ -44,6 +53,7 @@ export const STAGE_LABEL: Record<StageId, string> = {
   critique: 'Critique',
   revise: 'Revise',
   freeform: 'Note',
+  handoff: 'Hand-off',
 }
 
 /**
@@ -175,6 +185,33 @@ DETERMINISTIC CHECK
 PROMPT
 {{current}}`,
 
+  handoff: `The clip below has been generated and watched. Your job is to state
+what the NEXT clip inherits from it — nothing else.
+
+Read the prompt as a record of what is now on screen. Write the hand-off from
+the END of it: the final state, not a summary of the whole clip.
+
+Be concrete and physical. Where the characters are, what they are doing, what
+the light is, what is in shot, what has changed. This paragraph will be handed
+to the director of the next clip as the state the audience arrives in, so an
+abstraction ("tension lingers") is useless and a position ("she is three metres
+past it, facing away, and has not seen it") is not.
+
+Do not write the next clip. Do not invent events. Do not describe the previous
+clip's beginning or middle.
+
+Output exactly three blocks, in this order, and nothing outside them:
+
+<<<PRECEDES>>>
+one paragraph: the state the next clip opens on
+<<<FOLLOWS>>>
+one line: what the next clip has to be able to do from here
+<<<OPEN>>>
+one line: what is still unresolved, and therefore still available
+
+PROMPT OF THE CLIP THAT JUST LANDED
+{{current}}`,
+
   freeform: `You are working on this prompt with me, in conversation. What
 follows is where it stands; my messages continue from here.
 
@@ -214,6 +251,48 @@ const CHANGES_MARK = '<<<CHANGES>>>'
 /** Did the model choose to rewrite, or just answer? */
 export function hasPromptBlock(raw: string): boolean {
   return raw.includes(PROMPT_MARK)
+}
+
+const HANDOFF_MARKS = ['<<<PRECEDES>>>', '<<<FOLLOWS>>>', '<<<OPEN>>>'] as const
+
+/**
+ * Pull the three hand-off fields out.
+ *
+ * As with splitReply the contract is asked for, not enforced: a model that
+ * ignores the markers still said something useful, so an unmarked reply becomes
+ * `precedes` rather than an error.
+ */
+export function splitHandoff(raw: string): { precedes: string; follows: string; open: string } {
+  const text = raw.trim()
+  const [p, f, o] = HANDOFF_MARKS.map((m) => text.indexOf(m))
+  if (p === -1) return { precedes: text, follows: '', open: '' }
+  const cut = (from: number, mark: string, to: number) =>
+    text.slice(from + mark.length, to === -1 ? undefined : to).trim()
+  return {
+    precedes: cut(p, HANDOFF_MARKS[0], f === -1 ? o : f),
+    follows: f === -1 ? '' : cut(f, HANDOFF_MARKS[1], o),
+    open: o === -1 ? '' : cut(o, HANDOFF_MARKS[2], -1),
+  }
+}
+
+/** Where a clip sits next, once the one before it has landed. */
+export function nextRole(role: ClipRole): ClipRole {
+  // Deliberately NOT a march along the curve. A film's middle runs as long as
+  // it needs to, and deciding that a clip is the TURN is the one judgement a
+  // director must not have made for them — so 'rising' holds until it is
+  // changed by hand, and only the unambiguous steps advance.
+  switch (role) {
+    case 'standalone':
+      return 'opening'
+    case 'opening':
+      return 'rising'
+    case 'turn':
+      return 'falling'
+    case 'falling':
+      return 'closing'
+    default:
+      return role // rising holds; closing stays closing
+  }
 }
 
 export function splitReply(raw: string): { prompt: string; changelog: string[] } {

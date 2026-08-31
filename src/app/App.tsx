@@ -7,6 +7,10 @@ import { ProseDoc } from '../components/ProseDoc'
 import { ConnectPanel } from '../components/ConnectPanel'
 import { SkillsPanel } from '../components/SkillsPanel'
 import { SettingsPanel } from '../components/SettingsPanel'
+import { PlatesPanel } from '../components/PlatesPanel'
+import { RecipePanel } from '../components/RecipePanel'
+import { EndpointPanel, RenderRail } from '../components/RenderPanel'
+import { ClipPlayer, FilmStrip } from '../components/ClipDeck'
 import { STAGE_INFO, STAGE_LABEL, STAGE_ORDER } from '../lib/stages'
 import { skillTokens } from '../lib/skills'
 import { estTokens, fmtTokens } from '../lib/tokens'
@@ -41,7 +45,8 @@ function autosize(el: HTMLTextAreaElement | null) {
 export function App() {
   const app = useApp()
   const { ready, skills, settings, providers, probes, story, versions, current, streaming, chat, film, error, failedReasoning, context } = app
-  const [modal, setModal] = useState<'connect' | 'skills' | 'settings' | null>(null)
+  const { clips, rendering } = app
+  const [modal, setModal] = useState<'connect' | 'skills' | 'settings' | 'plates' | 'recipe' | 'endpoint' | null>(null)
   const [copied, setCopied] = useState(false)
   const [note, setNote] = useState('')
   const [editingSource, setEditingSource] = useState(false)
@@ -286,6 +291,9 @@ export function App() {
         )}
         <button className="btn ghost" onClick={() => setModal('settings')}>
           Settings
+        </button>
+        <button className="btn ghost" onClick={() => setModal('endpoint')} title="Where clips render">
+          {rendering ? `Rendering clip ${rendering.index}…` : 'Render'}
         </button>
         <button className="btn" onClick={() => void copy()} disabled={!shown}>
           {copied ? 'Copied' : 'Copy prompt'}
@@ -665,12 +673,27 @@ export function App() {
           </div>
         </div>
 
+        {/* ── the clip, and what it starts ─────────────────────────── */}
+        <div className="clipcol">
+          <ClipPlayer />
+          <div style={{ flexGrow: 1 }} />
+        </div>
+
+        <div className="renderrail">
+          <RenderRail onOpen={setModal} />
+        </div>
+
         <Marginalia />
       </div>
+
+      <FilmStrip />
 
       {modal === 'connect' && <ConnectPanel onClose={() => setModal(null)} />}
       {modal === 'skills' && <SkillsPanel onClose={() => setModal(null)} />}
       {modal === 'settings' && <SettingsPanel onClose={() => setModal(null)} />}
+      {modal === 'plates' && <PlatesPanel onClose={() => setModal(null)} />}
+      {modal === 'recipe' && <RecipePanel onClose={() => setModal(null)} />}
+      {modal === 'endpoint' && <EndpointPanel onClose={() => setModal(null)} />}
     </div>
   )
 }

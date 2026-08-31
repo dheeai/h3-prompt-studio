@@ -5,10 +5,15 @@ import { buildContext, type BuiltContext } from '../lib/context'
 import { findingsToText, lint, looksLikePrompt } from '../lib/lint'
 import { streamChat } from '../lib/llm'
 import { DEFAULT_PROVIDERS, loadProviders, probe, saveProviders } from '../lib/providers'
-import { DEFAULT_TEMPLATES, STAGE_LABEL, fillTemplate, filmBlock, hasPromptBlock, splitReply, templateFor } from '../lib/stages'
+import { DEFAULT_TEMPLATES, STAGE_LABEL, fillTemplate, filmBlock, hasPromptBlock, nextRole, splitHandoff, splitReply, templateFor } from '../lib/stages'
+import { DEFAULT_ENDPOINTS, lastFrameOf, poll, probeComfy, submit, uploadImage, viewUrl } from '../lib/comfy'
+import { applyRecipe, framesForSeconds, recipeIssues } from '../lib/recipe'
 import { fetchBundledSkills, loadSkills, removeSkill, saveSkill } from '../lib/skills'
 import { estTokens } from '../lib/tokens'
-import type { ChatTurn, FilmContext, Finding, ProbeResult, Provider, Selection, Settings, Skill, StageId, Version } from '../lib/types'
+import type {
+  ChatTurn, Clip, ComfyEndpoint, FilmContext, Finding, Plate, ProbeResult, Provider,
+  Recipe, Selection, Settings, Skill, StageId, Version,
+} from '../lib/types'
 
 const SETTINGS_SCHEMA = 4
 
@@ -31,6 +36,9 @@ const DEFAULT_SETTINGS: Settings = {
   selection: {},
   stageTemplates: {},
   onboarded: false,
+  seconds: 7.3,
+  lockSeed: true,
+  seed: 42,
 }
 
 interface Session {
@@ -41,6 +49,8 @@ interface Session {
   chat?: ChatTurn[]
   /** Where this clip sits in a longer film, if it is not standalone. */
   film?: FilmContext
+  /** The clip this draft continues from — set by Continue, null for a head. */
+  parentClipId?: string | null
 }
 
 interface Api {
@@ -73,6 +83,32 @@ interface Api {
   run: (stage: StageId, note?: string) => Promise<Version | null>
   /** Direct then Draft — a full re-synthesis rather than an edit. */
   rebuild: () => Promise<void>
+
+  // ── the render loop ─────────────────────────────────────────────────
+  plates: Plate[]
+  recipes: Recipe[]
+  recipe: Recipe | null
+  endpoints: ComfyEndpoint[]
+  endpoint: ComfyEndpoint | null
+  comfyProbes: Record<string, ProbeResult>
+  clips: Clip[]
+  clip: Clip | null
+  rendering: Clip | null
+  /** Why a render cannot start yet — empty when it can. */
+  blockers: string[]
+  addPlate: (p: Omit<Plate, 'id' | 'addedAt'>) => Promise<void>
+  updatePlate: (id: string, patch: Partial<Plate>) => Promise<void>
+  deletePlate: (id: string) => Promise<void>
+  reorderPlate: (id: string, delta: number) => Promise<void>
+  addRecipe: (r: Recipe) => Promise<void>
+  deleteRecipe: (id: string) => Promise<void>
+  setEndpoints: (e: ComfyEndpoint[]) => Promise<void>
+  refreshComfyProbe: (id: string) => Promise<void>
+  clipUrl: (c: Clip) => string | null
+  render: () => Promise<void>
+  selectClip: (id: string) => void
+  /** Take a landed clip's last frame and hand-off, and start the next clip. */
+  continueFrom: (clipId: string, note?: string) => Promise<void>
   cancel: () => void
   selectVersion: (id: string) => void
   clearError: () => void
@@ -94,10 +130,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [providers, setProvidersState] = useState<Provider[]>(DEFAULT_PROVIDERS)
   const [probes, setProbes] = useState<Record<string, ProbeResult>>({})
   const [session, setSession] = useState<Session>({ story: '', versions: [], currentId: null, chat: [] })
+  const [clips, setClips] = useState<Clip[]>([])
+  const [currentClipId, setCurrentClipId] = useState<string | null>(null)
   const [streaming, setStreaming] = useState<{ stage: StageId; text: string; reasoning: string; startedAt: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [context, setContext] = useState<BuiltContext | null>(null)
   const [failedReasoning, setFailedReasoning] = useState<string | null>(null)
+  const [plates, setPlates] = useState<Plate[]>([])
+  const [recipes, setRecipes] = useState<Recipe[]>([])
+  const [endpoints, setEndpointsState] = useState<ComfyEndpoint[]>(DEFAULT_ENDPOINTS)
+  const [comfyProbes, setComfyProbes] = useState<Record<string, ProbeResult>>({})
+  const [renderingId, setRenderingId] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   // run() closes over session, so chaining two stages in one turn would read
   // state from before the first one finished. The ref always holds the latest.
@@ -181,6 +224,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
         merged.selection = sel
       }
 
+      const [savedPlates, savedRecipes, savedClips, savedEndpoints] = await Promise.all([
+        idb.all<Plate>('plates'),
+        idb.all<Recipe>('recipes'),
+        idb.get<Clip[]>('clips', 'current'),
+        idb.get<ComfyEndpoint[]>('settings', 'comfyEndpoints'),
+      ])
+      setPlates(savedPlates.sort((a, b) => a.addedAt - b.addedAt))
+      setRecipes(savedRecipes.sort((a, b) => a.addedAt - b.addedAt))
+      if (savedEndpoints?.length) setEndpointsState(savedEndpoints)
+      if (savedClips?.length) setClips(savedClips)
+
       setSkills(stored)
       setSettings(merged)
       setProvidersState(savedProviders)
@@ -200,6 +254,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (ready) void idb.set('sessions', 'current', session)
   }, [ready, session])
+
+  useEffect(() => {
+    if (ready) void idb.set('clips', 'current', clips)
+  }, [ready, clips])
 
   // ── the cached context layer ──────────────────────────────────────────
   useEffect(() => {
@@ -522,9 +580,308 @@ export function AppProvider({ children }: { children: ReactNode }) {
     abortRef.current = null
     setStreaming(null)
     setError(null)
-    setSession((s) => ({ story: '', versions: [], currentId: null, chat: [], film: s.film }))
+    // Clears the draft, not the film: clips, plates and the film context are
+    // the production and survive a reset of the page you are writing on.
+    setSession((s) => ({ story: '', versions: [], currentId: null, chat: [], film: s.film, parentClipId: s.parentClipId }))
     await idb.del('sessions', 'current')
   }, [])
+
+  // ── the render loop ───────────────────────────────────────────────────
+
+  const clipsRef = useRef(clips)
+  clipsRef.current = clips
+  const platesRef = useRef(plates)
+  platesRef.current = plates
+
+  const recipe = useMemo(
+    () => recipes.find((r) => r.id === settings.recipeId) ?? recipes[0] ?? null,
+    [recipes, settings.recipeId],
+  )
+  const endpoint = useMemo(
+    () => endpoints.find((e) => e.id === settings.comfyEndpointId) ?? endpoints[0] ?? null,
+    [endpoints, settings.comfyEndpointId],
+  )
+  const clip = useMemo(
+    () => clips.find((c) => c.id === currentClipId) ?? clips[clips.length - 1] ?? null,
+    [clips, currentClipId],
+  )
+  const rendering = useMemo(() => clips.find((c) => c.id === renderingId) ?? null, [clips, renderingId])
+
+  const lastPromptText = useMemo(() => {
+    const v = [...session.versions].reverse().find((x) => PROMPT_STAGES.has(x.stage))
+    return v?.text ?? (looksLikePrompt(session.story) ? session.story : '')
+  }, [session.versions, session.story])
+
+  const blockers = useMemo(() => {
+    const out: string[] = []
+    if (!endpoint) out.push('No ComfyUI endpoint. Add one under “Where it renders”.')
+    else if (comfyProbes[endpoint.id] && comfyProbes[endpoint.id].state !== 'ok') {
+      out.push(`${endpoint.label} is not reachable — ${comfyProbes[endpoint.id].detail}`)
+    }
+    out.push(...recipeIssues(recipe))
+    if (!lastPromptText.trim()) out.push('No prompt to render yet. Run Draft, or paste one.')
+    const jobless = plates.filter((p) => !p.job.trim())
+    if (jobless.length) out.push(`${jobless.length} plate(s) have no job written. An unexplained reference drifts.`)
+    return out
+  }, [endpoint, comfyProbes, recipe, lastPromptText, plates])
+
+  const savePlate = useCallback(async (p: Plate) => {
+    await idb.set('plates', p.id, p)
+    setPlates((prev) => {
+      const i = prev.findIndex((x) => x.id === p.id)
+      if (i === -1) return [...prev, p]
+      const next = [...prev]
+      next[i] = p
+      return next
+    })
+  }, [])
+
+  const addPlate = useCallback(
+    async (p: Omit<Plate, 'id' | 'addedAt'>) => {
+      await savePlate({ ...p, id: `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, addedAt: Date.now() })
+    },
+    [savePlate],
+  )
+
+  const updatePlate = useCallback(
+    async (id: string, patch: Partial<Plate>) => {
+      const cur = platesRef.current.find((p) => p.id === id)
+      if (!cur) return
+      // Editing a plate invalidates its upload: the box holds the old bytes
+      // under that name, so a changed image must be re-sent before it is cited.
+      const next = { ...cur, ...patch }
+      if (patch.dataUrl && patch.dataUrl !== cur.dataUrl) delete next.uploaded
+      await savePlate(next)
+    },
+    [savePlate],
+  )
+
+  const deletePlate = useCallback(async (id: string) => {
+    await idb.del('plates', id)
+    setPlates((prev) => prev.filter((p) => p.id !== id))
+  }, [])
+
+  /** Order IS the <Picture N> numbering, so moving a plate renumbers the clause. */
+  const reorderPlate = useCallback(async (id: string, delta: number) => {
+    const list = [...platesRef.current]
+    const i = list.findIndex((p) => p.id === id)
+    const j = i + delta
+    if (i === -1 || j < 0 || j >= list.length) return
+    ;[list[i], list[j]] = [list[j], list[i]]
+    const now = Date.now()
+    const stamped = list.map((p, k) => ({ ...p, addedAt: now + k }))
+    setPlates(stamped)
+    for (const p of stamped) await idb.set('plates', p.id, p)
+  }, [])
+
+  const addRecipe = useCallback(async (r: Recipe) => {
+    await idb.set('recipes', r.id, r)
+    setRecipes((prev) => [...prev.filter((x) => x.id !== r.id), r])
+    setSettings((s) => ({ ...s, recipeId: r.id }))
+  }, [])
+
+  const deleteRecipe = useCallback(async (id: string) => {
+    await idb.del('recipes', id)
+    setRecipes((prev) => prev.filter((r) => r.id !== id))
+  }, [])
+
+  const setEndpoints = useCallback(async (next: ComfyEndpoint[]) => {
+    setEndpointsState(next)
+    await idb.set('settings', 'comfyEndpoints', next)
+  }, [])
+
+  const refreshComfyProbe = useCallback(
+    async (id: string) => {
+      const ep = endpoints.find((e) => e.id === id)
+      if (!ep) return
+      setComfyProbes((prev) => ({ ...prev, [id]: { state: 'probing', detail: '', models: [], at: Date.now() } }))
+      const result = await probeComfy(ep)
+      setComfyProbes((prev) => ({ ...prev, [id]: result }))
+    },
+    [endpoints],
+  )
+
+  useEffect(() => {
+    if (!ready) return
+    for (const e of endpoints) void refreshComfyProbe(e.id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, endpoints.map((e) => `${e.id}:${e.baseUrl}`).join('|')])
+
+  const clipUrl = useCallback(
+    (c: Clip) => {
+      const ep = endpoints.find((e) => e.id === c.endpointId) ?? endpoint
+      return c.output && ep ? viewUrl(ep, c.output) : null
+    },
+    [endpoints, endpoint],
+  )
+
+  const patchClip = useCallback((id: string, patch: Partial<Clip>) => {
+    setClips((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)))
+  }, [])
+
+  const render = useCallback(async () => {
+    if (!endpoint || !recipe) {
+      setError('Pick an endpoint and a recipe first.')
+      return
+    }
+    const prompt = lastPromptText
+    if (!prompt.trim()) {
+      setError('Nothing to render — there is no prompt yet.')
+      return
+    }
+
+    const id = `c${Date.now().toString(36)}`
+    const index = clipsRef.current.length + 1
+    const seed = settings.lockSeed ? settings.seed : Math.floor(Math.random() * 2 ** 31)
+    const frames = framesForSeconds(settings.seconds, 24)
+    const snap = platesRef.current
+
+    const draft: Clip = {
+      id,
+      index,
+      parentId: sessionRef.current.parentClipId ?? null,
+      state: 'queued',
+      prompt,
+      film: sessionRef.current.film,
+      plateIds: snap.map((p) => p.id),
+      recipeId: recipe.id,
+      endpointId: endpoint.id,
+      seed,
+      frames,
+      fps: 24,
+      at: Date.now(),
+    }
+    setClips((prev) => [...prev, draft])
+    setCurrentClipId(id)
+    setRenderingId(id)
+    setError(null)
+    const t0 = Date.now()
+
+    try {
+      // Plates are uploaded once per box and then cited by name.
+      const refs: Array<{ filename: string; subfolder: string }> = []
+      for (const p of snap) {
+        if (p.uploaded?.endpointId === endpoint.id) {
+          refs.push({ filename: p.uploaded.filename, subfolder: p.uploaded.subfolder })
+          continue
+        }
+        const safe = `${p.id}_${p.name.replace(/[^a-z0-9]+/gi, '_').slice(0, 40) || 'plate'}.png`
+        const up = await uploadImage(endpoint, p.dataUrl, safe)
+        refs.push(up)
+        await savePlate({ ...p, uploaded: { endpointId: endpoint.id, ...up } })
+      }
+
+      const graph = applyRecipe(recipe, {
+        prompt,
+        refs,
+        width: recipe.defaults.width,
+        height: recipe.defaults.height,
+        frames,
+        seed,
+        steps: settings.steps,
+      })
+
+      const promptId = await submit(endpoint, graph)
+      patchClip(id, { state: 'rendering', promptId })
+
+      // Poll rather than hold a websocket: a dropped link must not lose a
+      // render that the box is still perfectly happily producing.
+      const deadline = Date.now() + 60 * 60 * 1000
+      let misses = 0
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 2500))
+        if (Date.now() > deadline) throw new Error('Gave up waiting after an hour.')
+        let res
+        try {
+          res = await poll(endpoint, promptId)
+          misses = 0
+        } catch {
+          // The box can drop off a network and come back. Only give up when it
+          // has been gone long enough to be a real outage.
+          if (++misses > 120) throw new Error('Lost contact with the box for five minutes.')
+          continue
+        }
+        if (!res.done) continue
+        if (res.failed) throw new Error(res.failed)
+        patchClip(id, { state: 'done', output: res.output, ms: Date.now() - t0 })
+        break
+      }
+    } catch (e) {
+      const msg = String((e as Error).message || e)
+      patchClip(id, { state: 'failed', error: msg, ms: Date.now() - t0 })
+      setError(msg)
+    } finally {
+      setRenderingId(null)
+    }
+  }, [endpoint, recipe, lastPromptText, settings.lockSeed, settings.seed, settings.seconds, settings.steps, patchClip, savePlate])
+
+  const selectClip = useCallback((id: string) => setCurrentClipId(id), [])
+
+  /**
+   * Close the loop.
+   *
+   * The clip's last frame becomes the next clip's <Picture 1>, a hand-off
+   * paragraph is written from the prompt that produced it, the role advances,
+   * and the page is cleared for the next clip — with the film context, the
+   * plates and the seed all carried.
+   */
+  const continueFrom = useCallback(
+    async (clipId: string, note?: string) => {
+      const c = clipsRef.current.find((x) => x.id === clipId)
+      if (!c) return
+      const url = clipUrl(c)
+      if (!url) {
+        setError('That clip has no file yet.')
+        return
+      }
+
+      setError(null)
+      try {
+        const frame = c.lastFrame ?? (await lastFrameOf(url))
+        if (!c.lastFrame) patchClip(clipId, { lastFrame: frame })
+
+        // One replaced plate at a time — otherwise every continuation adds
+        // another last frame and the nine-reference budget is gone by clip 5.
+        const previous = platesRef.current.find((p) => p.mode === 'replaced')
+        const plate: Plate = {
+          id: previous?.id ?? `p${Date.now().toString(36)}`,
+          name: `clip ${c.index} · last frame`,
+          job: previous?.job?.trim()
+            ? previous.job
+            : 'Use it for the room, the light and where they are standing. Do not take expression from it.',
+          dataUrl: frame,
+          mode: 'replaced',
+          fromClipId: clipId,
+          addedAt: previous?.addedAt ?? 0, // stays first, so it is <Picture 1>
+        }
+        await savePlate(plate)
+      } catch (e) {
+        // A frame we cannot read is not fatal — the hand-off is still worth
+        // having, and the operator can drop a still in by hand.
+        setError(`Could not take the last frame: ${(e as Error).message}`)
+      }
+
+      const written = await run('handoff')
+      const parsed = written ? splitHandoff(written.text) : null
+
+      setSession((sn) => ({
+        story: note?.trim() ? note.trim() : '',
+        versions: [],
+        currentId: null,
+        chat: [],
+        parentClipId: clipId,
+        film: {
+          ...DEFAULT_FILM,
+          ...sn.film,
+          role: nextRole(sn.film?.role ?? 'standalone'),
+          precedes: parsed?.precedes || sn.film?.precedes || '',
+          follows: parsed?.follows || '',
+        },
+      }))
+      setCurrentClipId(clipId)
+    },
+    [clipUrl, patchClip, savePlate, run],
+  )
 
   const api: Api = {
     ready,
@@ -553,6 +910,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
     refreshProbe,
     run,
     rebuild,
+    plates,
+    recipes,
+    recipe,
+    endpoints,
+    endpoint,
+    comfyProbes,
+    clips,
+    clip,
+    rendering,
+    blockers,
+    addPlate,
+    updatePlate,
+    deletePlate,
+    reorderPlate,
+    addRecipe,
+    deleteRecipe,
+    setEndpoints,
+    refreshComfyProbe,
+    clipUrl,
+    render,
+    selectClip,
+    continueFrom,
     cancel,
     selectVersion,
     clearError: () => {

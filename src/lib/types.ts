@@ -60,7 +60,7 @@ export interface ProbeResult {
   at: number
 }
 
-export type StageId = 'direct' | 'draft' | 'critique' | 'revise' | 'freeform'
+export type StageId = 'direct' | 'draft' | 'critique' | 'revise' | 'freeform' | 'handoff'
 
 export interface Version {
   id: string
@@ -127,6 +127,19 @@ export interface Settings {
   /** Bundled skill ids already offered, so a deletion is not undone on reload. */
   seenBundled?: string[]
   onboarded: boolean
+
+  // ── the render loop ───────────────────────────────────────────────────
+  /** Which ComfyUI to render on. */
+  comfyEndpointId?: string
+  /** Which stored recipe to render with. */
+  recipeId?: string
+  /** Target clip length before the frame grid snaps it. */
+  seconds: number
+  /** A film normally wants one seed the whole way down. */
+  lockSeed: boolean
+  seed: number
+  /** Override the recipe's own step count when set. */
+  steps?: number
 }
 
 export type Severity = 'error' | 'warn' | 'pass'
@@ -139,4 +152,105 @@ export interface Finding {
   /** Literal excerpts from the prompt that triggered it. */
   matches: string[]
   metric?: string
+}
+
+// ── the render loop ───────────────────────────────────────────────────────
+
+/**
+ * A reference image with its JOB written down.
+ *
+ * The job is not decoration. H3 measurably does better when every reference is
+ * told what it is for, and a plate with no job is the failure this type exists
+ * to prevent — so `job` is required, not optional.
+ */
+export interface Plate {
+  id: string
+  /** What it is, for the humans: "Lira — identity plate". */
+  name: string
+  /** What the model must take from it, and what it must ignore. */
+  job: string
+  /** Data URL. Held here so a plate survives a reload without the box. */
+  dataUrl: string
+  /** Filename on the ComfyUI box once uploaded, so it is uploaded once. */
+  uploaded?: { endpointId: string; filename: string; subfolder: string }
+  /** Carried plates persist across clips; a replaced one is rewritten each clip. */
+  mode: 'carried' | 'replaced'
+  /** Set when this plate was pulled from a clip's last frame. */
+  fromClipId?: string
+  addedAt: number
+}
+
+export interface ComfyEndpoint {
+  id: string
+  label: string
+  /** Base URL with no trailing slash, e.g. http://localhost:8188 */
+  baseUrl: string
+  builtIn: boolean
+}
+
+/** Where one value lives inside a user-supplied workflow graph. */
+export interface Binding {
+  /** Node id in the API-format graph. */
+  node: string
+  /** Input key on that node. Dotted keys (ref_images.ref_image_0) are literal. */
+  field: string
+  /** class_type of the node, for display and for re-detection. */
+  classType: string
+}
+
+export type BindingSlot = 'prompt' | 'width' | 'height' | 'length' | 'seed' | 'steps' | 'output'
+
+/**
+ * A ComfyUI workflow plus the map of which node holds what.
+ *
+ * Bindings are detected by node CLASS TYPE, never by node number, so every
+ * variant of a graph — turbo, 8-step, SLA, hybrid — binds without configuration.
+ */
+export interface Recipe {
+  id: string
+  name: string
+  /** API-format graph, exactly as exported. Stored whole and passed through. */
+  graph: Record<string, ComfyNode>
+  bindings: Partial<Record<BindingSlot, Binding>>
+  /** Candidates the detector could not choose between, for the UI to ask about. */
+  ambiguous: Partial<Record<BindingSlot, Binding[]>>
+  /** Node id of the group holding ref_images.ref_image_N, when there is one. */
+  refHost?: string
+  defaults: { width: number; height: number; fps: number; seconds: number }
+  addedAt: number
+}
+
+export interface ComfyNode {
+  class_type: string
+  inputs: Record<string, unknown>
+  _meta?: { title?: string }
+}
+
+export type ClipState = 'queued' | 'rendering' | 'done' | 'failed'
+
+export interface Clip {
+  id: string
+  /** 1-based position in the film. */
+  index: number
+  /** The clip this one continues from, if any — the film is a tree. */
+  parentId: string | null
+  state: ClipState
+  /** The prompt text that produced it, kept so a clip explains itself. */
+  prompt: string
+  /** The film context this clip was directed under. */
+  film?: FilmContext
+  plateIds: string[]
+  recipeId?: string
+  endpointId?: string
+  seed?: number
+  frames?: number
+  fps?: number
+  promptId?: string
+  /** Where the mp4 lives on the box. Resolved to a URL at render time. */
+  output?: { filename: string; subfolder: string; type: string }
+  /** Last frame, as a data URL, once pulled. */
+  lastFrame?: string
+  error?: string
+  ms?: number
+  at: number
 }

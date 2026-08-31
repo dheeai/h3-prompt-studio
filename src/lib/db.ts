@@ -5,8 +5,8 @@
 // room and stores structured values without a JSON round-trip.
 
 const DB_NAME = 'h3-prompt-studio'
-const DB_VERSION = 1
-const STORES = ['skills', 'settings', 'sessions'] as const
+const DB_VERSION = 2
+const STORES = ['skills', 'settings', 'sessions', 'plates', 'recipes', 'clips'] as const
 
 export type StoreName = (typeof STORES)[number]
 

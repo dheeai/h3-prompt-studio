@@ -1,0 +1,16 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "title": "The console, mid-film", "x": 0, "y": 0, "w": 1440, "h": 900 },
+    { "file": "Continue.dc.html", "title": "Continue from a clip", "x": 1540, "y": 0, "w": 1180, "h": 820 },
+    { "file": "Recipe.dc.html", "title": "Recipe — the workflow", "x": 0, "y": 1060, "w": 1040, "h": 820 },
+    { "file": "Plates.dc.html", "title": "Plates — image refs", "x": 1140, "y": 1060, "w": 900, "h": 760 },
+    { "file": "Endpoint.dc.html", "title": "Where it renders", "x": 2140, "y": 1060, "w": 900, "h": 720 },
+    { "file": "Flow.dc.html", "title": "The loop, end to end", "x": 0, "y": 2010, "w": 1440, "h": 760 }
+  ],
+  "annotations": [
+    { "id": "brief", "x": 0, "y": -230, "w": 700, "text": "The studio stops being a pipeline and becomes a loop.\n\nToday it ends at a prompt you copy out. Four things close the circle: PLATES (the image refs, each with a written job), a RECIPE (your own ComfyUI graph, with five slots bound by node type so all your H3 variants work), an ENDPOINT, and CONTINUE — which takes a landed clip's last frame as the next clip's <Picture 1> and writes the hand-off paragraph you would otherwise type by hand.\n\nThe film becomes a row of clips you can branch from, so a note after watching steers what comes next." },
+    { "id": "verified", "x": 1540, "y": -230, "w": 620, "text": "Checked against the 5090 before drawing, not assumed:\n\n· access-control-allow-origin: * on the gateway\n· POST /prompt returns a real ComfyUI error, so it is reachable\n· POST /upload/image accepts\n· /history/{id} and /view both answer\n· all four HR-Endless-Sampler nodes are installed\n\nSo a browser-only studio can drive the whole render. No backend is needed — see the loop diagram." },
+    { "id": "constraint", "x": 2140, "y": 1900, "w": 620, "text": "The one hard constraint: an https page cannot call http://5090… — browsers exempt localhost from mixed-content blocking, and a Tailscale hostname is not localhost.\n\nSo the GitHub Pages copy drives a ComfyUI on your own machine, and the 5090 needs the studio served over http (npm run dev, or the built copy). The Connect panel should diagnose exactly this rather than saying it failed." }
+  ],
+  "launch": { "view": "canvas" }
+}

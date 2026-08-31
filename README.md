@@ -159,7 +159,19 @@ node scripts/bake-skills.mjs --clear
 
 ### What this deployment ships
 
-`h3-direction` in full, and `h3-prompting`'s `SKILL.md`.
+`h3-direction` in full, `h3-prompting`'s `SKILL.md`, and two reference-craft
+skills:
+
+- **`h3-lira`** — authoring the reference *image*: identity sheets, object
+  anchors, location plates, character-state edits.
+- **`h3-acting`** — directing the *performance* in the video that cites it:
+  master character profile, per-scene objective/obstacle/stakes, per-shot
+  tactic and observable behaviour.
+
+They are deliberately separate. LIRA governs what a character looks like;
+ACTING governs what they do. They apply at different stages and are rarely
+wanted at the same time, so loading one should not cost you the other's
+context.
 
 `h3-prompting`'s two reference files are **not** included: they are verbatim
 copies of MiniMax's own documentation, which is published under a custom

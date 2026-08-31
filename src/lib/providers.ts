@@ -113,6 +113,20 @@ export function localNetworkTarget(baseUrl: string): 'ip' | 'tailscale' | 'mdns'
   return null
 }
 
+/**
+ * Chrome gates public→local-network requests behind a PERMISSION, not a block.
+ * Until it is granted the request hangs waiting for a prompt — and a prompt is
+ * only shown off a user gesture, so a probe fired on page load silently stalls.
+ */
+export async function localNetworkPermission(): Promise<'granted' | 'denied' | 'prompt' | 'unsupported'> {
+  try {
+    const status = await navigator.permissions.query({ name: 'local-network-access' as PermissionName })
+    return status.state
+  } catch {
+    return 'unsupported'
+  }
+}
+
 /** https:// pointed at an explicit non-443 port is usually a plaintext port. */
 export function schemePortMismatch(baseUrl: string): string | null {
   try {
@@ -208,13 +222,25 @@ export async function probe(p: Provider, signal?: AbortSignal): Promise<ProbeRes
     // A public page reaching a private-range address, hanging rather than
     // failing fast, is the signature of Chrome's Local Network Access gate.
     if (timedOut && lan && pageIsPublic()) {
+      const permission = await localNetworkPermission()
+      const what =
+        lan === 'tailscale'
+          ? 'A Tailscale address is on the local network as far as the browser is concerned'
+          : 'This is a private-network address'
+      if (permission === 'denied') {
+        return {
+          state: 'local-network-blocked',
+          detail: `${what}, and local network access is currently blocked for this site.`,
+          hint: 'Re-allow it from the settings icon at the left of the address bar, then press Check again.',
+          models: [],
+          at,
+        }
+      }
       return {
         state: 'local-network-blocked',
-        detail:
-          lan === 'tailscale'
-            ? 'A Tailscale address is on the local network as far as the browser is concerned, and this page is served from a public origin. Chrome blocks that combination — the request hangs instead of connecting. HTTPS does not lift it; only localhost is exempt.'
-            : 'This is a private-network address and this page is served from a public origin. Chrome blocks that combination, so the request hangs instead of connecting.',
-        hint: 'Run this app locally instead — `npm run serve`, or `npx h3-prompt-studio`. From a page on localhost the request is not a public-to-local crossing and goes straight through.',
+        detail: `${what}, and this page is served from a public origin. The browser needs your permission before it will connect — until you give it, the request just waits.`,
+        hint:
+          'Press Check and allow local network access when the browser asks. The prompt only appears when you click something, which is why it never showed on its own. Running the app locally (`npx h3-prompt-studio`) skips the prompt entirely.',
         models: [],
         at,
       }

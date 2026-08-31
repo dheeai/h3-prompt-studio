@@ -81,30 +81,36 @@ The caveats:
    `http://localhost` as secure. Use Chrome, Edge or Firefox — or run the app
    locally with `npm run serve`.
 
-2. **A model on another machine on your network will not work from a hosted
-   page — even over HTTPS.** There are *two independent gates* here, and
-   clearing the first does not clear the second:
+2. **A model on another machine on your network needs *two* things cleared,
+   not one.** They are independent, and fixing the first does not fix the
+   second:
 
    - **Mixed content.** Plain HTTP on a non-localhost host is refused before
-     the request is sent. Giving the box a real HTTPS name fixes this — for a
-     Tailscale host, `tailscale serve --bg 9000` issues a certificate and
-     serves on 443.
-   - **Local Network Access.** Chrome separately blocks a *public* origin from
-     reaching a *private-range* address, based on the destination IP, not the
-     scheme. Tailscale hands out `100.64.0.0/10` (CGNAT) addresses, which fall
-     inside that range, so an HTTPS `*.ts.net` endpoint is still blocked. The
-     request hangs rather than failing, then times out. RFC1918 addresses
-     (`192.168.x`, `10.x`) and `.local` names behave the same way.
+     the request is sent. Give the box a real HTTPS name — for a Tailscale
+     host, `tailscale serve --bg 9000` issues a certificate and serves on 443.
+     Note that the front-end is then on **443, not the app's own port**:
+     `https://<host>.ts.net/llama/v1`, not `https://<host>.ts.net:9000/...`.
+   - **Local Network Access.** Chrome separately requires *permission* for a
+     public origin to reach a private-range address — judged on the
+     destination IP, not the scheme. Tailscale hands out `100.64.0.0/10`
+     (CGNAT), which falls in that range, as do `192.168.x`, `10.x` and
+     `.local` names. This is a prompt, not a wall: allow it and the endpoint
+     works normally.
 
-   `localhost` is exempt from both, which is why it is the one address that
-   works from a hosted page. For anything else on your network, **run the app
-   locally** (`npm run serve`) — from a page on localhost neither gate applies.
+   The catch is that Chrome only shows that prompt in response to a **user
+   gesture**. A probe fired automatically on page load has no gesture, so it
+   silently waits and eventually times out — which looks exactly like a dead
+   server. Press **Check** in the Connect panel and allow it when asked.
 
-   *Measured:* the same `https://<host>.ts.net/llama/v1/models` request
-   returned 200 with 17 models in 297 ms from `http://localhost:5173`, and
-   timed out after 31 s from `https://…github.io`. Same browser, same machine,
-   same minute. `curl` reaches it in 6 ms either way — this is a browser
-   policy, not a network problem, so testing with curl will mislead you.
+   *Measured:* `https://<host>.ts.net/llama/v1/models` from a page on
+   `github.io` timed out after 31 s while the permission was unresolved, and
+   returned 200 with 17 models in **274 ms** once granted. `curl` reaches it in
+   6 ms regardless — curl has no such policy, so it cannot reproduce or
+   diagnose either gate.
+
+   `localhost` is exempt from both, which is why it needs no setup at all.
+   Running the app locally (`npm run serve`) also sidesteps the permission
+   entirely.
 
 The Connect panel diagnoses which gate you have hit, rather than reporting a
 bare network error. It also catches the two URL mistakes that look like

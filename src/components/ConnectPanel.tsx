@@ -107,10 +107,12 @@ function ProviderCard({ provider }: { provider: Provider }) {
 
       {probe?.state === 'local-network-blocked' && (
         <div className="alert err" style={{ marginTop: 9 }}>
-          <strong>Blocked by the browser’s local-network rule.</strong>
+          <strong>Waiting on local-network permission.</strong>
           <div style={{ marginTop: 4 }}>{probe.detail}</div>
           {probe.hint && <div style={{ marginTop: 6 }}>{probe.hint}</div>}
-          <div className="code" style={{ marginTop: 8 }}>npx h3-prompt-studio</div>
+          <button className="btn sm" style={{ marginTop: 8 }} onClick={() => void refreshProbe(provider.id)}>
+            Check again
+          </button>
         </div>
       )}
 

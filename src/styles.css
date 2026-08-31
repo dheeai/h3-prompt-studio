@@ -14,6 +14,15 @@
   --amb: oklch(0.560 0.110 72);
   --amb-soft: oklch(0.940 0.050 80);
 
+  /* One family of keyword colours: same lightness and chroma throughout, so
+     no token shouts louder than another — only the hue differs. */
+  --kw-subject: oklch(0.45 0.125 305);  --kw-subject-bg: oklch(0.940 0.030 305);
+  --kw-picture: oklch(0.45 0.115 252);  --kw-picture-bg: oklch(0.938 0.030 252);
+  --kw-video:   oklch(0.45 0.095 205);  --kw-video-bg:   oklch(0.936 0.030 205);
+  --kw-audio:   oklch(0.45 0.095 155);  --kw-audio-bg:   oklch(0.936 0.030 155);
+  --kw-shot:    oklch(0.46 0.100 62);   --kw-shot-bg:    oklch(0.942 0.035 70);
+  --kw-dialogue:oklch(0.45 0.120 18);   --kw-dialogue-bg:oklch(0.940 0.032 18);
+
   --serif: 'Instrument Serif', Georgia, 'Times New Roman', serif;
   --sans: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
   --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
@@ -182,7 +191,20 @@ input[type='range'] { accent-color: var(--ox); }
 
 /* ── stage line ───────────────────────────────────────────────────────── */
 
-.stageline { flex: 0 0 auto; padding: 13px 26px 0; display: flex; align-items: center; }
+.stageline { flex: 0 0 auto; padding: 12px 26px 0; display: flex; flex-direction: column; gap: 6px; }
+.stagerow { display: flex; align-items: center; }
+.stagenote { font-size: 11.5px; color: var(--ink3); line-height: 1.45; min-height: 16px; }
+.stagenote b { color: var(--ink2); font-weight: 600; }
+
+.stage-wrap { display: inline-flex; align-items: baseline; gap: 5px; }
+.stage-num {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--ink3);
+  font-variant-numeric: tabular-nums;
+}
+.stage-wrap.done .stage-num { color: var(--grn); }
+.stage-wrap.on .stage-num { color: var(--ox); }
 
 .stage {
   font-family: var(--serif);
@@ -195,8 +217,9 @@ input[type='range'] { accent-color: var(--ox); }
   cursor: pointer;
   transition: color 90ms;
 }
-.stage:hover { color: var(--ink); }
+.stage:hover:not(:disabled) { color: var(--ink); }
 .stage.done { color: var(--ink2); }
+.stage:disabled { color: var(--rule2); cursor: not-allowed; }
 .stage.on { font-size: 16px; color: var(--ox); border-bottom-color: var(--ox); }
 .stage-sep { width: 26px; height: 1px; background: var(--rule2); margin: 0 10px; flex: 0 0 auto; }
 .stage-sep.on { background: var(--ox); }
@@ -236,20 +259,111 @@ input[type='range'] { accent-color: var(--ox); }
 .epigraph-preview.two { -webkit-line-clamp: 2; }
 .epigraph textarea::placeholder { color: var(--ink3); font-style: italic; }
 
-.doc {
-  margin: 0;
+.doc { max-width: 760px; }
+
+.sec + .sec { margin-top: 20px; }
+
+.sec-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.sec-name {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ox);
+  white-space: nowrap;
+}
+/* A section the format does not define — real, but not one of the six. */
+.sec-name.unknown { color: var(--ink3); }
+.sec-rule { flex: 1 1 auto; height: 1px; background: var(--rule); }
+
+.sec-body {
   font-family: var(--mono);
   font-size: 12.4px;
-  line-height: 1.72;
+  line-height: 1.75;
   color: var(--ink2);
   white-space: pre-wrap;
   word-break: break-word;
-  max-width: 720px;
 }
-.doc .field { color: var(--ox); font-weight: 500; }
-.doc .time { color: var(--ink); }
-.doc .ref { color: var(--ox); }
-.doc .na { background: var(--grn-soft); color: var(--grn); padding: 0 5px; }
+
+.kw {
+  padding: 0 3px;
+  border-radius: 2px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.kw.subject  { color: var(--kw-subject);  background: var(--kw-subject-bg); }
+.kw.picture  { color: var(--kw-picture);  background: var(--kw-picture-bg); }
+.kw.video    { color: var(--kw-video);    background: var(--kw-video-bg); }
+.kw.audio    { color: var(--kw-audio);    background: var(--kw-audio-bg); }
+.kw.shot     { color: var(--kw-shot);     background: var(--kw-shot-bg); }
+.kw.dialogue { color: var(--kw-dialogue); background: var(--kw-dialogue-bg); white-space: normal; }
+.kw.na       { color: var(--grn);         background: var(--grn-soft); }
+.kw.ref      { color: var(--ox);          background: var(--ox-soft); }
+.kw.time     { color: var(--ink); background: transparent; padding: 0; font-variant-numeric: tabular-nums; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  color: var(--ink3);
+  text-transform: uppercase;
+}
+.kw.swatch { width: 9px; height: 9px; padding: 0; display: inline-block; border-radius: 2px; }
+.kw.time.swatch { background: var(--ink); }
+
+/* ── input / output panes ─────────────────────────────────────────────── */
+
+.pane { border: 1px solid var(--rule); background: var(--paper); }
+.pane + .pane { margin-top: 14px; }
+
+.pane-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 13px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--panel);
+}
+.pane-tag {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  padding: 2px 6px;
+  border: 1px solid currentColor;
+}
+.pane-tag.in { color: var(--ink3); }
+.pane-tag.out { color: var(--ox); }
+.pane-body { padding: 14px 16px; }
+
+.pane.input { background: var(--panel); }
+.pane.input .pane-head { background: var(--sunk); }
+
+/* The source editor moved inside the pane, so it needs its own typography
+   rather than inheriting the default form-control look. */
+.pane.input textarea {
+  display: block;
+  width: 100%;
+  font-family: var(--serif);
+  font-size: 15.5px;
+  line-height: 1.55;
+  color: var(--ink2);
+  border: none;
+  background: transparent;
+  padding: 0;
+  resize: none;
+  min-height: 24px;
+  max-height: 26vh;
+  overflow-y: auto;
+}
+.pane.input textarea::placeholder { color: var(--ink3); font-style: italic; }
+.pane.input textarea:focus { border: none; outline: none; }
+.pane.input .epigraph-preview { font-size: 15.5px; }
 
 .caret {
   display: inline-block;

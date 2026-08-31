@@ -2,6 +2,41 @@ import type { StageId } from './types'
 
 export const STAGE_ORDER: StageId[] = ['direct', 'draft', 'critique', 'revise']
 
+/**
+ * What each pass consumes and produces.
+ *
+ * They form a chain — each works on what the one before it left on the page —
+ * but any of them can be entered directly, which is why the UI has to state
+ * both facts rather than looking like a wizard.
+ */
+export const STAGE_INFO: Record<StageId, { produces: string; needs: 'story' | 'anything' | 'prompt'; blurb: string }> = {
+  direct: {
+    produces: 'a direction sheet',
+    needs: 'story',
+    blurb: 'Works out what to show — the anchors, the escalation, a beat grid and a card per cut. Writes no prompt fields.',
+  },
+  draft: {
+    produces: 'the prompt',
+    needs: 'anything',
+    blurb: 'Turns what is on the page into a prompt, in the official field structure for the chosen mode.',
+  },
+  critique: {
+    produces: 'notes',
+    needs: 'prompt',
+    blurb: 'Audits the prompt against the loaded skills and lists what is wrong. Changes nothing.',
+  },
+  revise: {
+    produces: 'a corrected prompt',
+    needs: 'prompt',
+    blurb: 'Applies the notes and leaves every untouched line exactly as it was.',
+  },
+  freeform: {
+    produces: 'a corrected prompt',
+    needs: 'prompt',
+    blurb: 'Applies one instruction you type, and nothing else.',
+  },
+}
+
 export const STAGE_LABEL: Record<StageId, string> = {
   direct: 'Direct',
   draft: 'Draft',

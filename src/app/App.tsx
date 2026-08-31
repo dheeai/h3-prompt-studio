@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useApp } from './state'
 import { Marginalia } from '../components/Marginalia'
-import { PromptDoc } from '../components/PromptDoc'
+import { Legend, PromptDoc } from '../components/PromptDoc'
 import { ConnectPanel } from '../components/ConnectPanel'
 import { SkillsPanel } from '../components/SkillsPanel'
 import { SettingsPanel } from '../components/SettingsPanel'
-import { STAGE_LABEL, STAGE_ORDER } from '../lib/stages'
+import { STAGE_INFO, STAGE_LABEL, STAGE_ORDER } from '../lib/stages'
 import { skillTokens } from '../lib/skills'
 import { fmtTokens } from '../lib/tokens'
 import { wasSent } from '../lib/context'
@@ -40,6 +40,7 @@ export function App() {
   const [copied, setCopied] = useState(false)
   const [note, setNote] = useState('')
   const [editingSource, setEditingSource] = useState(false)
+  const [hoveredStage, setHoveredStage] = useState<StageId | null>(null)
   const storyRef = useRef<HTMLTextAreaElement>(null)
   const noteRef = useRef<HTMLTextAreaElement>(null)
   const docRef = useRef<HTMLDivElement>(null)
@@ -62,7 +63,33 @@ export function App() {
 
   const reached = useMemo(() => new Set(versions.map((v) => v.stage)), [versions])
 
-  useEffect(() => autosize(storyRef.current), [story, ready])
+  // Critique and Revise operate on a prompt. A direction sheet is prose, and
+  // auditing it for prompt fields produces confident nonsense — so say what is
+  // missing rather than letting it run.
+  const documentIsPrompt = current ? current.stage !== 'direct' : looksLikePrompt(story)
+  const blockedReason = (stage: StageId): string | null => {
+    const needs = STAGE_INFO[stage].needs
+    if (needs === 'story' && !story.trim()) return 'Paste something first.'
+    if (needs === 'anything' && !story.trim() && !current) return 'Paste something first.'
+    if (needs === 'prompt' && !documentIsPrompt) {
+      return current ? 'Needs a prompt — the page currently holds a direction sheet. Run Draft first.' : 'Needs a prompt. Paste one, or run Direct then Draft.'
+    }
+    return null
+  }
+
+  useEffect(() => autosize(storyRef.current), [story, ready, editingSource])
+
+  // The serif loads from Google Fonts after first paint, so the first measure
+  // is taken against the fallback metrics and leaves the box the wrong height.
+  useEffect(() => {
+    let cancelled = false
+    void document.fonts?.ready.then(() => {
+      if (!cancelled) autosize(storyRef.current)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [ready])
   useEffect(() => autosize(noteRef.current), [note])
 
   // Follow the stream, but only while the user is already at the bottom.
@@ -168,72 +195,115 @@ export function App() {
         <div className="column">
           {/* ── stage line ───────────────────────────────────────────── */}
           <div className="stageline">
-            {STAGE_ORDER.map((s, i) => (
-              <span key={s} style={{ display: 'contents' }}>
-                {i > 0 && <span className={`stage-sep${nextStage === s ? ' on' : ''}`} />}
+            <div className="stagerow">
+              {STAGE_ORDER.map((s, i) => {
+                const blocked = blockedReason(s)
+                const done = reached.has(s)
+                const isNext = nextStage === s
+                return (
+                  <span key={s} style={{ display: 'contents' }}>
+                    {i > 0 && <span className={`stage-sep${isNext ? ' on' : ''}`} />}
+                    {/* The hover handlers sit on the wrapper, not the button:
+                        a disabled button receives no pointer events, and a
+                        blocked pass is precisely the one needing explanation. */}
+                    <span
+                      className={`stage-wrap${isNext ? ' on' : done ? ' done' : ''}`}
+                      onMouseEnter={() => setHoveredStage(s)}
+                      onMouseLeave={() => setHoveredStage(null)}
+                      title={blocked ?? (connected ? `${STAGE_LABEL[s]} — ${STAGE_INFO[s].blurb}` : 'Connect a model first')}
+                    >
+                      <span className="stage-num">{done ? '✓' : i + 1}</span>
+                      <button
+                        className={`stage${isNext ? ' on' : done ? ' done' : ''}`}
+                        onClick={() => !busy && connected && !blocked && void app.run(s)}
+                        disabled={busy || !connected || !!blocked}
+                      >
+                        {STAGE_LABEL[s]}
+                      </button>
+                    </span>
+                  </span>
+                )
+              })}
+              <div style={{ flexGrow: 1 }} />
+              {current && !busy && (
+                <span className="tok" style={{ marginRight: 12 }}>
+                  {current.model} · {(current.ms / 1000).toFixed(1)}s
+                </span>
+              )}
+              {busy ? (
+                <>
+                  <span className="spin" style={{ marginRight: 9 }} />
+                  <button className="btn" onClick={app.cancel}>Stop</button>
+                </>
+              ) : (
                 <button
-                  className={`stage${nextStage === s ? ' on' : reached.has(s) ? ' done' : ''}`}
-                  onClick={() => !busy && connected && void app.run(s)}
-                  disabled={busy || !connected}
-                  title={connected ? `Run ${STAGE_LABEL[s]}` : 'Connect a model first'}
+                  className="btn pri"
+                  onClick={() => void app.run(nextStage)}
+                  disabled={!connected || !!blockedReason(nextStage)}
+                  title={blockedReason(nextStage) ?? undefined}
                 >
-                  {STAGE_LABEL[s]}
+                  {connected ? `Run ${STAGE_LABEL[nextStage]}` : 'Connect a model'}
                 </button>
-              </span>
-            ))}
-            <div style={{ flexGrow: 1 }} />
-            {current && !busy && (
-              <span className="tok" style={{ marginRight: 12 }}>
-                {current.model} · {(current.ms / 1000).toFixed(1)}s
-              </span>
-            )}
-            {busy ? (
-              <>
-                <span className="spin" style={{ marginRight: 9 }} />
-                <button className="btn" onClick={app.cancel}>Stop</button>
-              </>
-            ) : (
-              <button className="btn pri" onClick={() => void app.run(nextStage)} disabled={!connected || (!story.trim() && !current)}>
-                {connected ? `Run ${STAGE_LABEL[nextStage]}` : 'Connect a model'}
-              </button>
-            )}
+              )}
+            </div>
+
+            <div className="stagenote">
+              {(() => {
+                const s = hoveredStage ?? nextStage
+                const blocked = blockedReason(s)
+                if (blocked) return <><b>{STAGE_LABEL[s]}</b> — {blocked}</>
+                return (
+                  <>
+                    <b>
+                      {STAGE_LABEL[s]} → {STAGE_INFO[s].produces}
+                    </b>{' '}
+                    {STAGE_INFO[s].blurb}
+                    {!versions.length && ' Each pass works on what is on the page — run them in order, or jump straight to the one you need.'}
+                  </>
+                )
+              })()}
+            </div>
           </div>
 
           {/* ── source ───────────────────────────────────────────────── */}
-          <div style={{ flex: '0 0 auto', padding: '22px 26px 18px', minHeight: 0 }}>
-            <div className="epigraph">
-              {collapseSource ? (
-                <div className={`epigraph-preview ${pastedPrompt ? 'one' : 'two'}`} onClick={() => setEditingSource(true)}>
-                  {story}
-                </div>
-              ) : (
-                <textarea
-                  ref={storyRef}
-                  value={story}
-                  onChange={(e) => app.setStory(e.target.value)}
-                  placeholder="Paste a story, a beat sheet, a script, or a half-written prompt…"
-                  rows={1}
-                  aria-label="Source story"
-                />
-              )}
-              <div className="tok" style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <span>
-                  source · {pastedPrompt ? 'a prompt already' : 'story'} · {story.length.toLocaleString()} characters
+          <div style={{ flex: '0 0 auto', padding: '16px 26px 0', minHeight: 0 }}>
+            <div className="pane input">
+              <div className="pane-head">
+                <span className="pane-tag in">INPUT</span>
+                <span className="tok" style={{ color: 'var(--ink2)' }}>
+                  {pastedPrompt ? 'a prompt you pasted' : 'your source'} · {story.length.toLocaleString()} characters
                 </span>
+                <div style={{ flexGrow: 1 }} />
                 {(pastedPrompt || longSource) && (
-                  <button className="btn sm ghost" style={{ padding: '1px 6px' }} onClick={() => setEditingSource((v) => !v)}>
-                    {collapseSource ? 'edit' : 'collapse'}
+                  <button className="btn sm ghost" onClick={() => setEditingSource((v) => !v)}>
+                    {collapseSource ? 'expand' : 'collapse'}
                   </button>
                 )}
+              </div>
+              <div className="pane-body" style={{ paddingTop: 10, paddingBottom: 10 }}>
+                {collapseSource ? (
+                  <div className={`epigraph-preview ${pastedPrompt ? 'one' : 'two'}`} onClick={() => setEditingSource(true)}>
+                    {story}
+                  </div>
+                ) : (
+                  <textarea
+                    ref={storyRef}
+                    value={story}
+                    onChange={(e) => app.setStory(e.target.value)}
+                    placeholder="Paste a story, a beat sheet, a script, or a half-written prompt…"
+                    rows={1}
+                    aria-label="Source story"
+                  />
+                )}
                 {!story && (
-                  <>
-                    <span>·</span>
+                  <div className="tok" style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span>try</span>
                     {EXAMPLES.map((ex) => (
                       <button key={ex.label} className="btn sm ghost" style={{ padding: '1px 6px' }} onClick={() => app.setStory(ex.text)}>
                         {ex.label}
                       </button>
                     ))}
-                  </>
+                  </div>
                 )}
               </div>
             </div>
@@ -241,24 +311,34 @@ export function App() {
 
           {/* ── the document ─────────────────────────────────────────── */}
           <div className="scroll" ref={docRef} style={{ flex: '1 1 auto', padding: '0 26px', minHeight: 0 }}>
-            <div style={{ borderTop: '1px solid var(--rule)', paddingTop: 16, paddingBottom: 20 }}>
+            <div style={{ paddingTop: 14, paddingBottom: 20 }}>
               {shown ? (
-                <>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 13 }}>
-                    <span className="lbl">
+                <div className="pane output">
+                  <div className="pane-head">
+                    <span className="pane-tag out">OUTPUT</span>
+                    <span className="tok" style={{ color: 'var(--ink2)' }}>
                       {streaming
-                        ? STAGE_LABEL[streaming.stage]
+                        ? `${STAGE_LABEL[streaming.stage]} · writing…`
                         : current
-                          ? `${settings.mode} · ${STAGE_LABEL[current.stage]}`
-                          : `${settings.mode} · as pasted`}
+                          ? `${settings.mode} · ${STAGE_LABEL[current.stage]} · pass ${versions.findIndex((v) => v.id === current.id) + 1}`
+                          : `${settings.mode} · unrefined — this is still your input`}
                     </span>
                     <div style={{ flexGrow: 1 }} />
-                    <span className="tok">
-                      {streaming ? 'writing…' : current ? `pass ${versions.findIndex((v) => v.id === current.id) + 1}` : 'not yet refined'}
-                    </span>
+                    {!streaming && (
+                      <button className="btn sm" onClick={() => void copy()}>
+                        {copied ? 'Copied' : 'Copy'}
+                      </button>
+                    )}
                   </div>
-                  <PromptDoc text={shown} streaming={!!streaming} />
-                </>
+                  {!streaming && (
+                    <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--rule)', background: 'var(--paper)' }}>
+                      <Legend text={shown} />
+                    </div>
+                  )}
+                  <div className="pane-body">
+                    <PromptDoc text={shown} streaming={!!streaming} />
+                  </div>
+                </div>
               ) : (
                 <div style={{ maxWidth: 520 }}>
                   <div className="lbl" style={{ marginBottom: 9 }}>What comes back</div>

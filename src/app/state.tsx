@@ -266,6 +266,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (!session.story.trim() && !current) return setError('Paste something first.')
       if (stage !== 'direct' && !working.trim()) return setError('Nothing to work on yet.')
 
+      // Critique and Revise audit a prompt's field structure. Pointed at a
+      // direction sheet they produce confident findings about fields that were
+      // never supposed to be there.
+      if (stage === 'critique' || stage === 'revise' || stage === 'freeform') {
+        const isPrompt = current ? current.stage !== 'direct' : looksLikePrompt(session.story)
+        if (!isPrompt) {
+          return setError(
+            current
+              ? `${STAGE_LABEL[stage]} works on a prompt, but the page currently holds a direction sheet. Run Draft first.`
+              : `${STAGE_LABEL[stage]} works on a prompt. Paste one, or run Direct and then Draft.`,
+          )
+        }
+      }
+
       const ctx = context ?? (await buildContext(skills, settings.selection))
       const template = settings.stageTemplates[stage] || DEFAULT_TEMPLATES[stage]
       const user = fillTemplate(template, {

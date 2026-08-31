@@ -119,19 +119,30 @@ a whole corpus into a local model's context is rarely what you want.
 
 ### Shipping skills with a deployment
 
-`public/skills/` is what a visitor gets on first load. It is **empty and
-gitignored by default**, because anything placed there is served to everyone
-who opens your deployment. Baking is therefore an explicit local act:
+`public/skills/` is what a visitor gets on first load. Baking into it is an
+explicit local act, and the directory is deliberately **not** gitignored — so
+`git status` always shows exactly what a deploy would publish.
 
 ```bash
-node scripts/bake-skills.mjs ~/.claude/skills/h3-direction ~/.claude/skills/h3-prompting
+node scripts/bake-skills.mjs ~/.claude/skills/h3-direction
 node scripts/bake-skills.mjs --glob '~/.claude/skills/h3-*'
+node scripts/bake-skills.mjs <skill-dir> --exclude 'references/ref_guide.md'
 node scripts/bake-skills.mjs --clear
 ```
 
 > **Check before you bake.** If your skills live in a private repo, baking
 > them and deploying publishes them. Only bake documents you intend to make
-> public.
+> public — and use `--exclude` for files a skill quotes but does not own.
+
+### What this deployment ships
+
+`h3-direction` in full, and `h3-prompting`'s `SKILL.md`.
+
+`h3-prompting`'s two reference files are **not** included: they are verbatim
+copies of MiniMax's own documentation, which is published under a custom
+licence rather than a permissive one. `SKILL.md` says where they live
+(`huggingface.co/MiniMaxAI/MiniMax-H3`, under `docs/`) — fetch them from the
+source and add them through the Skills panel, and they stay in your browser.
 
 ---
 

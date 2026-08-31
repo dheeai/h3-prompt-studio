@@ -1,0 +1,20 @@
+{
+  "skills": [
+    {
+      "dir": "h3-direction",
+      "files": [
+        "SKILL.md",
+        "references/dramaturgy.md",
+        "references/rule-of-six.md",
+        "references/scene-analysis.md",
+        "references/visual-structure.md"
+      ]
+    },
+    {
+      "dir": "h3-prompting",
+      "files": [
+        "SKILL.md"
+      ]
+    }
+  ]
+}

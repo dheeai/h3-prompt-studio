@@ -24,9 +24,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      # Skills are NOT baked here. public/skills/ is gitignored, so a
-      # deployment ships only what someone deliberately committed. To publish
-      # a skill set, bake it locally and commit public/skills/.
+      # Skills are NOT baked here — a deployment ships exactly what was
+      # committed under public/skills/. To publish a skill set, bake it
+      # locally, check `git status`, and commit it.
       - run: npm run build
       - uses: actions/upload-pages-artifact@v3
         with:

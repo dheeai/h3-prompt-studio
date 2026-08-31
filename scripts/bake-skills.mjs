@@ -9,6 +9,7 @@
  *
  *   node scripts/bake-skills.mjs ~/.claude/skills/h3-direction ~/.claude/skills/h3-prompting
  *   node scripts/bake-skills.mjs --glob '~/.claude/skills/h3-*'
+ *   node scripts/bake-skills.mjs <skill-dir> --exclude 'references/*'
  *   node scripts/bake-skills.mjs --clear
  */
 
@@ -55,16 +56,25 @@ if (argv.includes('--clear')) {
 }
 
 let targets = []
+const excludes = []
 for (let i = 0; i < argv.length; i++) {
   if (argv[i] === '--glob') targets.push(...(await expandGlob(argv[++i])))
+  else if (argv[i] === '--exclude') excludes.push(argv[++i])
   else targets.push(expand(argv[i]))
 }
+
+// Exclusions match against the path relative to the skill root, so a skill
+// can ship its own writing while leaving third-party documents it merely
+// quotes out of the published copy.
+const excluded = (rel) =>
+  excludes.some((g) => new RegExp('^' + g.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$').test(rel))
 
 if (!targets.length) {
   console.error(`Nothing to bake.
 
   node scripts/bake-skills.mjs <skill-dir> [<skill-dir> …]
   node scripts/bake-skills.mjs --glob '~/.claude/skills/h3-*'
+  node scripts/bake-skills.mjs <skill-dir> --exclude 'references/*'
   node scripts/bake-skills.mjs --clear
 
 Anything baked here is served to every visitor of wherever you deploy this.
@@ -88,7 +98,12 @@ for (const target of targets) {
   const destDir = join(OUT, dirName)
   await mkdir(destDir, { recursive: true })
 
-  const files = s.isDirectory() ? await walk(target) : [{ rel: basename(target), abs: target }]
+  const all = s.isDirectory() ? await walk(target) : [{ rel: basename(target), abs: target }]
+  const files = all.filter((f) => {
+    if (!excluded(f.rel)) return true
+    console.log(`  excluded ${dirName}/${f.rel}`)
+    return false
+  })
   const written = []
   for (const f of files) {
     const dest = join(destDir, f.rel)

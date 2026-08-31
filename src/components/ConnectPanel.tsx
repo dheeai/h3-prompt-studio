@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useApp } from '../app/state'
-import { isSafari, localEndpoint, mixedContentBlocked, needsKey } from '../lib/providers'
+import { isSafari, localEndpoint, localNetworkTarget, mixedContentBlocked, needsKey, pageIsPublic } from '../lib/providers'
 import type { Provider } from '../lib/types'
 
 function StatusBadge({ state }: { state: string }) {
@@ -8,6 +8,7 @@ function StatusBadge({ state }: { state: string }) {
     ok: { cls: 'ok', label: 'connected' },
     probing: { cls: 'idle', label: 'checking…' },
     'mixed-content': { cls: 'err', label: 'blocked' },
+    'local-network-blocked': { cls: 'err', label: 'blocked' },
     unreachable: { cls: 'idle', label: 'not reachable' },
     'no-key': { cls: 'warn', label: 'needs a key' },
     error: { cls: 'warn', label: 'error' },
@@ -30,6 +31,7 @@ function ProviderCard({ provider }: { provider: Provider }) {
   const [showKey, setShowKey] = useState(false)
   const selected = settings.providerId === provider.id
   const blocked = mixedContentBlocked(provider.baseUrl)
+  const lanRisk = !blocked && pageIsPublic() && !!localNetworkTarget(provider.baseUrl)
 
   const save = async (patch: Partial<Provider>) => {
     await setProviders(providers.map((p) => (p.id === provider.id ? { ...p, ...patch } : p)))
@@ -103,10 +105,25 @@ function ProviderCard({ provider }: { provider: Provider }) {
         </div>
       )}
 
+      {probe?.state === 'local-network-blocked' && (
+        <div className="alert err" style={{ marginTop: 9 }}>
+          <strong>Blocked by the browser’s local-network rule.</strong>
+          <div style={{ marginTop: 4 }}>{probe.detail}</div>
+          {probe.hint && <div style={{ marginTop: 6 }}>{probe.hint}</div>}
+          <div className="code" style={{ marginTop: 8 }}>npx h3-prompt-studio</div>
+        </div>
+      )}
+
       {probe?.state === 'unreachable' && !blocked && (
         <div className="alert warn" style={{ marginTop: 9 }}>
           <div>{probe.detail}</div>
-          {provider.corsHint && (
+          {probe.hint && <div style={{ marginTop: 5 }}>{probe.hint}</div>}
+          {probe.suggest && (
+            <button className="btn sm" style={{ marginTop: 7 }} onClick={() => { setUrl(probe.suggest!); void save({ baseUrl: probe.suggest! }) }}>
+              Use {probe.suggest}
+            </button>
+          )}
+          {!probe.suggest && localEndpoint(provider.baseUrl) && provider.corsHint && (
             <div className="code" style={{ marginTop: 6 }}>
               {provider.corsHint.replace('<origin>', location.origin)}
             </div>
@@ -114,7 +131,19 @@ function ProviderCard({ provider }: { provider: Provider }) {
         </div>
       )}
 
-      {probe?.state === 'error' && <div className="alert warn" style={{ marginTop: 9 }}>{probe.detail}</div>}
+      {probe?.state === 'error' && (
+        <div className="alert warn" style={{ marginTop: 9 }}>
+          <div>{probe.detail}</div>
+          {probe.hint && <div style={{ marginTop: 5 }}>{probe.hint}</div>}
+        </div>
+      )}
+
+      {lanRisk && probe?.state === 'ok' && (
+        <div className="tok" style={{ marginTop: 7, lineHeight: 1.5 }}>
+          Reachable now, but this is a local-network address on a publicly-served page — if it starts hanging, that is the browser’s
+          local-network rule, not your server.
+        </div>
+      )}
 
       {probe?.state === 'ok' && probe.models.length > 0 && (
         <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8 }}>

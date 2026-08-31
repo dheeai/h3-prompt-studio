@@ -39,11 +39,23 @@ export interface Provider {
   corsHint?: string
 }
 
-export type ProbeState = 'unknown' | 'probing' | 'ok' | 'mixed-content' | 'unreachable' | 'no-key' | 'error'
+export type ProbeState =
+  | 'unknown'
+  | 'probing'
+  | 'ok'
+  | 'mixed-content'
+  | 'local-network-blocked'
+  | 'unreachable'
+  | 'no-key'
+  | 'error'
 
 export interface ProbeResult {
   state: ProbeState
   detail: string
+  /** A concrete next step, when the failure has one. */
+  hint?: string
+  /** A corrected URL to offer, when the entered one is malformed. */
+  suggest?: string
   models: string[]
   at: number
 }

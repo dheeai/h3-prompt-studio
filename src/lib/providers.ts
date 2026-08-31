@@ -78,14 +78,87 @@ export function localEndpoint(baseUrl: string): boolean {
   }
 }
 
+/** Is this page itself served from a public origin? */
+export function pageIsPublic(): boolean {
+  if (typeof location === 'undefined') return false
+  const h = location.hostname
+  return !(h === 'localhost' || h.endsWith('.localhost') || h === '127.0.0.1' || h === '[::1]' || h === '')
+}
+
+// RFC1918, loopback, link-local, and CGNAT 100.64.0.0/10 — the last one is
+// where Tailscale hands out addresses.
+const PRIVATE_IP =
+  /^(10\.|127\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)/
+
+/**
+ * Will a browser treat this target as being on the local network?
+ *
+ * Chrome gates requests from a PUBLIC origin to a private-range address behind
+ * Local Network Access, independently of scheme. HTTPS does not lift it — so a
+ * `tailscale serve` endpoint clears mixed content and is still blocked. Only
+ * localhost is exempt from both. We cannot resolve DNS here, so hostname
+ * suffixes stand in for the addresses we know they map to.
+ */
+export function localNetworkTarget(baseUrl: string): 'ip' | 'tailscale' | 'mdns' | null {
+  let h: string
+  try {
+    h = new URL(baseUrl).hostname
+  } catch {
+    return null
+  }
+  if (h === 'localhost' || h.endsWith('.localhost') || h === '127.0.0.1' || h === '[::1]') return null
+  if (PRIVATE_IP.test(h)) return 'ip'
+  if (h.endsWith('.ts.net')) return 'tailscale'
+  if (h.endsWith('.local')) return 'mdns'
+  return null
+}
+
+/** https:// pointed at an explicit non-443 port is usually a plaintext port. */
+export function schemePortMismatch(baseUrl: string): string | null {
+  try {
+    const u = new URL(baseUrl)
+    if (u.protocol !== 'https:' || !u.port || u.port === '443') return null
+    const fixed = new URL(baseUrl)
+    fixed.port = ''
+    return fixed.toString().replace(/\/$/, '')
+  } catch {
+    return null
+  }
+}
+
+/** The base must end in the version segment; we append /models and /chat/completions. */
+export function missingVersionSegment(baseUrl: string): boolean {
+  try {
+    return !/\/v\d+$/.test(new URL(baseUrl).pathname.replace(/\/$/, ''))
+  } catch {
+    return false
+  }
+}
+
 function headers(p: Provider): Record<string, string> {
   const h: Record<string, string> = { 'Content-Type': 'application/json' }
   if (p.apiKey) h.Authorization = `Bearer ${p.apiKey}`
   return h
 }
 
+const PROBE_TIMEOUT_MS = 8000
+
+/** A corrected URL that fixes every mistake we can see, not just the first. */
+function repair(baseUrl: string): string | null {
+  const stripped = schemePortMismatch(baseUrl)
+  const needsVersion = missingVersionSegment(baseUrl)
+  if (!stripped && !needsVersion) return null
+  const fixed = (stripped ?? baseUrl).replace(/\/$/, '')
+  return needsVersion ? `${fixed}/v1` : fixed
+}
+
 export async function probe(p: Provider, signal?: AbortSignal): Promise<ProbeResult> {
   const at = Date.now()
+  const suggest = repair(p.baseUrl) ?? undefined
+  const versionHint = missingVersionSegment(p.baseUrl)
+    ? 'The base URL should end in /v1 — this app appends /models and /chat/completions to it.'
+    : undefined
+
   if (mixedContentBlocked(p.baseUrl)) {
     return {
       state: 'mixed-content',
@@ -99,33 +172,84 @@ export async function probe(p: Provider, signal?: AbortSignal): Promise<ProbeRes
     return { state: 'no-key', detail: 'Add an API key to use this provider.', models: [], at }
   }
 
+  // Without a deadline a gated request hangs indefinitely and the UI sits on
+  // "checking…" forever, which reads as a bug in the app rather than a block.
+  const timer = new AbortController()
+  const timeout = setTimeout(() => timer.abort(), PROBE_TIMEOUT_MS)
+  const onOuterAbort = () => timer.abort()
+  signal?.addEventListener('abort', onOuterAbort)
+
   try {
-    const res = await fetch(`${p.baseUrl.replace(/\/$/, '')}/models`, { headers: headers(p), signal })
+    const res = await fetch(`${p.baseUrl.replace(/\/$/, '')}/models`, { headers: headers(p), signal: timer.signal })
     if (!res.ok) {
-      return { state: 'error', detail: `HTTP ${res.status} ${res.statusText}`, models: [], at }
+      return {
+        state: 'error',
+        detail: `HTTP ${res.status} ${res.statusText}`,
+        hint: res.status === 404 ? versionHint : undefined,
+        models: [],
+        at,
+      }
     }
     const body = (await res.json()) as { data?: { id: string }[] }
     const models = (body.data || []).map((m) => m.id).sort()
     return {
       state: 'ok',
       detail: models.length ? `${models.length} model${models.length === 1 ? '' : 's'}` : 'reachable, no models listed',
+      hint: models.length ? undefined : versionHint,
       models,
       at,
     }
   } catch (e) {
-    if ((e as Error).name === 'AbortError') return { state: 'unknown', detail: 'cancelled', models: [], at }
-    // fetch() rejects with an opaque TypeError for both "nothing listening"
-    // and "blocked by CORS" — the browser deliberately does not tell us which.
+    if (signal?.aborted) return { state: 'unknown', detail: 'cancelled', models: [], at }
+
+    const timedOut = timer.signal.aborted
+    const lan = localNetworkTarget(p.baseUrl)
+
+    // A public page reaching a private-range address, hanging rather than
+    // failing fast, is the signature of Chrome's Local Network Access gate.
+    if (timedOut && lan && pageIsPublic()) {
+      return {
+        state: 'local-network-blocked',
+        detail:
+          lan === 'tailscale'
+            ? 'A Tailscale address is on the local network as far as the browser is concerned, and this page is served from a public origin. Chrome blocks that combination — the request hangs instead of connecting. HTTPS does not lift it; only localhost is exempt.'
+            : 'This is a private-network address and this page is served from a public origin. Chrome blocks that combination, so the request hangs instead of connecting.',
+        hint: 'Run this app locally instead — `npm run serve`, or `npx h3-prompt-studio`. From a page on localhost the request is not a public-to-local crossing and goes straight through.',
+        models: [],
+        at,
+      }
+    }
+
+    if (suggest) {
+      const portWrong = !!schemePortMismatch(p.baseUrl)
+      return {
+        state: 'unreachable',
+        detail: portWrong
+          ? 'The connection failed immediately, which usually means https:// is pointed at a plaintext port. A tailscale serve or reverse-proxy front-end listens on 443, not the application’s own port.'
+          : 'Not reachable.',
+        hint: versionHint,
+        suggest,
+        models: [],
+        at,
+      }
+    }
+
     return {
       state: 'unreachable',
-      detail: localEndpoint(p.baseUrl)
-        ? isSafari()
-          ? 'Not reachable. Safari does not treat http://localhost as a secure origin — use Chrome, Edge or Firefox, or run this app locally.'
-          : 'Not running, or not allowing this origin.'
-        : 'Not reachable.',
+      detail: timedOut
+        ? 'No response within 8 seconds.'
+        : localEndpoint(p.baseUrl)
+          ? isSafari()
+            ? 'Not reachable. Safari does not treat http://localhost as a secure origin — use Chrome, Edge or Firefox, or run this app locally.'
+            : 'Not running, or not allowing this origin.'
+          : 'Not reachable.',
+      hint: versionHint,
       models: [],
       at,
     }
+  } finally {
+    clearTimeout(timeout)
+    signal?.removeEventListener('abort', onOuterAbort)
   }
 }
 

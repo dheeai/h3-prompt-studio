@@ -81,18 +81,35 @@ The caveats:
    `http://localhost` as secure. Use Chrome, Edge or Firefox — or run the app
    locally with `npm run serve`.
 
-2. **Plain HTTP on *another* machine is blocked.** The localhost exemption
-   does not extend to other hosts, so `http://some-box.local:9000/v1` from an
-   HTTPS page is refused as mixed content *before the request is sent*. No
-   CORS header can fix it. Two ways out:
-   - give the box a real HTTPS name — for a Tailscale host,
-     `tailscale serve --bg 9000` issues a certificate and serves it over
-     `https://<host>.ts.net`;
-   - or run this app over `http://localhost` yourself (`npm run serve`),
-     where there is no mixed content at all.
+2. **A model on another machine on your network will not work from a hosted
+   page — even over HTTPS.** There are *two independent gates* here, and
+   clearing the first does not clear the second:
 
-The Connect panel diagnoses which of these you have hit, rather than reporting
-a bare network error.
+   - **Mixed content.** Plain HTTP on a non-localhost host is refused before
+     the request is sent. Giving the box a real HTTPS name fixes this — for a
+     Tailscale host, `tailscale serve --bg 9000` issues a certificate and
+     serves on 443.
+   - **Local Network Access.** Chrome separately blocks a *public* origin from
+     reaching a *private-range* address, based on the destination IP, not the
+     scheme. Tailscale hands out `100.64.0.0/10` (CGNAT) addresses, which fall
+     inside that range, so an HTTPS `*.ts.net` endpoint is still blocked. The
+     request hangs rather than failing, then times out. RFC1918 addresses
+     (`192.168.x`, `10.x`) and `.local` names behave the same way.
+
+   `localhost` is exempt from both, which is why it is the one address that
+   works from a hosted page. For anything else on your network, **run the app
+   locally** (`npm run serve`) — from a page on localhost neither gate applies.
+
+   *Measured:* the same `https://<host>.ts.net/llama/v1/models` request
+   returned 200 with 17 models in 297 ms from `http://localhost:5173`, and
+   timed out after 31 s from `https://…github.io`. Same browser, same machine,
+   same minute. `curl` reaches it in 6 ms either way — this is a browser
+   policy, not a network problem, so testing with curl will mislead you.
+
+The Connect panel diagnoses which gate you have hit, rather than reporting a
+bare network error. It also catches the two URL mistakes that look like
+network failures: pointing `https://` at a plaintext port (the TLS handshake
+fails in milliseconds), and a base URL that does not end in `/v1`.
 
 ### About API keys
 

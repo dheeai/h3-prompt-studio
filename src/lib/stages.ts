@@ -69,20 +69,55 @@ export const STAGE_LABEL: Record<StageId, string> = {
 export const DEFAULT_TEMPLATES: Record<StageId, string> = {
   direct: `You are directing, not writing prompts yet.
 
-The source below is either a story to direct, or a prompt somebody already
-wrote. Work out which, and read it accordingly.
+THE ONE RULE:
 
-If it is ALREADY A PROMPT, do not treat its choices as settled. Read through it
-to what it is actually trying to show, then judge it: does it escalate, does
-each beat earn its screen time, is the camera doing anything, is the
-performance observable. State what it is getting wrong. Then direct it again
-from the underlying intent — you are re-deciding the film, not preserving the
-prompt. Say plainly where your direction departs from what is there and why.
+  You cannot change WHAT HAPPENS ON THE SCREEN.
+  You can change HOW WHAT HAPPENS ON THE SCREEN IS SHOT.
+
+Two different things live in the source and they are NOT treated the same way.
+
+FIXED — carry these through unchanged. They are what was actually asked for:
+- who is in the scene, and what they do
+- where it takes place
+- the action requested, and how it ends
+- named objects, props, wardrobe, animals, vehicles
+- any dialogue, verbatim
+- stated constraints: duration, aspect ratio, language, format
+
+OPEN — yours to decide, and to re-decide when the source gets them wrong:
+- framing, lens, camera behaviour, blocking, eyelines
+- the order and duration of beats WITHIN the requested action
+- what is shown and what is withheld, and when
+- performance: gaze, breath, hands, weight, timing, reaction delay
+- light, palette, texture, sound design
+
+If the source is ALREADY A PROMPT, do not treat its craft as settled. Judge it —
+does it escalate, does each beat earn its screen time, is the camera doing
+anything, is the performance observable — and say what it gets wrong. Then
+direct it again.
+
+But re-directing means re-deciding HOW it is shot. **It does not license
+changing what happens.** "A woman enters a shop" does not become a woman
+strolling down a lane because a lane is more interesting: that is a different
+film, and no amount of directorial merit makes it the one that was requested.
+Changing the subject is not a stronger reading of the brief, it is a failure to
+answer it.
+
+If you genuinely believe the requested action cannot work as asked, say so in
+one line — then direct the requested action anyway.
 
 {{film}}
 
-Produce a DIRECTION SHEET, following the loaded craft documents exactly where
-they specify a structure.
+Begin with this block, before anything else:
+
+WHAT THE BRIEF FIXES
+- one short line per fixed element above, in your own words
+
+That block is a contract. Everything after it must be a way of shooting THAT,
+and any drift is then visible at a glance.
+
+Then produce the DIRECTION SHEET, following the loaded craft documents exactly
+where they specify a structure.
 
 Decide and state:
 - what this is actually about, in one line
@@ -107,13 +142,17 @@ Apply every craft rule they state about shot construction, camera, performance,
 sound and suppressed modalities, including any failure mode they record from
 real measurements.
 
-This is a REBUILD. Write the prompt from the direction sheet, not from any
-earlier prompt — do not carry over its wording, its beats, or its structure
-except where the direction sheet calls for them. If the source contained a
-prompt, treat it as superseded.
+This is a rebuild of the WRITING, not of the scene.
+
+Write the prompt from the direction sheet rather than from any earlier prompt:
+that prompt's wording, ordering and structure are superseded. What is NOT
+superseded is the subject — the people, the place, the action and its outcome,
+the named objects, and any dialogue, which stay exactly as the brief asked for
+them. The sheet's WHAT THE BRIEF FIXES block is the authority on that.
 
 Render the direction sheet; do not re-direct it, and do not invent beats it
-does not contain.
+does not contain. If the sheet itself has drifted from the fixed elements,
+follow the fixed elements and note the discrepancy in one line at the end.
 
 Output the prompt and nothing else — no preamble, no explanation, no fences.
 

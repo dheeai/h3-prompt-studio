@@ -117,8 +117,17 @@ export async function submit(ep: ComfyEndpoint, graph: Record<string, ComfyNode>
     try {
       const j = JSON.parse(text)
       msg = j?.error?.message ? `${j.error.message}${j.error.details ? ` — ${j.error.details}` : ''}` : msg
-      if (j?.node_errors && Object.keys(j.node_errors).length) {
-        msg += ` (nodes: ${Object.keys(j.node_errors).join(', ')})`
+      // "(nodes: 136)" tells an operator nothing. ComfyUI already says exactly
+      // which input on which node it objects to — pass that through.
+      const nodeErrors = j?.node_errors as Record<string, { class_type?: string; errors?: Array<{ message?: string; details?: string }> }> | undefined
+      if (nodeErrors && Object.keys(nodeErrors).length) {
+        const lines = Object.entries(nodeErrors).flatMap(([node, info]) =>
+          (info.errors ?? []).map((err) => {
+            const what = [err.message, err.details].filter(Boolean).join(': ')
+            return `node ${node}${info.class_type ? ` (${info.class_type})` : ''} — ${what || 'rejected'}`
+          }),
+        )
+        if (lines.length) msg += `\n${lines.join('\n')}`
       }
     } catch {
       /* not JSON; the raw text is what we have */

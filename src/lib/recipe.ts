@@ -26,6 +26,19 @@ const CANDIDATES: Record<Exclude<BindingSlot, 'output'>, Array<[cls: string, fie
 
 const REF_PREFIXES = ['ref_image_', 'ref_video_', 'ref_video_audio_', 'ref_audio_'] as const
 
+/**
+ * Does this input key belong to an autogrow reference group?
+ *
+ * It must be `ref_images.ref_image_3` or `ref_image_3` — the prefix followed by
+ * an INDEX. A substring test is not good enough and cost us a render: H3's node
+ * also has a scalar `ref_image_size`, which contains `ref_image_` and is a
+ * REQUIRED input, so a loose match deleted it and ComfyUI rejected the node
+ * with `required_input_missing: ref_image_size`.
+ */
+function isRefSlot(key: string, prefix: string): boolean {
+  return new RegExp(`(^|\\.)${prefix}\\d+$`).test(key)
+}
+
 /** H3's own caps, from the node schema. Exceeding one is silently ignored. */
 export const REF_CAPS = { image: 9, video: 3 } as const
 
@@ -106,7 +119,7 @@ export function detectBindings(graph: Record<string, ComfyNode>): Pick<Recipe, '
   const refHosts: NonNullable<Recipe['refHosts']> = {}
   for (const [id, n] of Object.entries(graph)) {
     for (const prefix of REF_PREFIXES) {
-      if (Object.keys(n.inputs).some((k) => k.includes(prefix))) refHosts[prefix] = id
+      if (Object.keys(n.inputs).some((k) => isRefSlot(k, prefix))) refHosts[prefix] = id
     }
   }
   // A graph that ships with no references wired still has the node that would
@@ -188,7 +201,7 @@ export function applyRecipe(recipe: Recipe, input: RenderInputs): Record<string,
   const clearGroup = (hostId: string | undefined, prefix: string): ComfyNode | null => {
     if (!hostId || !g[hostId]) return null
     const host = g[hostId]
-    for (const k of Object.keys(host.inputs).filter((key) => key.includes(prefix))) {
+    for (const k of Object.keys(host.inputs).filter((key) => isRefSlot(key, prefix))) {
       const v = host.inputs[k]
       if (Array.isArray(v) && typeof v[0] === 'string') {
         const fed = g[v[0] as string]

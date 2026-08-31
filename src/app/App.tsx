@@ -121,7 +121,10 @@ export function App() {
 
   // When a finished prompt is pasted it IS the document — show it typeset
   // rather than leaving the page looking empty below a wall of source text.
-  const shown = streaming?.text ?? current?.text ?? (pastedPrompt ? story : '')
+  // `||` rather than `??` on purpose: at the instant a run starts the stream
+  // holds an empty string, which `??` would happily show — blanking the page
+  // until the first token lands. Keep the previous pass up until then.
+  const shown = streaming?.text || current?.text || (pastedPrompt ? story : '')
   const longSource = story.length > 600
   const collapseSource = (pastedPrompt || longSource) && !editingSource
   const loadedSkills = skills.filter((s) => settings.selection[s.id]?.length)
@@ -225,11 +228,6 @@ export function App() {
                 )
               })}
               <div style={{ flexGrow: 1 }} />
-              {current && !busy && (
-                <span className="tok" style={{ marginRight: 12 }}>
-                  {current.model} · {(current.ms / 1000).toFixed(1)}s
-                </span>
-              )}
               {busy ? (
                 <>
                   <span className="spin" style={{ marginRight: 9 }} />
@@ -323,6 +321,14 @@ export function App() {
                           ? `${settings.mode} · ${STAGE_LABEL[current.stage]} · pass ${versions.findIndex((v) => v.id === current.id) + 1}`
                           : `${settings.mode} · unrefined — this is still your input`}
                     </span>
+                    {current && !streaming && (
+                      <span className="tok" title="The model that produced this pass">
+                        written by {current.model} · {(current.ms / 1000).toFixed(1)}s
+                        {settings.model && current.model !== settings.model && (
+                          <span style={{ color: 'var(--amb)' }}> · you are now on {settings.model}</span>
+                        )}
+                      </span>
+                    )}
                     <div style={{ flexGrow: 1 }} />
                     {!streaming && (
                       <button className="btn sm" onClick={() => void copy()}>

@@ -7,6 +7,7 @@ import { streamChat } from '../lib/llm'
 import { DEFAULT_PROVIDERS, loadProviders, probe, saveProviders } from '../lib/providers'
 import { DEFAULT_TEMPLATES, STAGE_LABEL, fillTemplate, splitReply, templateFor } from '../lib/stages'
 import { fetchBundledSkills, loadSkills, removeSkill, saveSkill } from '../lib/skills'
+import { estTokens } from '../lib/tokens'
 import type { Finding, ProbeResult, Provider, Selection, Settings, Skill, StageId, Version } from '../lib/types'
 
 const SETTINGS_SCHEMA = 4
@@ -45,8 +46,10 @@ interface Api {
   story: string
   versions: Version[]
   current: Version | null
-  streaming: { stage: StageId; text: string; reasoning: string } | null
+  streaming: { stage: StageId; text: string; reasoning: string; startedAt: number } | null
   error: string | null
+  /** Thinking from a run that produced no answer, kept so it is not lost. */
+  failedReasoning: string | null
   findings: Finding[]
   context: BuiltContext | null
 
@@ -80,9 +83,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [providers, setProvidersState] = useState<Provider[]>(DEFAULT_PROVIDERS)
   const [probes, setProbes] = useState<Record<string, ProbeResult>>({})
   const [session, setSession] = useState<Session>({ story: '', versions: [], currentId: null })
-  const [streaming, setStreaming] = useState<{ stage: StageId; text: string; reasoning: string } | null>(null)
+  const [streaming, setStreaming] = useState<{ stage: StageId; text: string; reasoning: string; startedAt: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [context, setContext] = useState<BuiltContext | null>(null)
+  const [failedReasoning, setFailedReasoning] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
   // ── boot ──────────────────────────────────────────────────────────────
@@ -348,7 +352,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       const ac = new AbortController()
       abortRef.current = ac
-      setStreaming({ stage, text: '', reasoning: '' })
+      setStreaming({ stage, text: '', reasoning: '', startedAt: Date.now() })
       setError(null)
 
       try {
@@ -370,12 +374,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
         })
 
         if (!result.text.trim()) {
+          // Keep the thinking visible — it is the only evidence of what went
+          // wrong, and discarding it on failure loses the whole run.
+          setFailedReasoning(result.reasoning.trim() || null)
+          const chars = result.reasoning.trim().length
+          const thinking = chars ? `${chars.toLocaleString()} characters of thinking` : 'nothing'
+
+          if (result.unterminatedThink) {
+            throw new Error(
+              `The model opened a <think> block and never closed it, so its whole reply (${thinking}) was counted as thinking and no answer came out. That is a model or chat-template quirk rather than a limit — re-running usually clears it.`,
+            )
+          }
+          if (result.finishReason === 'length') {
+            throw new Error(
+              result.sentLimit
+                ? `Cut off at the ${result.sentLimit.toLocaleString()}-token ceiling after ${thinking}, before any answer. Raise it, or set output length to “No limit” in Settings.`
+                : `The model ran out of room after ${thinking}, before writing an answer. No ceiling was sent, so this is its own context limit — shorten the source or load fewer skill files.`,
+            )
+          }
           throw new Error(
-            result.reasoning.trim()
-              ? 'The model spent its whole budget thinking and never wrote an answer. Raise max tokens.'
-              : 'The model returned nothing.',
+            chars
+              ? `The model produced ${thinking} and then stopped without an answer${result.finishReason ? ` (finish reason: ${result.finishReason})` : ''}. Its thinking is kept above. Re-running usually helps; a smaller skill selection helps more.`
+              : `The model returned nothing at all${result.finishReason ? ` (finish reason: ${result.finishReason})` : ''}.`,
           )
         }
+        setFailedReasoning(null)
 
         // Revise and freeform are asked for a prompt plus a changelog; the
         // other stages return one document.
@@ -396,6 +419,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           at: Date.now(),
           ms: result.ms,
           reasoning: result.reasoning.trim() || undefined,
+          tokens: result.usage?.completion ?? estTokens(result.text + result.reasoning),
+          tokensEstimated: result.usage?.completion === undefined,
           note,
         }
         setSession((s) => ({ ...s, versions: [...s.versions, version], currentId: version.id }))
@@ -429,6 +454,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     current,
     streaming,
     error,
+    failedReasoning,
     findings,
     context,
     setStory,
@@ -442,7 +468,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     run,
     cancel,
     selectVersion,
-    clearError: () => setError(null),
+    clearError: () => {
+      setError(null)
+      setFailedReasoning(null)
+    },
     reset,
   }
 

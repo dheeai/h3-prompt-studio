@@ -77,6 +77,10 @@ export interface Version {
   fromText?: string
   /** One line per edit, each naming the document that required it. */
   changelog?: string[]
+  /** Completion tokens — real if the server reported them, else estimated. */
+  tokens?: number
+  /** True when `tokens` is an estimate rather than a reported count. */
+  tokensEstimated?: boolean
   /** The instruction that produced it, for freeform turns. */
   note?: string
 }

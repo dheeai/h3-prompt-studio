@@ -8,7 +8,7 @@ import { SkillsPanel } from '../components/SkillsPanel'
 import { SettingsPanel } from '../components/SettingsPanel'
 import { STAGE_INFO, STAGE_LABEL, STAGE_ORDER } from '../lib/stages'
 import { skillTokens } from '../lib/skills'
-import { fmtTokens } from '../lib/tokens'
+import { estTokens, fmtTokens } from '../lib/tokens'
 import { wasSent } from '../lib/context'
 import { looksLikePrompt } from '../lib/lint'
 import type { StageId, Version } from '../lib/types'
@@ -36,7 +36,7 @@ function autosize(el: HTMLTextAreaElement | null) {
 
 export function App() {
   const app = useApp()
-  const { ready, skills, settings, providers, probes, story, versions, current, streaming, error, context } = app
+  const { ready, skills, settings, providers, probes, story, versions, current, streaming, error, failedReasoning, context } = app
   const [modal, setModal] = useState<'connect' | 'skills' | 'settings' | null>(null)
   const [copied, setCopied] = useState(false)
   const [note, setNote] = useState('')
@@ -127,6 +127,15 @@ export function App() {
   useEffect(() => autosize(noteRef.current), [note])
   useEffect(() => setView('result'), [current?.id])
 
+  // Deltas can arrive in bursts, so the rate would freeze between them
+  // without a clock of its own.
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    if (!streaming) return
+    const t = setInterval(() => setTick((n) => n + 1), 500)
+    return () => clearInterval(t)
+  }, [streaming])
+
   // While the model is still thinking there is nothing else to look at, so the
   // panel opens itself — and folds away once real output starts arriving.
   useEffect(() => {
@@ -172,8 +181,19 @@ export function App() {
   // holds an empty string, which `??` would happily show — blanking the page
   // until the first token lands. Keep the previous pass up until then.
   const shown = streaming?.text || current?.text || (pastedPrompt ? story : '')
-  const reasoning = streaming ? streaming.reasoning : (current?.reasoning ?? '')
+  const reasoning = streaming ? streaming.reasoning : (failedReasoning ?? current?.reasoning ?? '')
   const reasoningStreaming = !!streaming && !streaming.text
+
+  // Live counts. Estimated while streaming — servers only report real usage at
+  // the end, if at all — so the number is always labelled as such.
+  const live = streaming
+    ? (() => {
+        const secs = Math.max(0.001, (Date.now() - streaming.startedAt) / 1000)
+        const think = estTokens(streaming.reasoning)
+        const answer = estTokens(streaming.text)
+        return { think, answer, total: think + answer, rate: Math.round((think + answer) / secs), secs }
+      })()
+    : null
   // A pass can only be diffed against what it actually worked from.
   const diffable = !streaming && current?.fromText ? { before: current.fromText, after: current.text } : null
   const longSource = story.length > 600
@@ -405,7 +425,7 @@ export function App() {
                     <span className="pane-tag out">OUTPUT</span>
                     <span className="tok" style={{ color: 'var(--ink2)' }}>
                       {streaming
-                        ? `${STAGE_LABEL[streaming.stage]} · writing…`
+                        ? `${STAGE_LABEL[streaming.stage]} · ${live!.answer ? `~${fmtTokens(live!.answer)} tokens · ${live!.rate}/s` : 'thinking…'}`
                         : current
                           ? `${settings.mode} · ${STAGE_LABEL[current.stage]} · pass ${versions.findIndex((v) => v.id === current.id) + 1}`
                           : `${settings.mode} · unrefined — this is still your input`}
@@ -413,6 +433,11 @@ export function App() {
                     {current && !streaming && (
                       <span className="tok" title="The model that produced this pass">
                         written by {current.model} · {(current.ms / 1000).toFixed(1)}s
+                        {current.tokens
+                          ? ` · ${current.tokensEstimated ? '~' : ''}${fmtTokens(current.tokens)} tokens · ${Math.round(
+                              current.tokens / Math.max(0.001, current.ms / 1000),
+                            )}/s`
+                          : ''}
                         {settings.model && current.model !== settings.model && (
                           <span style={{ color: 'var(--amb)' }}> · you are now on {settings.model}</span>
                         )}
@@ -445,7 +470,9 @@ export function App() {
                         <span className="tok" style={{ color: 'var(--ink3)' }}>{thinkOpen ? '▾' : '▸'}</span>
                         <span className="lbl">Thinking</span>
                         <span className="tok">
-                          {reasoningStreaming ? 'working…' : `${reasoning.length.toLocaleString()} characters, not part of the prompt`}
+                          {streaming
+                            ? `~${fmtTokens(live!.think)} tokens · ${live!.rate}/s · ${live!.secs.toFixed(0)}s`
+                            : `~${fmtTokens(estTokens(reasoning))} tokens, not part of the prompt`}
                         </span>
                         {reasoningStreaming && <span className="spin" />}
                       </div>

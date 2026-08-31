@@ -25,6 +25,14 @@ export interface StreamResult {
   reasoning: string
   ms: number
   cacheReused: boolean
+  /** 'length' means a limit cut it off; 'stop' means the model chose to end. */
+  finishReason: string | null
+  /** The model opened a <think> block and never closed it. */
+  unterminatedThink: boolean
+  /** Whether a ceiling was actually sent, so errors can say so truthfully. */
+  sentLimit: number | null
+  /** Real counts, when the server reports them. Estimates are used otherwise. */
+  usage: { prompt?: number; completion?: number } | null
 }
 
 const THINK_OPEN = '<think>'
@@ -77,6 +85,10 @@ function makeThinkSplitter(onText: (s: string) => void, onThink: (s: string) => 
     end() {
       emit(buf)
       buf = ''
+    },
+    /** True if the stream ended while still inside a <think> block. */
+    get unterminated() {
+      return thinking
     },
   }
 }
@@ -158,6 +170,8 @@ export async function streamChat(opts: StreamOptions): Promise<StreamResult> {
     },
   )
 
+  let finishReason: string | null = null
+  let usage: { prompt?: number; completion?: number } | null = null
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
@@ -183,9 +197,15 @@ export async function streamChat(opts: StreamOptions): Promise<StreamResult> {
             choices?: {
               delta?: { content?: string; reasoning?: string; reasoning_content?: string }
               text?: string
+              finish_reason?: string | null
             }[]
+            usage?: { prompt_tokens?: number; completion_tokens?: number }
+          }
+          if (json.usage) {
+            usage = { prompt: json.usage.prompt_tokens, completion: json.usage.completion_tokens }
           }
           const choice = json.choices?.[0]
+          if (choice?.finish_reason) finishReason = choice.finish_reason
 
           // Servers disagree on the key; both mean the same thing.
           const think = choice?.delta?.reasoning ?? choice?.delta?.reasoning_content
@@ -202,8 +222,18 @@ export async function streamChat(opts: StreamOptions): Promise<StreamResult> {
       }
     }
   }
+  const unterminatedThink = splitter.unterminated
   splitter.end()
 
   if (opts.contextHash) markSent(opts.contextHash)
-  return { text, reasoning, ms: Math.round(performance.now() - started), cacheReused }
+  return {
+    text,
+    reasoning,
+    ms: Math.round(performance.now() - started),
+    cacheReused,
+    finishReason,
+    unterminatedThink,
+    sentLimit: typeof body.max_tokens === 'number' ? body.max_tokens : null,
+    usage,
+  }
 }

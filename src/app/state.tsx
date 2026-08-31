@@ -9,11 +9,18 @@ import { DEFAULT_TEMPLATES, STAGE_LABEL, fillTemplate } from '../lib/stages'
 import { fetchBundledSkills, loadSkills, removeSkill, saveSkill } from '../lib/skills'
 import type { Finding, ProbeResult, Provider, Selection, Settings, Skill, StageId, Version } from '../lib/types'
 
+const SETTINGS_SCHEMA = 2
+
 const DEFAULT_SETTINGS: Settings = {
+  schema: SETTINGS_SCHEMA,
   providerId: 'ollama',
   model: '',
   temperature: 0.35,
-  maxTokens: 4096,
+  // A six-section Ref2VA prompt is long, and a reasoning model spends tokens
+  // thinking before it writes a word. A tight ceiling does not shorten the
+  // answer — it cuts the model off mid-thought and returns a truncated or
+  // empty string.
+  maxTokens: 65536,
   mode: 'Ref2VA',
   selection: {},
   stageTemplates: { ...DEFAULT_TEMPLATES },
@@ -96,6 +103,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ...DEFAULT_SETTINGS,
         ...savedSettings,
         stageTemplates: { ...DEFAULT_TEMPLATES, ...(savedSettings?.stageTemplates || {}) },
+      }
+
+      // Settings persist per browser, so raising a default only reaches people
+      // who have never opened the app. Anyone already carrying the old 4096
+      // ceiling needs it lifted explicitly — once, without stamping on a limit
+      // they set deliberately later.
+      if ((savedSettings?.schema ?? 1) < SETTINGS_SCHEMA) {
+        if (merged.maxTokens < 16384) merged.maxTokens = DEFAULT_SETTINGS.maxTokens
+        merged.schema = SETTINGS_SCHEMA
       }
       // Nothing selected yet — start with each skill's primary document, which
       // is the useful default and keeps the first context small.

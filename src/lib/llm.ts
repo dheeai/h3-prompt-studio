@@ -54,12 +54,22 @@ export async function streamChat(opts: StreamOptions): Promise<StreamResult> {
     headers['X-Title'] = 'H3 Prompt Studio'
   }
 
-  const res = await fetch(`${provider.baseUrl.replace(/\/$/, '')}/chat/completions`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
-    signal,
-  })
+  const url = `${provider.baseUrl.replace(/\/$/, '')}/chat/completions`
+  const send = (payload: Record<string, unknown>) =>
+    fetch(url, { method: 'POST', headers, body: JSON.stringify(payload), signal })
+
+  let res = await send(body)
+
+  // A ceiling larger than the model's context is a 400, not a clamp, on most
+  // servers. Rather than force everyone to know their context size, drop the
+  // limit and let the server apply its own.
+  if (!res.ok && res.status === 400) {
+    const detail = await res.clone().text().catch(() => '')
+    if (/max_tokens|max_completion_tokens|context length|context_length|n_predict|too large|exceed/i.test(detail)) {
+      const { max_tokens: _dropped, ...withoutLimit } = body
+      res = await send(withoutLimit)
+    }
+  }
 
   if (!res.ok || !res.body) {
     const detail = await res.text().catch(() => '')

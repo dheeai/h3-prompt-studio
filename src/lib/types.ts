@@ -78,6 +78,8 @@ export interface Version {
 export type H3Mode = 'T2VA' | 'I2VA' | 'FL2VA' | 'L2VA' | 'Ref2VA' | 'MoGr'
 
 export interface Settings {
+  /** Bumped when a default changes in a way that must reach existing users. */
+  schema?: number
   providerId: string
   model: string
   temperature: number

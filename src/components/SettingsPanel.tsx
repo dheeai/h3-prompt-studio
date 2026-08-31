@@ -74,18 +74,21 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                 <span style={{ fontSize: 11.5, width: 96 }}>max tokens</span>
                 <input
                   type="range"
-                  min={512}
-                  max={16384}
-                  step={256}
+                  min={1024}
+                  max={65536}
+                  step={1024}
                   value={settings.maxTokens}
                   onChange={(e) => patchSettings({ maxTokens: Number(e.target.value) })}
                   style={{ flexGrow: 1 }}
                 />
-                <span className="tok" style={{ width: 44, textAlign: 'right', color: 'var(--ink)' }}>{settings.maxTokens}</span>
+                <span className="tok" style={{ width: 44, textAlign: 'right', color: 'var(--ink)' }}>
+                  {settings.maxTokens >= 1024 ? `${Math.round(settings.maxTokens / 1024)}k` : settings.maxTokens}
+                </span>
               </div>
               <div className="tok" style={{ marginTop: 7, lineHeight: 1.5 }}>
-                Reasoning models spend tokens thinking before they answer, and a ceiling that cuts them off mid-thought returns an empty
-                string rather than a short one. Leave headroom.
+                This is a ceiling, not a target — a high value costs nothing when the answer is short. Reasoning models spend tokens
+                thinking before they write, and a ceiling that cuts them off mid-thought returns a truncated or empty string rather than a
+                shorter answer. If a server rejects the value as larger than its context, the request is retried without a limit.
               </div>
 
               <div className="lbl" style={{ margin: '22px 0 9px' }}>This draft</div>

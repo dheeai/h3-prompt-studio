@@ -145,9 +145,11 @@ export function EndpointPanel({ onClose }: { onClose: () => void }) {
 
 /** The right-hand rail: what this render will be, and the button that starts it. */
 export function RenderRail({ onOpen }: { onOpen: (m: 'recipe' | 'plates' | 'endpoint') => void }) {
-  const { endpoint, comfyProbes, recipe, plates, settings, blockers, render, rendering, clips } = useApp()
+  const { endpoint, comfyProbes, recipe, plates, settings, blockers, warnings, render, rendering, clips } = useApp()
   const probe = endpoint ? comfyProbes[endpoint.id] : undefined
   const recent = [...clips].reverse().slice(0, 4)
+  const width = recipe ? settings.width ?? recipe.defaults.width : settings.width
+  const height = recipe ? settings.height ?? recipe.defaults.height : settings.height
 
   const Row = ({ k, children, onClick }: { k: string; children: React.ReactNode; onClick?: () => void }) => (
     <div className="kvrow" onClick={onClick} style={{ cursor: onClick ? 'pointer' : undefined }}>
@@ -178,6 +180,10 @@ export function RenderRail({ onOpen }: { onOpen: (m: 'recipe' | 'plates' | 'endp
       <Row k="Length">
         {settings.seconds}s <span className="tok">snapped to the grid</span>
       </Row>
+      <Row k="Geometry" onClick={() => onOpen('recipe')}>
+        {recipe ? `${width}×${height}` : <span style={{ color: 'var(--ink3)' }}>—</span>}
+        {settings.width == null && settings.height == null && recipe && <span className="tok"> recipe default</span>}
+      </Row>
 
       <div style={{ marginTop: 14 }}>
         <button
@@ -193,6 +199,15 @@ export function RenderRail({ onOpen }: { onOpen: (m: 'recipe' | 'plates' | 'endp
             {blockers.map((b) => (
               <div key={b} className="tok" style={{ display: 'block', color: 'var(--ox)', lineHeight: 1.55, marginTop: 4 }}>
                 {b}
+              </div>
+            ))}
+          </div>
+        )}
+        {warnings.length > 0 && (
+          <div style={{ marginTop: 9 }}>
+            {warnings.map((w) => (
+              <div key={w} className="tok" style={{ display: 'block', color: 'var(--amb)', lineHeight: 1.55, marginTop: 4 }}>
+                {w}
               </div>
             ))}
           </div>

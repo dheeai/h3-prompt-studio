@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { useApp } from '../app/state'
-import { WorkflowError, makeRecipe, parseWorkflow, recipeIssues } from '../lib/recipe'
+import { GEOMETRY_PRESETS, WorkflowError, framesForSeconds, makeRecipe, oomRisk, parseWorkflow, recipeIssues } from '../lib/recipe'
 import type { Binding, BindingSlot, Recipe } from '../lib/types'
 
 const SLOTS: Array<{ slot: BindingSlot; label: string; why: string }> = [
@@ -57,7 +57,7 @@ function BindingRow({ recipe, slot, label, why }: { recipe: Recipe; slot: Bindin
 }
 
 export function RecipePanel({ onClose }: { onClose: () => void }) {
-  const { recipes, recipe, addRecipe, deleteRecipe, settings, patchSettings } = useApp()
+  const { recipes, recipe, multiclipRecipe, addRecipe, deleteRecipe, settings, patchSettings } = useApp()
   const fileRef = useRef<HTMLInputElement>(null)
   const [err, setErr] = useState<string | null>(null)
 
@@ -123,6 +123,26 @@ export function RecipePanel({ onClose }: { onClose: () => void }) {
                   {r.name}
                 </button>
               ))}
+            </div>
+          )}
+
+          {recipes.length > 0 && (
+            <div style={{ marginTop: 18 }}>
+              <div className="lbl" style={{ marginBottom: 7 }}>Long Media (multiclip) workflow</div>
+              <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+                {recipes.map((r) => (
+                  <button
+                    key={r.id}
+                    className={`chip${r.id === multiclipRecipe?.id ? ' on' : ''}`}
+                    onClick={() => patchSettings({ multiclipRecipeId: r.id })}
+                  >
+                    {r.name}
+                  </button>
+                ))}
+              </div>
+              <div className="tok" style={{ marginTop: 6, display: 'block' }}>
+                A separate recipe from the one above — “Submit all as one job” on the clip plan renders with this one.
+              </div>
             </div>
           )}
 
@@ -209,6 +229,58 @@ export function RecipePanel({ onClose }: { onClose: () => void }) {
                   style={{ width: 110 }}
                 />
                 <span className="tok">override only if you mean to — too few costs detail and dialogue clarity</span>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginTop: 14 }}>
+                <span className="lbl" style={{ width: 74, marginTop: 4 }}>Geometry</span>
+                <div style={{ flexGrow: 1 }}>
+                  <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+                    <button
+                      className={`chip${settings.width == null && settings.height == null ? ' on' : ''}`}
+                      title="Leave the recipe's own width/height untouched"
+                      onClick={() => patchSettings({ width: undefined, height: undefined })}
+                    >
+                      recipe default <span className="tok">{recipe.defaults.width}×{recipe.defaults.height}</span>
+                    </button>
+                    {GEOMETRY_PRESETS.map((p) => (
+                      <button
+                        key={p.label}
+                        className={`chip${settings.width === p.width && settings.height === p.height ? ' on' : ''}`}
+                        title={p.note}
+                        onClick={() => patchSettings({ width: p.width, height: p.height })}
+                      >
+                        {p.label} <span className="tok" style={{ color: 'inherit', opacity: 0.65 }}>{p.aspect}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 9 }}>
+                    <span className="tok">exact:</span>
+                    <input
+                      type="number"
+                      min="1"
+                      value={settings.width ?? ''}
+                      placeholder={String(recipe.defaults.width)}
+                      onChange={(e) => patchSettings({ width: e.target.value ? Number(e.target.value) : undefined })}
+                      style={{ width: 80 }}
+                    />
+                    <span className="tok">×</span>
+                    <input
+                      type="number"
+                      min="1"
+                      value={settings.height ?? ''}
+                      placeholder={String(recipe.defaults.height)}
+                      onChange={(e) => patchSettings({ height: e.target.value ? Number(e.target.value) : undefined })}
+                      style={{ width: 80 }}
+                    />
+                  </div>
+                  {oomRisk(settings.width ?? recipe.defaults.width, settings.height ?? recipe.defaults.height, framesForSeconds(settings.seconds, 24)) && (
+                    <div className="alert warn" style={{ marginTop: 9 }}>
+                      This geometry at this length has been measured to OOM the box (around 362 frames at 1344×768).
+                      An OOM takes ComfyUI down and leaves no trace — a crashed render looks identical to one that
+                      was never submitted. Trade resolution for length, or accept the risk.
+                    </div>
+                  )}
+                </div>
               </div>
             </>
           )}

@@ -60,7 +60,7 @@ export interface ProbeResult {
   at: number
 }
 
-export type StageId = 'direct' | 'draft' | 'critique' | 'revise' | 'freeform' | 'handoff'
+export type StageId = 'direct' | 'draft' | 'critique' | 'revise' | 'freeform' | 'handoff' | 'breakdown'
 
 export interface Version {
   id: string
@@ -75,6 +75,8 @@ export interface Version {
   reasoning?: string
   /** Exactly what this pass worked from, so a diff has a real "before". */
   fromText?: string
+  /** The prose explanation alongside the prompt — a separate section, never the prompt itself. */
+  explanation?: string
   /** One line per edit, each naming the document that required it. */
   changelog?: string[]
   /** Completion tokens — real if the server reported them, else estimated. */
@@ -83,6 +85,12 @@ export interface Version {
   tokensEstimated?: boolean
   /** The instruction that produced it, for freeform turns. */
   note?: string
+  /** How many continuation rounds the server-side output cap forced. */
+  continuations?: number
+  /** True when even the last continuation round was still cut off. */
+  truncated?: boolean
+  /** Which clip of a breakdown this pass was directed for, if any. */
+  clipIndex?: number
 }
 
 /** Where a clip sits in a longer film, when it is not standalone. */
@@ -96,6 +104,33 @@ export interface FilmContext {
   precedes: string
   /** What the next clip has to be able to open on. */
   follows: string
+  /** A short name for the clip, from a breakdown. */
+  title?: string
+  /** What THIS clip alone must cover, from a breakdown — the rest of the source is context only. */
+  covers?: string
+  /** Which clip of a breakdown this is, so a pass can be attributed to it. */
+  clipIndex?: number
+}
+
+/** One clip of a story broken down into several. */
+export interface BreakdownClip {
+  index: number
+  title: string
+  role: ClipRole
+  seconds: number
+  /** What happens in this clip — fixed elements only, no camera. */
+  covers: string
+  /** What the audience arrives at THIS clip having just seen — empty for the first. */
+  precedes: string
+  /** What the next clip must open on. */
+  follows: string
+}
+
+export interface Breakdown {
+  /** The film's spine in one line. */
+  spine: string
+  clips: BreakdownClip[]
+  at: number
 }
 
 export interface ChatTurn {
@@ -133,6 +168,8 @@ export interface Settings {
   comfyEndpointId?: string
   /** Which stored recipe to render with. */
   recipeId?: string
+  /** Which stored recipe is the Long Media (multiclip) workflow — a user has both. */
+  multiclipRecipeId?: string
   /** Target clip length before the frame grid snaps it. */
   seconds: number
   /** A film normally wants one seed the whole way down. */
@@ -140,6 +177,13 @@ export interface Settings {
   seed: number
   /** Override the recipe's own step count when set. */
   steps?: number
+  /**
+   * Geometry override. Left unset, the recipe's OWN defaults win — a workflow
+   * swap must not silently keep stale geometry, so these are never copied from
+   * `recipe.defaults` on load, only written when the operator picks one.
+   */
+  width?: number
+  height?: number
 }
 
 export type Severity = 'error' | 'warn' | 'pass'
@@ -241,6 +285,28 @@ export interface ComfyNode {
 
 export type ClipState = 'queued' | 'rendering' | 'done' | 'failed'
 
+/** One clip's frame accounting inside a multiclip job — see multiclip.ts's `padForOverlap`. */
+export interface MulticlipPerClip {
+  /** 1-based position in the plan this entry came from. */
+  index: number
+  authored: number
+  rendered: number
+  delivered: number
+}
+
+/**
+ * Set when a `Clip` is not one render loop pass but a whole plan submitted as
+ * ONE Long Media multiclip job — still a single render producing a single
+ * video, so it stays one `Clip` rather than becoming a new kind of record.
+ */
+export interface MulticlipRecord {
+  /** Which plan clip indexes this one job covered, in order. */
+  clipIndexes: number[]
+  perClip: MulticlipPerClip[]
+  /** Delivered seconds, summed — what the film actually runs, not what was asked for. */
+  totalSeconds: number
+}
+
 export interface Clip {
   id: string
   /** 1-based position in the film. */
@@ -266,4 +332,6 @@ export interface Clip {
   error?: string
   ms?: number
   at: number
+  /** Set when this clip is a whole plan submitted as one Long Media multiclip job. */
+  multiclip?: MulticlipRecord
 }

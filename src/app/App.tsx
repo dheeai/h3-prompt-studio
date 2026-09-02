@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useApp } from './state'
 import { Marginalia } from '../components/Marginalia'
 import { Legend, PromptDoc } from '../components/PromptDoc'
+import { Explanation } from '../components/Explanation'
+import { ClipPlan } from '../components/ClipPlan'
 import { DiffView } from '../components/DiffView'
 import { ProseDoc } from '../components/ProseDoc'
 import { ConnectPanel } from '../components/ConnectPanel'
@@ -11,11 +13,11 @@ import { PlatesPanel } from '../components/PlatesPanel'
 import { RecipePanel } from '../components/RecipePanel'
 import { EndpointPanel, RenderRail } from '../components/RenderPanel'
 import { ClipPlayer, FilmStrip } from '../components/ClipDeck'
-import { STAGE_INFO, STAGE_LABEL, STAGE_ORDER } from '../lib/stages'
+import { STAGE_INFO, STAGE_LABEL, STAGE_ORDER, splitReply } from '../lib/stages'
 import { skillTokens } from '../lib/skills'
 import { estTokens, fmtTokens } from '../lib/tokens'
 import { wasSent } from '../lib/context'
-import { looksLikePrompt } from '../lib/lint'
+import { classifyInput, looksLikePrompt } from '../lib/lint'
 import type { StageId, Version } from '../lib/types'
 
 /** Stages whose output is a prompt — the only things worth diffing together. */
@@ -69,12 +71,17 @@ export function App() {
   // critique of what is already there.
   const pastedPrompt = !current && !streaming && looksLikePrompt(story)
 
+  // A deterministic read of what has been pasted — no model involved. It is
+  // shown to the operator directly (the Standing strip) and handed to the
+  // model as {{standing}} so Direct can confirm or correct it.
+  const standing = useMemo(() => classifyInput(story), [story])
+
   const nextStage: StageId = useMemo(() => {
-    if (!current) return pastedPrompt ? 'critique' : 'direct'
+    if (!current) return standing.suggest
     const i = STAGE_ORDER.indexOf(current.stage)
     if (i === -1) return 'revise'
     return STAGE_ORDER[Math.min(i + 1, STAGE_ORDER.length - 1)]
-  }, [current, pastedPrompt])
+  }, [current, standing])
 
   // The rail is a timeline of passes, so clicking one navigates to it. Running
   // is the button's job — conflating the two meant a completed pass could only
@@ -232,9 +239,22 @@ export function App() {
   const collapseSource = (pastedPrompt || longSource) && !editingSource
   const loadedSkills = skills.filter((s) => settings.selection[s.id]?.length)
 
+  // Draft, Revise and freeform return the prompt and its explanation as two
+  // marked (or JSON) blocks. While streaming those markers are still sitting
+  // in the raw text, so the live text is split too — this is what keeps the
+  // prompt section filling in first and the explanation arriving separately,
+  // rather than showing the reader the markers themselves.
+  const isSplitStage = shownStage === 'draft' || shownStage === 'revise' || shownStage === 'freeform'
+  const liveSplit = useMemo(() => (isSplitStage && streaming ? splitReply(streaming.text) : null), [isSplitStage, streaming])
+  const promptText = liveSplit ? liveSplit.prompt : shown
+  const explanationText = liveSplit ? liveSplit.explanation : current?.explanation ?? ''
+  const changelogList = liveSplit ? liveSplit.changelog : current?.changelog
+
+  // What "Copy prompt" copies, and what the linter runs on, must be the
+  // prompt alone — never the explanation, never a raw marker.
   const copy = async () => {
-    if (!shown) return
-    await navigator.clipboard.writeText(shown)
+    if (!promptText) return
+    await navigator.clipboard.writeText(promptText)
     setCopied(true)
     setTimeout(() => setCopied(false), 1400)
   }
@@ -295,7 +315,7 @@ export function App() {
         <button className="btn ghost" onClick={() => setModal('endpoint')} title="Where clips render">
           {rendering ? `Rendering clip ${rendering.index}…` : 'Render'}
         </button>
-        <button className="btn" onClick={() => void copy()} disabled={!shown}>
+        <button className="btn" onClick={() => void copy()} disabled={!promptText}>
           {copied ? 'Copied' : 'Copy prompt'}
         </button>
       </div>
@@ -433,6 +453,14 @@ export function App() {
                 </span>
                 <div style={{ flexGrow: 1 }} />
                 <button
+                  className="btn sm ghost"
+                  onClick={() => void app.run('breakdown')}
+                  disabled={!connected || busy || !story.trim()}
+                  title="Decide how many clips this needs, and what each one covers"
+                >
+                  Break into clips
+                </button>
+                <button
                   className={`btn sm ${film.role === 'standalone' ? 'ghost' : ''}`}
                   onClick={() => setFilmOpen((v) => !v)}
                   title="Tell it where this clip sits in a longer film"
@@ -459,6 +487,12 @@ export function App() {
                       </button>
                     ))}
                   </div>
+                  {film.covers && (
+                    <div className="tok" style={{ lineHeight: 1.55, marginBottom: 10, color: 'var(--ink2)' }}>
+                      <span className="lbl" style={{ marginRight: 6 }}>Covers</span>
+                      {film.covers}
+                    </div>
+                  )}
                   {film.role !== 'standalone' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                       <input
@@ -515,6 +549,36 @@ export function App() {
             </div>
           </div>
 
+          {/* ── standing ─────────────────────────────────────────────── */}
+          {/* Tied to whether the source is READABLE, not to whether passes
+              exist: a source sitting there in full with its standing hidden is
+              the one case where the reader can see the text and not the read
+              of it. Collapsed, it is noise; expanded, it belongs. */}
+          {story.trim() && !streaming && (!current || !collapseSource) && (
+            <div style={{ flex: '0 0 auto', padding: '8px 26px 0' }}>
+              <div className="tok" style={{ lineHeight: 1.6 }}>
+                <span className="lbl" style={{ marginRight: 4 }}>Standing</span>{' '}
+                <b style={{ color: 'var(--ink2)', fontFamily: 'inherit' }}>{standing.kind}</b> · {standing.confidence} confidence — has:{' '}
+                {standing.has.length ? standing.has.join(', ') : 'nothing'}; lacks: {standing.lacks.length ? standing.lacks.join(', ') : 'nothing'}.
+              </div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 3 }}>
+                <span className="tok" style={{ lineHeight: 1.6 }}>{standing.stands}</span>
+                <div style={{ flexGrow: 1 }} />
+                <button
+                  className="chip"
+                  disabled={busy || !connected}
+                  onClick={() => void app.run(standing.suggest)}
+                  title={`Run ${STAGE_LABEL[standing.suggest]}`}
+                >
+                  suggested: {STAGE_LABEL[standing.suggest]}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ── clip plan ────────────────────────────────────────────── */}
+          {app.breakdown && <ClipPlan />}
+
           {/* ── the document ─────────────────────────────────────────── */}
           <div className="scroll" ref={docRef} style={{ flex: '1 1 auto', padding: '0 26px', minHeight: 0 }}>
             <div style={{ paddingTop: 14, paddingBottom: 20 }}>
@@ -524,7 +588,13 @@ export function App() {
                     <span className="pane-tag out">OUTPUT</span>
                     <span className="tok" style={{ color: 'var(--ink2)' }}>
                       {streaming
-                        ? `${STAGE_LABEL[streaming.stage]} · ${live!.answer ? `~${fmtTokens(live!.answer)} tokens · ${live!.rate}/s` : 'thinking…'}`
+                        ? `${STAGE_LABEL[streaming.stage]} · ${live!.answer ? `~${fmtTokens(live!.answer)} tokens · ${live!.rate}/s` : 'thinking…'}${
+                            streaming.continuations > 0
+                              ? streaming.phase === 'thinking-recovery'
+                                ? ' · resuming from its notes'
+                                : ` · continuing (${streaming.continuations})`
+                              : ''
+                          }`
                         : current
                           ? `${settings.mode} · ${STAGE_LABEL[current.stage]} · pass ${versions.findIndex((v) => v.id === current.id) + 1}`
                           : `${settings.mode} · unrefined — this is still your input`}
@@ -539,6 +609,9 @@ export function App() {
                           : ''}
                         {settings.model && current.model !== settings.model && (
                           <span style={{ color: 'var(--amb)' }}> · you are now on {settings.model}</span>
+                        )}
+                        {!!current.continuations && !current.truncated && (
+                          <span style={{ color: 'var(--ink3)' }}> · stitched from {current.continuations} continuation{current.continuations === 1 ? '' : 's'}</span>
                         )}
                       </span>
                     )}
@@ -583,9 +656,15 @@ export function App() {
                       )}
                     </div>
                   )}
+                  {!streaming && current?.truncated && (
+                    <div className="alert warn" style={{ margin: '10px 16px 0' }}>
+                      Cut off by the server's output cap even after {current.continuations ?? 0} continuation
+                      {current.continuations === 1 ? '' : 's'} — this text may be incomplete.
+                    </div>
+                  )}
                   {!streaming && !shownIsProse && (
                     <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--rule)', background: 'var(--paper)' }}>
-                      <Legend text={shown} />
+                      <Legend text={promptText} />
                     </div>
                   )}
                   <div className="pane-body">
@@ -594,7 +673,13 @@ export function App() {
                     ) : shownIsProse ? (
                       <ProseDoc text={shown} streaming={!!streaming} />
                     ) : (
-                      <PromptDoc text={shown} streaming={!!streaming} />
+                      <>
+                        {(explanationText.trim() || (changelogList?.length ?? 0) > 0) && (
+                          <div className="pane-tag in" style={{ marginBottom: 8 }}>THE PROMPT</div>
+                        )}
+                        <PromptDoc text={promptText} streaming={!!streaming} />
+                        <Explanation text={explanationText} changelog={changelogList} streaming={!!streaming} />
+                      </>
                     )}
                   </div>
                 </div>

@@ -2,16 +2,18 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { ReactNode } from 'react'
 import { idb } from '../lib/db'
 import { buildContext, type BuiltContext } from '../lib/context'
-import { findingsToText, lint, looksLikePrompt } from '../lib/lint'
-import { streamChat } from '../lib/llm'
+import { classifyInput, findingsToText, lint, looksLikePrompt, standingToText } from '../lib/lint'
+import { streamChatComplete } from '../lib/llm'
 import { DEFAULT_PROVIDERS, loadProviders, probe, saveProviders } from '../lib/providers'
-import { DEFAULT_TEMPLATES, STAGE_LABEL, fillTemplate, filmBlock, hasPromptBlock, nextRole, splitHandoff, splitReply, templateFor } from '../lib/stages'
+import { STAGE_LABEL, fillTemplate, filmBlock, hasPromptBlock, nextRole, parseBreakdown, splitHandoff, splitReply, templateFor } from '../lib/stages'
 import { DEFAULT_ENDPOINTS, lastFrameOf, poll, probeComfy, submit, uploadImage, viewUrl } from '../lib/comfy'
-import { applyRecipe, framesForSeconds, recipeIssues } from '../lib/recipe'
+import { applyRecipe, framesForSeconds, oomRisk, recipeIssues } from '../lib/recipe'
+import { buildMulticlipGraph, multiclipIssues, multiclipWarnings, overlapFramesOf, padForOverlap, schedulerStepsOf } from '../lib/multiclip'
+import type { MulticlipClip, PaddedClip } from '../lib/multiclip'
 import { fetchBundledSkills, loadSkills, removeSkill, saveSkill } from '../lib/skills'
 import { estTokens } from '../lib/tokens'
 import type {
-  ChatTurn, Clip, ComfyEndpoint, FilmContext, Finding, Plate, ProbeResult, Provider,
+  Breakdown, ChatTurn, Clip, ComfyEndpoint, FilmContext, Finding, Plate, ProbeResult, Provider,
   Recipe, Selection, Settings, Skill, StageId, Version,
 } from '../lib/types'
 
@@ -41,6 +43,41 @@ const DEFAULT_SETTINGS: Settings = {
   seed: 42,
 }
 
+/** The deterministic name a plate uploads under — shared so the multiclip path
+ * predicts the exact filename a real upload will produce, without uploading. */
+function plateFilename(p: Plate): string {
+  return `${p.id}_${p.name.replace(/[^a-z0-9]+/gi, '_').slice(0, 40) || 'plate'}.png`
+}
+
+/**
+ * Poll a submitted render to completion or failure.
+ *
+ * Poll rather than hold a websocket: a dropped link must not lose a render the
+ * box is still perfectly happily producing. Shared by the single-clip and
+ * multiclip render paths — the retry/deadline behaviour is the same either way.
+ */
+async function pollToDone(ep: ComfyEndpoint, promptId: string): Promise<Clip['output']> {
+  const deadline = Date.now() + 60 * 60 * 1000
+  let misses = 0
+  for (;;) {
+    await new Promise((r) => setTimeout(r, 2500))
+    if (Date.now() > deadline) throw new Error('Gave up waiting after an hour.')
+    let res
+    try {
+      res = await poll(ep, promptId)
+      misses = 0
+    } catch {
+      // The box can drop off a network and come back. Only give up when it
+      // has been gone long enough to be a real outage.
+      if (++misses > 120) throw new Error('Lost contact with the box for five minutes.')
+      continue
+    }
+    if (!res.done) continue
+    if (res.failed) throw new Error(res.failed)
+    return res.output
+  }
+}
+
 interface Session {
   story: string
   versions: Version[]
@@ -51,6 +88,26 @@ interface Session {
   film?: FilmContext
   /** The clip this draft continues from — set by Continue, null for a head. */
   parentClipId?: string | null
+  /** The last Break down pass, if the story has been split into clips. */
+  breakdown?: Breakdown
+}
+
+/** One plan clip's prompt and frame accounting, for the "Submit all as one job" panel. */
+interface MulticlipPreviewClip extends PaddedClip {
+  index: number
+  title: string
+  prompt: string
+  seconds: number
+}
+
+interface MulticlipPreview {
+  clips: MulticlipPreviewClip[]
+  /** Delivered seconds, summed — what the film actually runs. */
+  totalSeconds: number
+  /** Every blocking problem — same contract as `blockers`. */
+  issues: string[]
+  /** Non-blocking — an OOM risk at the chosen geometry, named per clip. */
+  warnings: string[]
 }
 
 interface Api {
@@ -62,9 +119,18 @@ interface Api {
   story: string
   versions: Version[]
   current: Version | null
-  streaming: { stage: StageId; text: string; reasoning: string; startedAt: number } | null
+  streaming: {
+    stage: StageId
+    text: string
+    reasoning: string
+    startedAt: number
+    continuations: number
+    /** Set once a continuation round is actually underway. */
+    phase?: 'thinking-recovery' | 'continuing'
+  } | null
   chat: ChatTurn[]
   film: FilmContext
+  breakdown: Breakdown | null
   error: string | null
   /** Thinking from a run that produced no answer, kept so it is not lost. */
   failedReasoning: string | null
@@ -88,6 +154,8 @@ interface Api {
   plates: Plate[]
   recipes: Recipe[]
   recipe: Recipe | null
+  /** The Long Media (multiclip) workflow — a DIFFERENT stored recipe from `recipe`. */
+  multiclipRecipe: Recipe | null
   endpoints: ComfyEndpoint[]
   endpoint: ComfyEndpoint | null
   comfyProbes: Record<string, ProbeResult>
@@ -96,6 +164,10 @@ interface Api {
   rendering: Clip | null
   /** Why a render cannot start yet — empty when it can. */
   blockers: string[]
+  /** Non-blocking — an OOM risk at the chosen geometry for the single-clip render. */
+  warnings: string[]
+  /** The current clip plan's multiclip accounting and gate, or null with no plan yet. */
+  multiclipPreview: MulticlipPreview | null
   addPlate: (p: Omit<Plate, 'id' | 'addedAt'>) => Promise<void>
   updatePlate: (id: string, patch: Partial<Plate>) => Promise<void>
   deletePlate: (id: string) => Promise<void>
@@ -106,6 +178,10 @@ interface Api {
   refreshComfyProbe: (id: string) => Promise<void>
   clipUrl: (c: Clip) => string | null
   render: () => Promise<void>
+  /** Submit the whole clip plan as one Long Media multiclip job. */
+  renderMulticlip: () => Promise<void>
+  /** Build the multiclip graph and copy it to the clipboard — no submit, no render. */
+  copyMulticlipGraph: () => Promise<void>
   selectClip: (id: string) => void
   /** Take a landed clip's last frame and hand-off, and start the next clip. */
   continueFrom: (clipId: string, note?: string) => Promise<void>
@@ -132,7 +208,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session>({ story: '', versions: [], currentId: null, chat: [] })
   const [clips, setClips] = useState<Clip[]>([])
   const [currentClipId, setCurrentClipId] = useState<string | null>(null)
-  const [streaming, setStreaming] = useState<{ stage: StageId; text: string; reasoning: string; startedAt: number } | null>(null)
+  const [streaming, setStreaming] = useState<{
+    stage: StageId
+    text: string
+    reasoning: string
+    startedAt: number
+    continuations: number
+    phase?: 'thinking-recovery' | 'continuing'
+  } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [context, setContext] = useState<BuiltContext | null>(null)
   const [failedReasoning, setFailedReasoning] = useState<string | null>(null)
@@ -151,9 +234,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     ;(async () => {
       let bundledIds: string[] = []
-      const [savedSettings, savedSession, savedProviders] = await Promise.all([
+      const [savedSettings, savedProviders] = await Promise.all([
         idb.get<Settings>('settings', 'settings'),
-        idb.get<Session>('sessions', 'current'),
         loadProviders(),
       ])
       let stored = await loadSkills()
@@ -224,21 +306,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
         merged.selection = sel
       }
 
-      const [savedPlates, savedRecipes, savedClips, savedEndpoints] = await Promise.all([
-        idb.all<Plate>('plates'),
+      const [savedRecipes, savedEndpoints] = await Promise.all([
         idb.all<Recipe>('recipes'),
-        idb.get<Clip[]>('clips', 'current'),
         idb.get<ComfyEndpoint[]>('settings', 'comfyEndpoints'),
       ])
-      setPlates(savedPlates.sort((a, b) => a.addedAt - b.addedAt))
       setRecipes(savedRecipes.sort((a, b) => a.addedAt - b.addedAt))
       if (savedEndpoints?.length) setEndpointsState(savedEndpoints)
-      if (savedClips?.length) setClips(savedClips)
+
+      // A refresh starts clean. The draft, its passes, the film context, the
+      // plates and the clips are all WORK, and work that reappears by itself
+      // is work you have to remember to throw away before you can trust what
+      // is on the page. Only the CONFIGURATION persists: settings, providers,
+      // skills, recipes and endpoints. Whatever an earlier visit wrote is
+      // cleared here rather than merely ignored, so nothing lingers on disk.
+      await Promise.all([idb.clear('sessions'), idb.clear('plates'), idb.clear('clips')])
 
       setSkills(stored)
       setSettings(merged)
       setProvidersState(savedProviders)
-      if (savedSession) setSession(savedSession)
       setReady(true)
     })().catch((e) => {
       setError(String((e as Error).message || e))
@@ -251,13 +336,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (ready) void idb.set('settings', 'settings', settings)
   }, [ready, settings])
 
-  useEffect(() => {
-    if (ready) void idb.set('sessions', 'current', session)
-  }, [ready, session])
-
-  useEffect(() => {
-    if (ready) void idb.set('clips', 'current', clips)
-  }, [ready, clips])
 
   // ── the cached context layer ──────────────────────────────────────────
   useEffect(() => {
@@ -297,9 +375,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const findings = useMemo(() => {
     // The rules describe a prompt. Run them on the prompt — not on a direction
-    // sheet, and not on critique notes, which are prose about a prompt and
-    // will "fail" every structural rule they are measured against.
-    if (streaming?.text) return PROMPT_STAGES.has(streaming.stage) ? lint(streaming.text, settings.mode) : []
+    // sheet, not on critique notes (which are prose about a prompt and will
+    // "fail" every structural rule they are measured against), and not on the
+    // explanation that now rides alongside a draft/revise/freeform reply —
+    // splitReply pulls the prompt out from under the markers first.
+    if (streaming?.text) return PROMPT_STAGES.has(streaming.stage) ? lint(splitReply(streaming.text).prompt, settings.mode) : []
     if (current && PROMPT_STAGES.has(current.stage)) return lint(current.text, settings.mode)
     const lastPrompt = [...session.versions].reverse().find((v) => PROMPT_STAGES.has(v.stage))
     if (lastPrompt) return lint(lastPrompt.text, settings.mode)
@@ -311,11 +391,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const setStory = useCallback((story: string) => setSession((s) => ({ ...s, story })), [])
 
-  const setFilm = useCallback(
-    (f: Partial<FilmContext>) =>
-      setSession((s) => ({ ...s, film: { ...DEFAULT_FILM, ...s.film, ...f } })),
-    [],
-  )
+  const setFilm = useCallback((f: Partial<FilmContext>) => {
+    setSession((s) => ({ ...s, film: { ...DEFAULT_FILM, ...s.film, ...f } }))
+    // Also update the ref synchronously. A caller that sets the film and
+    // immediately calls run() (the clip plan's "Direct this clip") must not
+    // have run() read sessionRef.current before React has flushed the state
+    // update above — run() takes its snapshot the instant it is called.
+    sessionRef.current = { ...sessionRef.current, film: { ...DEFAULT_FILM, ...sessionRef.current.film, ...f } }
+  }, [])
 
   const toggleSkill = useCallback((skill: Skill) => {
     setSettings((s) => {
@@ -401,7 +484,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const lastPrompt = () => [...snap.versions].reverse().find((v) => PROMPT_STAGES.has(v.stage)) ?? null
 
       let working: string
-      if (stage === 'direct') {
+      if (stage === 'direct' || stage === 'breakdown') {
         working = ''
       } else if (stage === 'draft') {
         // Prefer a direction sheet — the one you are reading, else the latest.
@@ -417,7 +500,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setError('Paste something first.')
         return null
       }
-      if (stage !== 'direct' && !working.trim()) {
+      if (stage !== 'direct' && stage !== 'breakdown' && !working.trim()) {
         setError(
           stage === 'draft'
             ? 'Nothing to draft from yet.'
@@ -440,15 +523,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
         notes: note,
         findings: findings.length ? findingsToText(findings) : undefined,
         critique: critiqueText,
+        standing: standingToText(classifyInput(snap.story)),
       })
 
       const ac = new AbortController()
       abortRef.current = ac
-      setStreaming({ stage, text: '', reasoning: '', startedAt: Date.now() })
+      setStreaming({ stage, text: '', reasoning: '', startedAt: Date.now(), continuations: 0 })
       setError(null)
 
       try {
-        const result = await streamChat({
+        const result = await streamChatComplete({
           provider,
           model: settings.model,
           temperature: settings.temperature,
@@ -472,6 +556,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
           ],
           onDelta: (chunk) => setStreaming((s) => (s ? { ...s, text: s.text + chunk } : s)),
           onReasoning: (chunk) => setStreaming((s) => (s ? { ...s, reasoning: s.reasoning + chunk } : s)),
+          onContinuation: (round, kind) =>
+            setStreaming((s) => (s ? { ...s, continuations: round, phase: kind === 'thinking' ? 'thinking-recovery' : 'continuing' } : s)),
+          // A continuation resumes from the last complete line, so the partial
+          // one already on the page has to come back off it.
+          onRewind: (chars) => setStreaming((s) => (s ? { ...s, text: s.text.slice(0, Math.max(0, s.text.length - chars)) } : s)),
         })
 
         if (!result.text.trim()) {
@@ -480,6 +569,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           setFailedReasoning(result.reasoning.trim() || null)
           const chars = result.reasoning.trim().length
           const thinking = chars ? `${chars.toLocaleString()} characters of thinking` : 'nothing'
+          const tried = result.continuations
+            ? ` ${result.continuations} continuation${result.continuations === 1 ? '' : 's'} were tried and still came back empty.`
+            : ''
 
           if (result.unterminatedThink) {
             throw new Error(
@@ -489,8 +581,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           if (result.finishReason === 'length') {
             throw new Error(
               result.sentLimit
-                ? `Cut off at the ${result.sentLimit.toLocaleString()}-token ceiling after ${thinking}, before any answer. Raise it, or set output length to “No limit” in Settings.`
-                : `The model ran out of room after ${thinking}, before writing an answer. No ceiling was sent, so this is its own context limit — shorten the source or load fewer skill files.`,
+                ? `Cut off at the ${result.sentLimit.toLocaleString()}-token ceiling after ${thinking}, before any answer.${tried} Raise it, or set output length to “No limit” in Settings.`
+                : `The model ran out of room after ${thinking}, before writing an answer.${tried} No ceiling was sent from here, so this is the server's own limit — possibly an output cap it enforces on its own side, which cannot be raised from this app — shorten the source or load fewer skill files.`,
             )
           }
           throw new Error(
@@ -500,6 +592,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
           )
         }
         setFailedReasoning(null)
+
+        // Break down is off-chain and returns JSON, not a prompt — parse it
+        // and record it as its own kind of version rather than falling into
+        // the prompt/changelog handling below.
+        if (stage === 'breakdown') {
+          const parsed = parseBreakdown(result.text)
+          const version: Version = {
+            id: `v${Date.now().toString(36)}`,
+            stage,
+            label: STAGE_LABEL[stage],
+            text: parsed ? JSON.stringify(parsed, null, 2) : `Could not parse a clip plan from the reply.\n\n${result.text.trim()}`,
+            fromText: snap.story || undefined,
+            model: settings.model,
+            providerId: provider.id,
+            at: Date.now(),
+            ms: result.ms,
+            reasoning: result.reasoning.trim() || undefined,
+            tokens: result.usage?.completion ?? estTokens(result.text + result.reasoning),
+            tokensEstimated: result.usage?.completion === undefined,
+            continuations: result.continuations || undefined,
+            truncated: result.truncated || undefined,
+            clipIndex: snap.film?.clipIndex,
+          }
+          setSession((s) => ({
+            ...s,
+            versions: [...s.versions, version],
+            currentId: version.id,
+            breakdown: parsed ?? s.breakdown,
+          }))
+          return version
+        }
 
         // A composer turn may simply be a question. Answering it is a valid
         // outcome — forcing every turn to emit a prompt is what made asking
@@ -517,12 +640,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
           return null
         }
 
-        // Revise and freeform are asked for a prompt plus a changelog; the
-        // other stages return one document.
-        const wantsChangelog = stage === 'revise' || stage === 'freeform'
-        const { prompt: bodyText, changelog } = wantsChangelog
+        // Draft, Revise and freeform are asked for a prompt plus an
+        // explanation (and, for Revise/freeform, a changelog); Direct and
+        // Critique return one undivided document.
+        const wantsSplit = stage === 'draft' || stage === 'revise' || stage === 'freeform'
+        const { prompt: bodyText, explanation, changelog } = wantsSplit
           ? splitReply(result.text)
-          : { prompt: result.text.trim(), changelog: [] as string[] }
+          : { prompt: result.text.trim(), explanation: '', changelog: [] as string[] }
 
         const version: Version = {
           id: `v${Date.now().toString(36)}`,
@@ -530,6 +654,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           label: STAGE_LABEL[stage],
           text: bodyText || result.text.trim(),
           fromText: working || undefined,
+          explanation: explanation || undefined,
           changelog: changelog.length ? changelog : undefined,
           model: settings.model,
           providerId: provider.id,
@@ -539,6 +664,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           tokens: result.usage?.completion ?? estTokens(result.text + result.reasoning),
           tokensEstimated: result.usage?.completion === undefined,
           note,
+          continuations: result.continuations || undefined,
+          truncated: result.truncated || undefined,
+          clipIndex: snap.film?.clipIndex,
         }
         setSession((s) => ({
           ...s,
@@ -582,8 +710,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setError(null)
     // Clears the draft, not the film: clips, plates and the film context are
     // the production and survive a reset of the page you are writing on.
-    setSession((s) => ({ story: '', versions: [], currentId: null, chat: [], film: s.film, parentClipId: s.parentClipId }))
-    await idb.del('sessions', 'current')
+    setSession((s) => ({ story: '', versions: [], currentId: null, chat: [], film: s.film, parentClipId: s.parentClipId, breakdown: undefined }))
   }, [])
 
   // ── the render loop ───────────────────────────────────────────────────
@@ -596,6 +723,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const recipe = useMemo(
     () => recipes.find((r) => r.id === settings.recipeId) ?? recipes[0] ?? null,
     [recipes, settings.recipeId],
+  )
+  // No fallback to `recipes[0]` here, unlike `recipe` above: a single-clip
+  // recipe silently standing in for the Long Media one would build a graph
+  // with none of the multiclip nodes on it, and multiclipIssues would have to
+  // guess whether that was really the operator's intent.
+  const multiclipRecipe = useMemo(
+    () => recipes.find((r) => r.id === settings.multiclipRecipeId) ?? null,
+    [recipes, settings.multiclipRecipeId],
   )
   const endpoint = useMemo(
     () => endpoints.find((e) => e.id === settings.comfyEndpointId) ?? endpoints[0] ?? null,
@@ -625,8 +760,66 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return out
   }, [endpoint, comfyProbes, recipe, lastPromptText, plates])
 
+  const warnings = useMemo(() => {
+    const out: string[] = []
+    if (recipe) {
+      const width = settings.width ?? recipe.defaults.width
+      const height = settings.height ?? recipe.defaults.height
+      const frames = framesForSeconds(settings.seconds, 24)
+      if (oomRisk(width, height, frames)) {
+        out.push(
+          `${width}×${height} at ${frames} frames has been measured to OOM — the box runs out of memory around ` +
+            `362 frames at this tier, and an OOM takes ComfyUI down and leaves no trace (\`/history\` comes back ` +
+            `empty either way). Trade resolution for length, or accept the risk.`,
+        )
+      }
+    }
+    return out
+  }, [recipe, settings.width, settings.height, settings.seconds])
+
+  /**
+   * The clip plan's multiclip accounting and gate, recomputed on every prompt,
+   * plate or geometry change so the frame accounting on screen never lags what
+   * a submit would actually build.
+   */
+  const multiclipPreview = useMemo<MulticlipPreview | null>(() => {
+    const b = session.breakdown
+    if (!b || !b.clips.length) return null
+
+    const plan = b.clips.map((c) => {
+      const v = [...session.versions].reverse().find((x) => x.clipIndex === c.index && PROMPT_STAGES.has(x.stage))
+      return { index: c.index, title: c.title || `clip ${c.index}`, seconds: c.seconds, prompt: v?.text ?? '' }
+    })
+    const imagePlateCount = plates.filter((p) => p.kind === 'image').length
+    const graph = multiclipRecipe?.graph ?? null
+    const overlap = overlapFramesOf(graph)
+    const padded = padForOverlap(plan.map((c) => ({ frames: framesForSeconds(c.seconds, 24) })), overlap)
+    const steps = settings.steps ?? schedulerStepsOf(graph) ?? 0
+
+    const issues = multiclipIssues({
+      graph,
+      clips: plan.map((c) => ({ index: c.index, prompt: c.prompt })),
+      plateCount: imagePlateCount,
+      steps,
+    })
+
+    const width = settings.width ?? multiclipRecipe?.defaults.width ?? 0
+    const height = settings.height ?? multiclipRecipe?.defaults.height ?? 0
+    // Check the PADDED (rendered) frame count, not delivered — that is what
+    // actually gets sampled and is what VRAM has to hold.
+    const warn = plan
+      .map((c, i) => (oomRisk(width, height, padded[i].rendered) ? `Clip ${c.index} renders ${padded[i].rendered} frames at ${width}×${height} — measured to OOM at this tier.` : null))
+      .filter((x): x is string => x !== null)
+
+    return {
+      clips: plan.map((c, i) => ({ ...c, ...padded[i] })),
+      totalSeconds: +(padded.reduce((sum, p) => sum + p.delivered, 0) / 24).toFixed(3),
+      issues,
+      warnings: [...warn, ...multiclipWarnings(graph)],
+    }
+  }, [session.breakdown, session.versions, plates, multiclipRecipe, settings.steps, settings.width, settings.height])
+
   const savePlate = useCallback(async (p: Plate) => {
-    await idb.set('plates', p.id, p)
     setPlates((prev) => {
       const i = prev.findIndex((x) => x.id === p.id)
       if (i === -1) return [...prev, p]
@@ -657,7 +850,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   )
 
   const deletePlate = useCallback(async (id: string) => {
-    await idb.del('plates', id)
     setPlates((prev) => prev.filter((p) => p.id !== id))
   }, [])
 
@@ -671,7 +863,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const now = Date.now()
     const stamped = list.map((p, k) => ({ ...p, addedAt: now + k }))
     setPlates(stamped)
-    for (const p of stamped) await idb.set('plates', p.id, p)
   }, [])
 
   const addRecipe = useCallback(async (r: Recipe) => {
@@ -773,8 +964,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           continue
         }
         if (!p.dataUrl) throw new Error(`Plate “${p.name}” has no file on this box and nothing to upload.`)
-        const safe = `${p.id}_${p.name.replace(/[^a-z0-9]+/gi, '_').slice(0, 40) || 'plate'}.png`
-        const up = await uploadImage(endpoint, p.dataUrl, safe)
+        const up = await uploadImage(endpoint, p.dataUrl, plateFilename(p))
         into.push(up)
         await savePlate({ ...p, uploaded: { endpointId: endpoint.id, ...up } })
       }
@@ -783,8 +973,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         prompt,
         refs,
         videoRefs,
-        width: recipe.defaults.width,
-        height: recipe.defaults.height,
+        width: settings.width ?? recipe.defaults.width,
+        height: settings.height ?? recipe.defaults.height,
         frames,
         seed,
         steps: settings.steps,
@@ -792,29 +982,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       const promptId = await submit(endpoint, graph)
       patchClip(id, { state: 'rendering', promptId })
-
-      // Poll rather than hold a websocket: a dropped link must not lose a
-      // render that the box is still perfectly happily producing.
-      const deadline = Date.now() + 60 * 60 * 1000
-      let misses = 0
-      for (;;) {
-        await new Promise((r) => setTimeout(r, 2500))
-        if (Date.now() > deadline) throw new Error('Gave up waiting after an hour.')
-        let res
-        try {
-          res = await poll(endpoint, promptId)
-          misses = 0
-        } catch {
-          // The box can drop off a network and come back. Only give up when it
-          // has been gone long enough to be a real outage.
-          if (++misses > 120) throw new Error('Lost contact with the box for five minutes.')
-          continue
-        }
-        if (!res.done) continue
-        if (res.failed) throw new Error(res.failed)
-        patchClip(id, { state: 'done', output: res.output, ms: Date.now() - t0 })
-        break
-      }
+      const output = await pollToDone(endpoint, promptId)
+      patchClip(id, { state: 'done', output, ms: Date.now() - t0 })
     } catch (e) {
       const msg = String((e as Error).message || e)
       patchClip(id, { state: 'failed', error: msg, ms: Date.now() - t0 })
@@ -822,7 +991,131 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } finally {
       setRenderingId(null)
     }
-  }, [endpoint, recipe, lastPromptText, settings.lockSeed, settings.seed, settings.seconds, settings.steps, patchClip, savePlate])
+  }, [
+    endpoint, recipe, lastPromptText, settings.lockSeed, settings.seed, settings.seconds, settings.steps,
+    settings.width, settings.height, patchClip, savePlate,
+  ])
+
+  /**
+   * Gather what a multiclip submit needs and build the graph, WITHOUT
+   * submitting it — shared by `renderMulticlip` (which then submits) and
+   * `copyMulticlipGraph` (which stops here). Plates are uploaded for real:
+   * that costs a few small requests, not the 466s a render costs, so both
+   * callers pay it and both see the graph exactly as it will actually go out.
+   */
+  const buildMulticlipPayload = useCallback(async () => {
+    if (!endpoint) throw new Error('No ComfyUI endpoint. Add one under “Where it renders”.')
+    if (!multiclipRecipe) throw new Error('No Long Media recipe — drop the multiclip workflow and pick it as the Long Media recipe.')
+    const b = sessionRef.current.breakdown
+    if (!b || !b.clips.length) throw new Error('No clip plan — run Break down first.')
+
+    const vs = sessionRef.current.versions
+    const plan = b.clips.map((c) => {
+      const v = [...vs].reverse().find((x) => x.clipIndex === c.index && PROMPT_STAGES.has(x.stage))
+      return { index: c.index, seconds: c.seconds, prompt: v?.text ?? '' }
+    })
+
+    // Plates are uploaded once per box and cited by name, same as render()
+    // above — and only image plates: Long Media multiclip's global references
+    // are image_1..image_9, there is no video-reference slot on this path.
+    const imagePlates = platesRef.current.filter((p) => p.kind === 'image')
+    const refs: Array<{ filename: string; subfolder: string }> = []
+    for (const p of imagePlates) {
+      if (p.boxFile?.endpointId === endpoint.id) {
+        refs.push({ filename: p.boxFile.filename, subfolder: p.boxFile.subfolder })
+        continue
+      }
+      if (p.uploaded?.endpointId === endpoint.id) {
+        refs.push({ filename: p.uploaded.filename, subfolder: p.uploaded.subfolder })
+        continue
+      }
+      if (!p.dataUrl) throw new Error(`Plate “${p.name}” has no file on this box and nothing to upload.`)
+      const up = await uploadImage(endpoint, p.dataUrl, plateFilename(p))
+      refs.push(up)
+      await savePlate({ ...p, uploaded: { endpointId: endpoint.id, ...up } })
+    }
+
+    const steps = settings.steps ?? schedulerStepsOf(multiclipRecipe.graph) ?? 0
+    const seed = settings.lockSeed ? settings.seed : Math.floor(Math.random() * 2 ** 31)
+    const clips: MulticlipClip[] = plan.map((c) => ({ prompt: c.prompt, seconds: c.seconds, seed }))
+
+    const built = buildMulticlipGraph({
+      graph: multiclipRecipe.graph,
+      clips,
+      plates: refs,
+      width: settings.width ?? multiclipRecipe.defaults.width,
+      height: settings.height ?? multiclipRecipe.defaults.height,
+      steps,
+      seed,
+      filenamePrefix: `multiclip_${Date.now().toString(36)}`,
+    })
+
+    return { plan, built, seed }
+  }, [endpoint, multiclipRecipe, settings.steps, settings.lockSeed, settings.seed, settings.width, settings.height, savePlate])
+
+  const renderMulticlip = useCallback(async () => {
+    setError(null)
+    const id = `c${Date.now().toString(36)}`
+    const t0 = Date.now()
+
+    let payload: Awaited<ReturnType<typeof buildMulticlipPayload>>
+    try {
+      payload = await buildMulticlipPayload()
+    } catch (e) {
+      setError(String((e as Error).message || e))
+      return
+    }
+    const { plan, built, seed } = payload
+
+    const draft: Clip = {
+      id,
+      index: clipsRef.current.length + 1,
+      parentId: sessionRef.current.parentClipId ?? null,
+      state: 'queued',
+      // The whole job's prompt IS the first clip's — the same rule the setup
+      // node's own `prompt` field follows in multiclip mode (see multiclip.ts).
+      prompt: plan[0]?.prompt ?? '',
+      film: sessionRef.current.film,
+      plateIds: platesRef.current.filter((p) => p.kind === 'image').map((p) => p.id),
+      recipeId: multiclipRecipe!.id,
+      endpointId: endpoint!.id,
+      seed,
+      frames: built.padded.reduce((sum, p) => sum + p.delivered, 0),
+      fps: 24,
+      multiclip: {
+        clipIndexes: plan.map((c) => c.index),
+        perClip: plan.map((c, i) => ({ index: c.index, ...built.padded[i] })),
+        totalSeconds: built.totalSeconds,
+      },
+      at: Date.now(),
+    }
+    setClips((prev) => [...prev, draft])
+    setCurrentClipId(id)
+    setRenderingId(id)
+
+    try {
+      const promptId = await submit(endpoint!, built.graph)
+      patchClip(id, { state: 'rendering', promptId })
+      const output = await pollToDone(endpoint!, promptId)
+      patchClip(id, { state: 'done', output, ms: Date.now() - t0 })
+    } catch (e) {
+      const msg = String((e as Error).message || e)
+      patchClip(id, { state: 'failed', error: msg, ms: Date.now() - t0 })
+      setError(msg)
+    } finally {
+      setRenderingId(null)
+    }
+  }, [buildMulticlipPayload, endpoint, multiclipRecipe, patchClip])
+
+  const copyMulticlipGraph = useCallback(async () => {
+    setError(null)
+    try {
+      const { built } = await buildMulticlipPayload()
+      await navigator.clipboard.writeText(JSON.stringify(built.graph, null, 2))
+    } catch (e) {
+      setError(String((e as Error).message || e))
+    }
+  }, [buildMulticlipPayload])
 
   const selectClip = useCallback((id: string) => setCurrentClipId(id), [])
 
@@ -905,6 +1198,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     streaming,
     chat: session.chat ?? [],
     film: session.film ?? DEFAULT_FILM,
+    breakdown: session.breakdown ?? null,
     error,
     failedReasoning,
     findings,
@@ -923,6 +1217,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     plates,
     recipes,
     recipe,
+    multiclipRecipe,
     endpoints,
     endpoint,
     comfyProbes,
@@ -930,6 +1225,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     clip,
     rendering,
     blockers,
+    warnings,
+    multiclipPreview,
     addPlate,
     updatePlate,
     deletePlate,
@@ -940,6 +1237,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     refreshComfyProbe,
     clipUrl,
     render,
+    renderMulticlip,
+    copyMulticlipGraph,
     selectClip,
     continueFrom,
     cancel,

@@ -1,4 +1,4 @@
-import type { Finding, H3Mode } from './types'
+import type { Finding, H3Mode, StageId } from './types'
 
 /**
  * The prompt check.
@@ -73,14 +73,304 @@ function referenceLabels(text: string): string[] {
   return [...new Set([...angle, ...at])]
 }
 
+const FIELD_NAMES = [
+  'integrated_multimodal_description',
+  'overall_soundscape',
+  'non_diegetic_music',
+  'detailed_description',
+  'retention_analysis',
+  'subject_definitions',
+]
+
+/**
+ * Strip markdown/heading decoration from one line, so a field name buried
+ * inside `## Non Diegetic Music` or `**overall_soundscape**` reads the same
+ * as the plain `overall_soundscape:` the strict form expects.
+ */
+function normalizeLine(line: string): string {
+  return line
+    .replace(/^[ \t#>*_-]+/, '')
+    .replace(/[ \t*_#]+$/, '')
+    .toLowerCase()
+}
+
+/**
+ * Which of the six canonical field names appear at the start of a line, in
+ * ANY casing or spacing — Title Case, markdown-bolded, a heading, spaces
+ * instead of underscores. A rough or badly formatted pasted prompt uses these
+ * constantly; only the punctuation differs from the strict form.
+ */
+function fieldNamesFound(text: string): string[] {
+  const lines = text.split('\n')
+  const found = new Set<string>()
+  for (const raw of lines) {
+    const line = normalizeLine(raw)
+    if (!line) continue
+    for (const name of FIELD_NAMES) {
+      const words = name.split('_')
+      const pattern = new RegExp(`^${words.join('[\\s_-]+')}\\b`, 'i')
+      if (pattern.test(line)) found.add(name)
+    }
+  }
+  return [...found]
+}
+
 /**
  * Is this text already a prompt rather than a story? Used to decide whether a
  * pasted source can be critiqued directly instead of being directed first.
+ *
+ * Loosened to count the markdown/heading/Title-Case variants of a field name
+ * too — a badly formatted pasted prompt is still a prompt, and `lint()`'s own
+ * field parsing stays strict, so its "missing required field" finding is then
+ * honest information about the FORMATTING rather than a false "not a prompt".
  */
 export function looksLikePrompt(text: string): boolean {
+  return fieldNamesFound(text).length > 0
+}
+
+/**
+ * The ORIGINAL strict check — a canonical field name at line start with a
+ * colon, no formatting on top. `classifyInput` needs this exact distinction
+ * to tell a finished prompt apart from a rough one; the loosened
+ * `looksLikePrompt` above deliberately can no longer make that call, since it
+ * treats both as "a prompt" for the purpose of unlocking Critique/Revise.
+ */
+function looksLikePromptStrict(text: string): boolean {
   return /(^|\n)[ \t]*(integrated_multimodal_description|overall_soundscape|non_diegetic_music|detailed_description|retention_analysis|subject_definitions)[ \t]*:/i.test(
     text,
   )
+}
+
+// ── classifying a pasted source ───────────────────────────────────────────
+
+export interface Standing {
+  kind: 'empty' | 'idea' | 'story' | 'brief' | 'direction-sheet' | 'rough-prompt' | 'prompt'
+  confidence: 'high' | 'medium' | 'low'
+  evidence: string[]
+  has: string[]
+  lacks: string[]
+  /** One sentence placing it in the Direct → Draft → Critique → Revise regime. */
+  stands: string
+  suggest: StageId
+}
+
+const TIMECODE_RE = /\b\d{1,2}:\d{2}\b|\[\s*\d+(?:\.\d+)?\s*[-–—]\s*\d+(?:\.\d+)?\s*s\s*\]|\b\d+(?:\.\d+)?\s*[-–—]\s*\d+(?:\.\d+)?\s*s\b/i
+const SHOT_SIZE_RE = /\b(close-?up|wide shot|medium shot|ecu|two-?shot|insert)\b/i
+const CAMERA_RE = /\b(dolly|\bpan\b|\btilt\b|handheld|\d+\s?mm\b|rack focus|tracking shot|tracking)\b/i
+const CUT_TO_RE = /\bcut to\b/i
+const REF_LABEL_RE = /<\s*(subject|ref|picture|video|audio)\b/i
+const ASPECT_RATIO_RE = /\b(16:9|9:16|1:1|4:5|21:9)\b/
+const DURATION_RE = /\b\d+(?:\.\d+)?\s*(seconds|secs?|sec)\b/i
+
+const ROUGH_CATEGORIES: { label: string; re: RegExp }[] = [
+  { label: 'timecodes', re: TIMECODE_RE },
+  { label: 'shot-size vocabulary', re: SHOT_SIZE_RE },
+  { label: 'camera vocabulary', re: CAMERA_RE },
+  { label: '"cut to"', re: CUT_TO_RE },
+  { label: 'reference labels', re: REF_LABEL_RE },
+  { label: 'an aspect ratio', re: ASPECT_RATIO_RE },
+  { label: 'a duration in seconds', re: DURATION_RE },
+]
+
+function roughEvidence(text: string): string[] {
+  return ROUGH_CATEGORIES.filter((c) => c.re.test(text)).map((c) => c.label)
+}
+
+function countHits(text: string, words: string[]): number {
+  const lower = text.toLowerCase()
+  return words.filter((w) => lower.includes(w)).length
+}
+
+/** One heuristic per aspect a prompt would eventually need to declare. */
+const ASPECT_LABELS: Record<string, { has: string; lacks: string }> = {
+  subject: { has: 'a subject is named', lacks: 'no subject named' },
+  place: { has: 'a place is named', lacks: 'no place named' },
+  action: { has: 'an action is described', lacks: 'no action described' },
+  ending: { has: 'an ending is stated', lacks: 'no ending stated' },
+  dialogue: { has: 'dialogue is present', lacks: 'no dialogue' },
+  duration: { has: 'a duration is stated', lacks: 'no duration stated' },
+  'aspect ratio': { has: 'an aspect ratio is stated', lacks: 'no aspect ratio stated' },
+  'shots/cuts': { has: 'shots or cuts are described', lacks: 'no shots or cuts described' },
+  camera: { has: 'camera behaviour is described', lacks: 'no camera direction' },
+  'sound sources': { has: 'sound sources are named', lacks: 'no sound sources named' },
+  'music field': { has: 'the music field is set', lacks: 'no music field' },
+  'field structure': { has: 'the official field structure is present', lacks: 'no official field structure' },
+}
+
+/**
+ * Concrete sound SOURCES — a thing in the world that makes a noise.
+ *
+ * Deliberately excludes 'sound', 'audio' and 'soundscape': those are the
+ * words the FIELD is called, and matching them meant a soundscape reading
+ * "tense, moody" was reported as having named its sources. Naming a mood
+ * where a source belongs is the exact failure the linter exists to catch, so
+ * the standing read must not contradict it.
+ */
+const SOUND_SOURCE_RE =
+  /\b(rain|footsteps?|traffic|doors?|wind|engines?|birds?|breath(?:ing)?|voices?|clatter|hum|bells?|water|thunder|keyboards?|machin(?:e|ery)|crowd|sirens?|clock|ticking|creak|rustl(?:e|ing)|scrape|whistle|horn|radio|television|tv|dripping|typing|chair|glass|metal|paper|fabric|sfx|foley)\b/i
+
+/** An actor doing something — a pronoun or a person, then a verb close by. */
+const ACTION_RE =
+  /\b(?:he|she|they|it|we|i|a|an|the)\b[^.\n]{0,40}?\b\w+(?:s|ed|ing)\b/i
+
+function detectAspects(text: string): Record<string, boolean> {
+  const fields = fieldNamesFound(text)
+  // A proper noun used more than once is a named character; one used once is
+  // as likely to be a sentence opener or a hyphenated term ("Close-up").
+  const capitals = text.slice(15).match(/\b[A-Z][a-z]{2,}\b/g) || []
+  const counts = capitals.reduce<Record<string, number>>((a, w) => ((a[w] = (a[w] ?? 0) + 1), a), {})
+  return {
+    subject:
+      /\b(he|she|they|i|we)\b/i.test(text) ||
+      /\ba (?:man|woman|person|boy|girl|figure|character)\b/i.test(text) ||
+      Object.values(counts).some((n) => n > 1),
+    place: /\b(room|street|shop|forest|kitchen|office|city|house|bay|studio|beach|field|stage|garden|lane|street)\b/i.test(text) || /\b(inside|outside|indoors|outdoors)\b/i.test(text),
+    action: ACTION_RE.test(text),
+    ending: /\b(ends?|finally|in the end|concludes?|resolves?)\b/i.test(text),
+    dialogue: /["“][^"”]{2,}["”]/.test(text) || /\b(says?|said|asks?|asked|whispers?|whispered|shouts?|shouted)\b/i.test(text),
+    duration: DURATION_RE.test(text),
+    'aspect ratio': ASPECT_RATIO_RE.test(text),
+    'shots/cuts': CUT_TO_RE.test(text) || TIMECODE_RE.test(text) || /\bshots?\b/i.test(text),
+    camera: CAMERA_RE.test(text),
+    'sound sources': SOUND_SOURCE_RE.test(text),
+    'music field': fields.includes('non_diegetic_music'),
+    'field structure': looksLikePromptStrict(text),
+  }
+}
+
+const STANDS: Record<Standing['kind'], string> = {
+  empty: 'Nothing pasted yet.',
+  idea: 'Before Direct: barely more than a premise — nothing has been decided about how it is shot.',
+  story: 'Before Direct: nothing has been decided about how it is shot.',
+  brief: 'Before Direct: a specification of what is wanted, not yet a decision about how to shoot it.',
+  'direction-sheet': 'After Direct: ready for Draft.',
+  'rough-prompt': 'After Direct, before Draft: the shot decisions exist but not the official field structure.',
+  prompt: 'After Draft: ready for Critique.',
+}
+
+const SUGGEST: Record<Standing['kind'], StageId> = {
+  empty: 'direct',
+  idea: 'direct',
+  story: 'direct',
+  brief: 'direct',
+  'direction-sheet': 'draft',
+  'rough-prompt': 'direct',
+  prompt: 'critique',
+}
+
+function buildStanding(kind: Standing['kind'], confidence: Standing['confidence'], evidence: string[], text: string): Standing {
+  const aspects = detectAspects(text)
+  const has: string[] = []
+  const lacks: string[] = []
+  for (const key of Object.keys(ASPECT_LABELS)) {
+    const label = ASPECT_LABELS[key]
+    ;(aspects[key] ? has : lacks).push(aspects[key] ? label.has : label.lacks)
+  }
+  return { kind, confidence, evidence, has, lacks, stands: STANDS[kind], suggest: SUGGEST[kind] }
+}
+
+/**
+ * Spec LANGUAGE, as anchored patterns rather than substrings.
+ *
+ * 'for a' was on this list as a substring and matched "for a long minute",
+ * which is how a short story came to be read as a brief. A spec word has to
+ * be used as a directive to count for anything.
+ */
+const SPEC_PATTERNS: { re: RegExp; label: string }[] = [
+  { re: /\bwe need\b/i, label: 'we need' },
+  { re: /\b(?:it|this|the video|the ad|the film) (?:should|must)\b/i, label: 'should / must' },
+  { re: /\bdeliverable/i, label: 'deliverable' },
+  { re: /\btarget (?:audience|market|viewer)\b/i, label: 'target audience' },
+  { re: /\bcall to action\b/i, label: 'call to action' },
+  { re: /\bbrand(?:ing|ed)?\b/i, label: 'brand' },
+  { re: /\bduration\b/i, label: 'duration' },
+  { re: /\baspect ratio\b/i, label: 'aspect ratio' },
+  { re: /\bkey message\b/i, label: 'key message' },
+]
+
+/**
+ * How many sentences read as narration rather than specification.
+ *
+ * Tense-agnostic on purpose: it counts sentences that open on a person and
+ * run long enough to be telling something. A story told in the present is
+ * still a story, which a past-tense count cannot see.
+ */
+function narrativeSentences(text: string): number {
+  return text.split(/(?<=[.!?])\s+/).filter((sentence) => {
+    const words = sentence.trim().split(/\s+/)
+    if (words.length < 6) return false
+    return /^(?:he|she|they|it|we|i|his|her|their|then|[A-Z][a-z]{2,})\b/i.test(words[0] ?? '')
+  }).length
+}
+
+/**
+ * A deterministic read of a pasted source: what kind of thing it is, and
+ * where that puts it in the Direct → Draft → Critique → Revise regime.
+ *
+ * No model involved — cheap keyword heuristics. They will occasionally be
+ * wrong about a borderline source, which is fine: this is a first read for
+ * the model (and the operator) to confirm or correct, not a verdict.
+ */
+export function classifyInput(text: string): Standing {
+  const trimmed = text.trim()
+  if (!trimmed) return buildStanding('empty', 'high', [], trimmed)
+
+  if (looksLikePromptStrict(trimmed)) return buildStanding('prompt', 'high', ['canonical field structure at line start'], trimmed)
+
+  if (/what the brief fixes/i.test(trimmed) || countHits(trimmed, ['anchor', 'beat grid', 'escalation', 'shot card']) >= 2) {
+    return buildStanding('direction-sheet', 'high', ['direction-sheet vocabulary (anchors, beat grid, escalation, shot cards)'], trimmed)
+  }
+
+  const looseFields = fieldNamesFound(trimmed)
+  const vocab = roughEvidence(trimmed)
+  if (looseFields.length >= 2 || vocab.length >= 2) {
+    const evidence = [...looseFields.map((f) => `field name “${f}” present, informally formatted`), ...vocab]
+    return buildStanding('rough-prompt', looseFields.length >= 2 ? 'high' : 'medium', evidence, trimmed)
+  }
+
+  const bulletLines = trimmed.split('\n').filter((l) => /^[ \t]*([-*•]|\d+[.)])\s+/.test(l)).length
+  const specHits = SPEC_PATTERNS.filter((p) => p.re.test(trimmed)).map((p) => p.label)
+  // A brief has to out-vote the prose, not merely appear alongside it. One
+  // spec word used to be enough, which read a short story as a specification
+  // on the strength of the phrase "for a long minute" — and the narrative
+  // test it was weighed against counted only PAST tense, so a story told in
+  // the present ("she takes out the loupe") registered as no narrative at all.
+  const narrative = narrativeSentences(trimmed)
+  if ((bulletLines >= 3 || specHits.length >= 2) && narrative < 3) {
+    const evidence = [bulletLines >= 3 ? `${bulletLines} bulleted/numbered lines` : '', ...specHits.map((w) => `spec language “${w}”`)].filter(Boolean)
+    return buildStanding('brief', bulletLines >= 3 ? 'high' : 'medium', evidence, trimmed)
+  }
+
+  if (trimmed.length < 200) return buildStanding('idea', 'medium', [`${trimmed.length} characters — too short to be sure`], trimmed)
+
+  return buildStanding(
+    'story',
+    narrative >= 3 ? 'high' : 'medium',
+    [`${trimmed.length} characters of prose, ${narrative} narrative sentence${narrative === 1 ? '' : 's'}, no field structure`],
+    trimmed,
+  )
+}
+
+const STANDING_KIND_LABEL: Record<Standing['kind'], string> = {
+  empty: 'empty',
+  idea: 'an idea',
+  story: 'a story',
+  brief: 'a brief',
+  'direction-sheet': 'a direction sheet',
+  'rough-prompt': 'a rough prompt',
+  prompt: 'a finished prompt',
+}
+
+/** Render a Standing as the paragraph handed to the model via `{{standing}}`. */
+export function standingToText(s: Standing): string {
+  const lines = [
+    `This reads as ${STANDING_KIND_LABEL[s.kind]} (${s.confidence} confidence).`,
+    s.evidence.length ? `Evidence: ${s.evidence.join('; ')}.` : '',
+    `Has: ${s.has.length ? s.has.join(', ') : 'nothing yet'}.`,
+    `Lacks: ${s.lacks.length ? s.lacks.join(', ') : 'nothing — everything above is present'}.`,
+    s.stands,
+  ]
+  return lines.filter(Boolean).join('\n')
 }
 
 export function lint(prompt: string, mode: H3Mode): Finding[] {

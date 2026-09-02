@@ -145,6 +145,37 @@ export function secondsForFrames(frames: number, fps = 24): number {
   return frames / fps
 }
 
+/**
+ * Measured render geometries, offered instead of free-form width/height boxes.
+ * These are what actually got tested on the box — an arbitrary size is not.
+ */
+export const GEOMETRY_PRESETS: Array<{ width: number; height: number; label: string; aspect: string; note: string }> = [
+  { width: 960, height: 544, label: '960×544', aspect: '16:9', note: 'The safe default — carries 481 frames comfortably' },
+  { width: 1088, height: 608, label: '1088×608', aspect: '16:9', note: 'Larger' },
+  { width: 864, height: 480, label: '864×480', aspect: '16:9', note: 'Cheaper' },
+  { width: 1344, height: 768, label: '1344×768', aspect: '16:9', note: 'Largest — measured to run out of memory past 362 frames' },
+  { width: 576, height: 1024, label: '576×1024', aspect: '9:16', note: 'Portrait' },
+  { width: 704, height: 704, label: '704×704', aspect: '1:1', note: 'Square' },
+]
+
+/**
+ * VRAM binds before quality does, and an OOM is not a normal failure.
+ *
+ * At 1344x768 the box measured running OUT of memory around 362 frames — and
+ * the OOM takes ComfyUI down WITH the render, so a crashed job is
+ * indistinguishable from one that was never submitted (`/history` comes back
+ * empty either way). Cost scales roughly as pixels^1.3, so this is a WARNING at
+ * or above the tier it was measured on, never a hard block: the fix is to trade
+ * resolution for length, and that trade is the operator's to make, not ours.
+ */
+export const OOM_WIDTH = 1344
+export const OOM_HEIGHT = 768
+export const OOM_FRAMES = 362
+
+export function oomRisk(width: number, height: number, frames: number): boolean {
+  return width >= OOM_WIDTH && height >= OOM_HEIGHT && frames > OOM_FRAMES
+}
+
 export function makeRecipe(name: string, graph: Record<string, ComfyNode>): Recipe {
   const det = detectBindings(graph)
   const h3 = byClass(graph, H3)[0]?.[1]

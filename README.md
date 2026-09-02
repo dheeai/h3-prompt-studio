@@ -4,8 +4,15 @@ Load the craft documents you trust, paste a story, and refine it into a video
 prompt the model actually obeys.
 
 It runs **entirely in your browser**. No backend, no account, no telemetry.
-Your text goes only to the model endpoint you choose. Skills you upload are
-kept in your own browser and are there next time you open the page.
+Your text goes only to the model endpoint you choose.
+
+**What a refresh keeps, and what it deliberately throws away.** Your
+configuration persists: the skills you have loaded, your model and endpoint
+settings, and the ComfyUI workflows you have dropped in. Your *work* does
+not. The draft, its passes, the clip plan, the film context, the plates and
+the rendered clips are all cleared on load. Work that reappears by itself is
+work you have to remember to discard before you can trust what is on the
+page, so a refresh always starts clean.
 
 ---
 
@@ -20,6 +27,47 @@ cached block, then walks a draft through four stages against them:
 **Critique** → an audit against the loaded documents.
 **Revise** → the corrections applied, and nothing else touched.
 
+Draft, Revise and a freeform note all come back as **two sections**: the
+prompt itself, and an explanation of why it is the way it is (which document
+governed each decision, what was fixed vs. what was open craft, and — for
+Draft — where the source stood before it was directed). The two are kept
+apart on the page and in the clipboard: "Copy prompt" copies only the prompt,
+and the prompt check only ever runs on the prompt, never on the prose next to
+it.
+
+A story that needs more than one clip has its own pass: **Break into clips**
+reads the source, decides how many H3 clips it actually needs (one clip is
+one dramatic unit, roughly 6–15 seconds), and gives each one a role, a
+duration and exactly what it covers. Each clip in the plan can be sent
+straight into Direct with everything it needs to stay a *part* of the film
+rather than a small complete film of its own — the same machinery that
+already governs a manually-chained multi-clip film.
+
+Once every clip in that plan has a prompt, the whole plan can go to ComfyUI
+as **one Long Media multiclip job** rather than a render per clip. Two things
+about that path are worth knowing before you use it, both measured rather
+than assumed:
+
+- **The mode is load-bearing.** Long Media has six workflow modes, and four
+  of them take a single prompt for the whole duration. Handing several clips'
+  prose to one of those returns correct picture, hallucinated action and *no
+  dialogue at all* — nothing tells a single-prompt segmenter which sentence
+  belongs to which segment. Only `multiclip` takes a prompt per clip, so that
+  is the only mode this ever writes.
+- **The film delivers less than you asked for, unless the overlap is paid.**
+  Every clip after the first repeats the previous clip's last frames at its
+  head and then trims them, so it delivers fewer frames than it renders. The
+  panel therefore shows authored, rendered and delivered frames per clip, and
+  the real delivered running time, before you spend anything.
+
+References on that path are global — every clip sees every plate, capped at
+H3's nine — and the geometry is chosen from the resolutions that have
+actually been measured on the box. The largest of them is known to run out of
+memory past roughly 362 frames, and that failure takes ComfyUI down with it
+and leaves an empty history, so a crashed render is indistinguishable from
+one that was never submitted. You get told, not blocked: the fix is to trade
+resolution for length.
+
 Alongside that runs a **prompt check** — deterministic rules, no model
 involved. It catches things that only show up after you've burned a render:
 
@@ -33,6 +81,35 @@ involved. It catches things that only show up after you've burned a render:
   failure in a different modality.
 - Timing gaps, undeclared reference labels, on-screen text over the glyph
   budget, soundscapes that name a mood instead of a source.
+
+---
+
+## What you can paste
+
+The source box takes anything — a story, a brief, a rough shot list, a
+half-finished prompt, a finished one. A **Standing** strip under the box
+reads it deterministically (no model involved) and says where it sits before
+you run anything:
+
+- **A story or an idea** — narrative prose, nothing decided about how it is
+  shot yet. Suggested next step: Direct.
+- **A brief** — a specification of what is wanted (bullets, "we need",
+  "deliverable", a duration), not yet a decision about how to shoot it.
+  Suggested: Direct.
+- **A direction sheet** — already has anchors, a beat grid, shot cards, or
+  the words "WHAT THE BRIEF FIXES". Suggested: Draft.
+- **A rough prompt** — the shot decisions exist (timecodes, camera and
+  shot-size vocabulary, `<Subject N>`-style labels) but not in the official
+  field structure, or the field names are there in the wrong casing or
+  formatting (Title Case, markdown-bolded, a heading). Suggested: Direct,
+  to rebuild it properly rather than patch the formatting.
+- **A finished prompt** — the canonical field names, at line start, with a
+  colon. Suggested: Critique.
+
+The strip shows what it found evidence of (`has: …`), what is still missing
+(`lacks: …`), and a **suggested** stage as a one-click chip. It is a first
+read, for you and for the model to confirm or correct — not a verdict, and
+Direct is handed the same read so it can disagree with it in the open.
 
 ---
 
@@ -66,6 +143,17 @@ Any OpenAI-compatible endpoint works. Built-in entries:
 | **OpenRouter** | `https://openrouter.ai/api/v1` | your own API key |
 
 Add any other endpoint from the **Connect** panel.
+
+An output cap can also come from the endpoint's own side rather than from
+anything this app sends — a metered provider enforcing its own ceiling, or a
+local server that clamps a request down regardless of what "output length"
+in Settings asks for. That kind of cap cannot be raised from here. So a reply
+that gets cut off mid-answer is continued automatically in follow-up requests
+and stitched back onto what was already written; one that gets cut off
+mid-*thought*, before any answer at all, gets one recovery request built from
+its own thinking, asking it to write the answer now rather than re-deliberate
+from scratch. Either way the pass is saved as soon as it stops growing, with
+a note if it is still incomplete after every continuation was used up.
 
 ### Can a page on GitHub Pages talk to a model on my machine?
 

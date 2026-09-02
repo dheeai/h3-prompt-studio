@@ -4,8 +4,13 @@
   "description": "A browser-only prompt refinery: load craft skills, paste a story, refine it against a local or remote model.",
   "type": "module",
   "license": "MIT",
-  "bin": { "h3-prompt-studio": "./bin/serve.mjs" },
-  "files": ["dist", "bin"],
+  "bin": {
+    "h3-prompt-studio": "./bin/serve.mjs"
+  },
+  "files": [
+    "dist",
+    "bin"
+  ],
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -22,6 +27,7 @@
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
+    "tsx": "^4.23.13",
     "typescript": "^5.7.3",
     "vite": "^6.0.7"
   }

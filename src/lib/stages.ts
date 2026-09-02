@@ -1,9 +1,9 @@
-import type { ClipRole, FilmContext, StageId } from './types'
+import type { Breakdown, BreakdownClip, ClipRole, FilmContext, StageId } from './types'
 
 export const STAGE_ORDER: StageId[] = ['direct', 'draft', 'critique', 'revise']
 
 /** Stages that are actions rather than steps in the chain. */
-export const OFF_CHAIN: StageId[] = ['freeform', 'handoff']
+export const OFF_CHAIN: StageId[] = ['freeform', 'handoff', 'breakdown']
 
 /**
  * What each pass consumes and produces.
@@ -45,6 +45,11 @@ export const STAGE_INFO: Record<StageId, { produces: string; needs: 'story' | 'a
     blurb:
       'Reads the clip that just landed and writes what the next one opens on — the frame, what is unresolved, and what must not be re-established. Writes no prompt.',
   },
+  breakdown: {
+    produces: 'a clip plan',
+    needs: 'story',
+    blurb: 'Decides how many clips the source needs and what each one covers, precedes and follows. Writes no prompt.',
+  },
 }
 
 export const STAGE_LABEL: Record<StageId, string> = {
@@ -54,13 +59,14 @@ export const STAGE_LABEL: Record<StageId, string> = {
   revise: 'Revise',
   freeform: 'Note',
   handoff: 'Hand-off',
+  breakdown: 'Break down',
 }
 
 /**
  * Stage templates. Editable by the user and stored in settings, so these are
  * only the starting point.
  *
- * Placeholders: {{story}} {{current}} {{mode}} {{notes}} {{findings}}
+ * Placeholders: {{story}} {{current}} {{mode}} {{notes}} {{findings}} {{critique}} {{film}} {{standing}}
  *
  * Each one deliberately refuses to restate the loaded skills — the skills are
  * already in the system block, and repeating them here would both waste the
@@ -108,13 +114,22 @@ one line — then direct the requested action anyway.
 
 {{film}}
 
-Begin with this block, before anything else:
+A DETERMINISTIC READ OF THE SOURCE, computed before you looked at it — confirm
+it or correct it, don't just restate it:
+{{standing}}
+
+Begin with these two blocks, before anything else:
+
+WHERE THE SOURCE STANDS
+- what kind of thing the source is, in your own judgement
+- where that puts it in the regime Direct → Draft → Critique → Revise
+- what it has already decided, and what it has not
 
 WHAT THE BRIEF FIXES
 - one short line per fixed element above, in your own words
 
-That block is a contract. Everything after it must be a way of shooting THAT,
-and any drift is then visible at a glance.
+Those blocks are a contract. Everything after them must be a way of shooting
+THAT, and any drift is then visible at a glance.
 
 Then produce the DIRECTION SHEET, following the loaded craft documents exactly
 where they specify a structure.
@@ -154,13 +169,39 @@ Render the direction sheet; do not re-direct it, and do not invent beats it
 does not contain. If the sheet itself has drifted from the fixed elements,
 follow the fixed elements and note the discrepancy in one line at the end.
 
-Output the prompt and nothing else — no preamble, no explanation, no fences.
+A DETERMINISTIC READ OF THE SOURCE, computed before either pass looked at it.
+It is context for the explanation you are about to write, not something to
+reproduce:
+{{standing}}
 
 DIRECTION SHEET
 {{current}}
 
 SOURCE (for reference only)
-{{story}}`,
+{{story}}
+
+Now write your reply. Output exactly two blocks, in this order, and nothing
+outside them — no heading of your own before, between or after them:
+
+<<<PROMPT>>>
+the complete prompt — and nothing else in it: no preamble, no explanation, no
+fences
+
+<<<EXPLANATION>>>
+Under ~300 words, prose or short bullets, covering these parts in order:
+
+WHERE THE SOURCE STOOD — what kind of thing the source was (a raw idea, a
+story, a brief, a direction sheet, a rough or badly formatted prompt, a
+structured prompt) and where that puts it in the regime
+Direct → Draft → Critique → Revise: which decisions it had already made and
+which it had not.
+
+WHAT WAS FIXED AND WHAT WAS DECIDED — the fixed elements carried through, and
+the open craft decisions taken (framing, blocking, beats, sound), each naming
+the loaded document that governed it.
+
+WHAT THE SOURCE GOT WRONG — if the source was already a prompt, what it did
+badly and what changed; otherwise "nothing to correct".`,
 
   critique: `Audit the prompt below against the loaded documents.
 
@@ -203,10 +244,12 @@ Where a fix requires rewriting the direction rather than editing a field, do
 that. Otherwise change what the review identifies and leave everything else
 exactly as it is: no restructuring, no "improving" untouched lines.
 
-Output exactly two blocks, in this order, and nothing outside them:
+Output exactly three blocks, in this order, and nothing outside them:
 
 <<<PROMPT>>>
 the complete corrected prompt
+<<<EXPLANATION>>>
+2-6 lines: why these edits were made, in terms of the loaded documents
 <<<CHANGES>>>
 - one line per edit: what you changed, and which loaded document required it
 
@@ -261,11 +304,13 @@ If I ASK SOMETHING — why a choice was made, what a rule means, whether an idea
 would work — just answer in plain prose. Do not restate the prompt and do not
 rewrite it.
 
-If I ASK FOR A CHANGE, make it and reply with exactly two blocks, nothing
+If I ASK FOR A CHANGE, make it and reply with exactly three blocks, nothing
 outside them:
 
 <<<PROMPT>>>
 the complete updated prompt
+<<<EXPLANATION>>>
+2-6 lines: why, in terms of the loaded documents
 <<<CHANGES>>>
 - one line per edit: what you changed, and why
 
@@ -274,22 +319,125 @@ every untouched line exactly as they are.
 
 THE PROMPT AS IT STANDS
 {{current}}`,
+
+  breakdown: `Read the source below and decide how many clips it needs.
+
+One H3 clip runs roughly 6-15 seconds, and one clip carries one dramatic unit
+— a single change, not several. If the source genuinely fits in one clip, say
+so and return exactly one.
+
+For each clip, decide:
+- index (1-based)
+- title — a short name for it
+- role — one of opening / rising / turn / falling / closing, or "standalone"
+  if there is only one clip in total
+- seconds — its target length
+- covers — what happens in this clip, in fixed elements only (who, where,
+  what happens, how it ends): no camera, no shot construction, that is the
+  next stage's job
+- precedes — what the audience arrives at THIS clip having just seen. Leave
+  it empty for the first clip, which has nothing before it.
+- follows — what the NEXT clip must be able to open on
+
+Also give the whole film's spine in one line.
+
+Output ONLY a JSON object, no fences, no prose outside it, in exactly this
+shape:
+
+{
+  "spine": "...",
+  "clips": [
+    { "index": 1, "title": "...", "role": "...", "seconds": 10, "covers": "...", "precedes": "...", "follows": "..." }
+  ]
+}
+
+SOURCE
+{{story}}`,
 }
 
 /** The user's override for a stage if they set one, otherwise the default. */
 const PROMPT_MARK = '<<<PROMPT>>>'
+const EXPLANATION_MARK = '<<<EXPLANATION>>>'
 const CHANGES_MARK = '<<<CHANGES>>>'
+const MARKS = { prompt: PROMPT_MARK, explanation: EXPLANATION_MARK, changes: CHANGES_MARK } as const
+
+/** Strip a ```json fence (or a bare ``` fence) around a reply, if present. */
+function stripFence(text: string): string {
+  const m = text.match(/^```[a-zA-Z0-9_-]*\s*\n([\s\S]*?)\n?```\s*$/)
+  return (m ? m[1] : text).trim()
+}
+
+function parseJsonReply(text: string): { prompt: string; explanation: string; changelog: string[] } | null {
+  const stripped = stripFence(text)
+  if (!stripped.startsWith('{')) return null
+  try {
+    const obj = JSON.parse(stripped) as { prompt?: unknown; explanation?: unknown; changes?: unknown }
+    if (typeof obj.prompt !== 'string' && typeof obj.explanation !== 'string') return null
+    const changelog = Array.isArray(obj.changes)
+      ? obj.changes.map((c) => String(c).trim()).filter(Boolean)
+      : typeof obj.changes === 'string'
+        ? obj.changes
+            .split('\n')
+            .map((l) => l.replace(/^\s*[-*•]\s*/, '').trim())
+            .filter(Boolean)
+        : []
+    return {
+      prompt: typeof obj.prompt === 'string' ? obj.prompt.trim() : '',
+      explanation: typeof obj.explanation === 'string' ? obj.explanation.trim() : '',
+      changelog,
+    }
+  } catch {
+    return null
+  }
+}
 
 /**
- * Split a two-block reply into the prompt and its changelog.
+ * Split a marked reply into its blocks, in ANY order — the model is asked for
+ * a fixed order but not enforced on it, and getting the order right matters
+ * less than getting the content into the right bucket.
+ */
+function splitMarkers(text: string): { prompt: string; explanation: string; changelog: string[] } {
+  const positions = (Object.entries(MARKS) as [keyof typeof MARKS, string][])
+    .map(([key, mark]) => ({ key, mark, index: text.indexOf(mark) }))
+    .filter((p) => p.index !== -1)
+    .sort((a, b) => a.index - b.index)
+
+  if (!positions.length) return { prompt: text, explanation: '', changelog: [] }
+
+  const parts: Partial<Record<keyof typeof MARKS, string>> = {}
+  for (let i = 0; i < positions.length; i++) {
+    const { key, index, mark } = positions[i]
+    const end = i + 1 < positions.length ? positions[i + 1].index : text.length
+    parts[key] = text.slice(index + mark.length, end).trim()
+  }
+
+  const changelog = (parts.changes ?? '')
+    .split('\n')
+    .map((l) => l.replace(/^\s*[-*•]\s*/, '').trim())
+    .filter(Boolean)
+
+  return { prompt: parts.prompt ?? '', explanation: parts.explanation ?? '', changelog }
+}
+
+/**
+ * Split a reply into the prompt, its explanation and its changelog.
  *
  * The contract is asked for, not enforced — a model that ignores it still
  * produces a usable prompt, so an unmarked reply is treated as all prompt
- * rather than being rejected.
+ * rather than being rejected. A JSON reply (optionally fenced) is accepted
+ * too, since some models prefer structured output to markers.
  */
+export function splitReply(raw: string): { prompt: string; explanation: string; changelog: string[] } {
+  const text = raw.trim()
+  return parseJsonReply(text) ?? splitMarkers(text)
+}
+
 /** Did the model choose to rewrite, or just answer? */
 export function hasPromptBlock(raw: string): boolean {
-  return raw.includes(PROMPT_MARK)
+  const text = raw.trim()
+  if (text.includes(PROMPT_MARK)) return true
+  const json = parseJsonReply(text)
+  return !!json && !!json.prompt
 }
 
 const HANDOFF_MARKS = ['<<<PRECEDES>>>', '<<<FOLLOWS>>>', '<<<OPEN>>>'] as const
@@ -334,23 +482,6 @@ export function nextRole(role: ClipRole): ClipRole {
   }
 }
 
-export function splitReply(raw: string): { prompt: string; changelog: string[] } {
-  const text = raw.trim()
-  const ci = text.indexOf(CHANGES_MARK)
-  const body = ci === -1 ? text : text.slice(0, ci)
-  const tail = ci === -1 ? '' : text.slice(ci + CHANGES_MARK.length)
-
-  const pi = body.indexOf(PROMPT_MARK)
-  const prompt = (pi === -1 ? body : body.slice(pi + PROMPT_MARK.length)).trim()
-
-  const changelog = tail
-    .split('\n')
-    .map((l) => l.replace(/^\s*[-*\u2022]\s*/, '').trim())
-    .filter(Boolean)
-
-  return { prompt, changelog }
-}
-
 /**
  * The clip's place in a longer film.
  *
@@ -360,7 +491,17 @@ export function splitReply(raw: string): { prompt: string; changelog: string[] }
  * resolving, none of them going anywhere together.
  */
 export function filmBlock(f: FilmContext | undefined): string {
-  if (!f || f.role === 'standalone') return ''
+  if (!f) return ''
+
+  // A breakdown clip may set `covers` without ever setting a role beyond
+  // 'standalone' (a source that turned out to fit in one clip) — that still
+  // needs saying, even though the "part of a longer film" machinery below
+  // does not apply.
+  const coversBlock = f.covers
+    ? `THIS CLIP COVERS exactly: ${f.covers}. Direct only this. The rest of the source is context for continuity, not material to shoot.\n`
+    : ''
+
+  if (f.role === 'standalone') return coversBlock
 
   const roleLine: Record<Exclude<ClipRole, 'standalone'>, string> = {
     opening: 'This clip OPENS the film. It is the only one that may establish — it earns its hook. It must not resolve.',
@@ -374,7 +515,7 @@ export function filmBlock(f: FilmContext | undefined): string {
 
 ${roleLine[f.role as Exclude<ClipRole, 'standalone'>]}
 
-${f.spine ? `The film is about: ${f.spine}
+${coversBlock}${f.spine ? `The film is about: ${f.spine}
 ` : ''}${f.precedes ? `The audience arrives here having just seen: ${f.precedes}
 ` : ''}${f.follows ? `The next clip has to be able to open on: ${f.follows}
 ` : ''}
@@ -399,7 +540,17 @@ export function templateFor(overrides: Partial<Record<StageId, string>> | undefi
 
 export function fillTemplate(
   template: string,
-  vars: { story?: string; current?: string; mode?: string; notes?: string; findings?: string; critique?: string; film?: string },
+  vars: {
+    story?: string
+    current?: string
+    mode?: string
+    notes?: string
+    findings?: string
+    critique?: string
+    film?: string
+    /** The deterministic read of the source — see `classifyInput` / `standingToText` in lint.ts. */
+    standing?: string
+  },
 ): string {
   return template
     .replace(/\{\{film\}\}/g, vars.film?.trim() ?? '')
@@ -409,5 +560,48 @@ export function fillTemplate(
     .replace(/\{\{critique\}\}/g, vars.critique?.trim() || '(no review recorded — judge it against the loaded documents yourself)')
     .replace(/\{\{findings\}\}/g, vars.findings?.trim() || '(the deterministic check found nothing)')
     .replace(/\{\{notes\}\}/g, vars.notes ? `ALSO\n${vars.notes}` : '')
+    .replace(/\{\{standing\}\}/g, vars.standing?.trim() || '(not computed)')
     .trim()
+}
+
+/**
+ * Parse a Breakdown out of a reply — strip any fence, take from the first
+ * `{` to the last `}` (a model sometimes wraps the JSON in a sentence or
+ * two despite being told not to), then validate and coerce the shape rather
+ * than trusting it.
+ */
+export function parseBreakdown(raw: string): Breakdown | null {
+  const text = stripFence(raw.trim())
+  const start = text.indexOf('{')
+  const end = text.lastIndexOf('}')
+  if (start === -1 || end === -1 || end <= start) return null
+
+  let obj: unknown
+  try {
+    obj = JSON.parse(text.slice(start, end + 1))
+  } catch {
+    return null
+  }
+  if (!obj || typeof obj !== 'object') return null
+  const o = obj as { spine?: unknown; clips?: unknown }
+  if (typeof o.spine !== 'string' || !Array.isArray(o.clips) || !o.clips.length) return null
+
+  const ROLES: ClipRole[] = ['opening', 'rising', 'turn', 'falling', 'closing', 'standalone']
+  const single = o.clips.length === 1
+
+  const clips: BreakdownClip[] = o.clips.map((item, i) => {
+    const c = (item ?? {}) as Record<string, unknown>
+    const role = ROLES.includes(c.role as ClipRole) ? (c.role as ClipRole) : single ? 'standalone' : 'rising'
+    return {
+      index: Number(c.index) || i + 1,
+      title: typeof c.title === 'string' ? c.title.trim() : '',
+      role,
+      seconds: Number(c.seconds) || 0,
+      covers: typeof c.covers === 'string' ? c.covers.trim() : '',
+      precedes: typeof c.precedes === 'string' ? c.precedes.trim() : '',
+      follows: typeof c.follows === 'string' ? c.follows.trim() : '',
+    }
+  })
+
+  return { spine: o.spine.trim(), clips, at: Date.now() }
 }

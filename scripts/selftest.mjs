@@ -26,6 +26,7 @@ import {
   interruptedReasoningText,
   shouldContinueStoryLoop,
 } from '../src/lib/entry.ts'
+import { buildAgentModel, buildAgentTools } from '../src/lib/agent.ts'
 
 let pass = 0
 let fail = 0
@@ -68,6 +69,26 @@ check('story loop: only a completed pass advances to the next clip',
 
 check('cancelled thinking: partial reasoning is retained, empty reasoning is not mislabeled',
   interruptedReasoningText('  the model was still weighing the shot  ') === 'the model was still weighing the shot' && interruptedReasoningText('   ') === null)
+
+{
+  const calls = []
+  const mock = {
+    story: 'an idea', versions: [], current: null, film: { role: 'standalone', spine: '', precedes: '', follows: '' }, breakdown: null,
+    clips: [], clip: null, settings: { mode: 'Ref2VA', model: 'test-model', temperature: 0.2, selection: {} }, skills: [],
+    appendPromptVersion(input) { calls.push(['append', input]); return { id: 'v-agent' } },
+    setBreakdown() { calls.push(['breakdown']) }, prepareContinuation() { calls.push(['continuation']); return null },
+    async render() { calls.push(['render']) }, async renderMulticlip() { calls.push(['multiclip']) },
+  }
+  const tools = buildAgentTools(mock)
+  const setPrompt = tools.find((tool) => tool.name === 'set_current_prompt')
+  await setPrompt.execute('call-1', { prompt: 'integrated_multimodal_description: a quiet room' })
+  check('agent tools: prompt mutation delegates to the shared canonical version action', calls[0]?.[0] === 'append' && calls[0][1].text.includes('integrated_multimodal_description'))
+  const render = tools.find((tool) => tool.name === 'render_current')
+  const pending = await render.execute('call-2', {})
+  check('agent tools: render is confirmation-gated', pending.details.requiresConfirmation === 'render_current' && !calls.some((call) => call[0] === 'render'))
+  const model = buildAgentModel({ id: 'ollama', baseUrl: 'http://localhost:11434/v1' }, 'test-model')
+  check('agent model: reuses the configured provider endpoint', model.api === 'openai-completions' && model.baseUrl.endsWith('/v1') && model.id === 'test-model')
+}
 
 check('continuation plates: a replaced frame is scoped to its source clip',
   continuationPlateIsFresh({ mode: 'replaced', fromClipId: 'clip-2' }, 'clip-2') && !continuationPlateIsFresh({ mode: 'replaced', fromClipId: 'clip-1' }, 'clip-2') && continuationPlateIsFresh({ mode: 'carried' }, 'clip-2'))

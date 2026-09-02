@@ -13,9 +13,20 @@ import { classifyInput } from '../src/lib/lint.ts'
 // proves llm.ts loads cleanly under node — see the note above.
 import { stitch, toLineBoundary, appendedFor } from '../src/lib/llm.ts'
 import { buildMulticlipGraph, multiclipIssues, padForOverlap, snapUp } from '../src/lib/multiclip.ts'
+import { ENTRY_MODES, entryAction, entryLabel } from '../src/lib/entry.ts'
 
 let pass = 0
 let fail = 0
+
+// ── entry modes ────────────────────────────────────────────────────────
+
+const entryModesAreComplete = (() => {
+  const modes = ENTRY_MODES.map((m) => m.id)
+  return JSON.stringify(modes) === JSON.stringify(['story', 'prompt', 'idea']) &&
+    entryLabel('story') === 'A story' && entryLabel('prompt') === 'A prompt' && entryLabel('idea') === 'An idea' &&
+    entryAction('story') === 'Generate clip plan' && entryAction('prompt') === 'Refine prompt' && entryAction('idea') === 'Generate H3 prompt'
+})()
+check('entry modes: Story/Prompt/Idea have explicit copy and actions', entryModesAreComplete)
 
 function check(name, cond, detail) {
   if (cond) {

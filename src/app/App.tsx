@@ -11,14 +11,15 @@ import { SkillsPanel } from '../components/SkillsPanel'
 import { SettingsPanel } from '../components/SettingsPanel'
 import { PlatesPanel } from '../components/PlatesPanel'
 import { RecipePanel } from '../components/RecipePanel'
-import { EndpointPanel, RenderRail } from '../components/RenderPanel'
+import { EndpointPanel } from '../components/RenderPanel'
 import { ClipPlayer, FilmStrip } from '../components/ClipDeck'
 import { STAGE_INFO, STAGE_LABEL, STAGE_ORDER, splitReply } from '../lib/stages'
 import { skillTokens } from '../lib/skills'
 import { estTokens, fmtTokens } from '../lib/tokens'
 import { wasSent } from '../lib/context'
 import { classifyInput, looksLikePrompt } from '../lib/lint'
-import type { StageId, Version } from '../lib/types'
+import { ENTRY_MODES, entryMode, type EntryModeId } from '../lib/entry'
+import type { Breakdown, StageId, Version } from '../lib/types'
 
 /** Stages whose output is a prompt — the only things worth diffing together. */
 const PROMPT_STAGES_UI = new Set<StageId>(['draft', 'revise', 'freeform'])
@@ -52,11 +53,11 @@ export function App() {
   const [copied, setCopied] = useState(false)
   const [note, setNote] = useState('')
   const [editingSource, setEditingSource] = useState(false)
-  const [hoveredStage, setHoveredStage] = useState<StageId | null>(null)
   const [thinkOpen, setThinkOpen] = useState(false)
   const [confirmClear, setConfirmClear] = useState(false)
   const [view, setView] = useState<'result' | 'diff'>('result')
   const [filmOpen, setFilmOpen] = useState(false)
+  const [entryModeId, setEntryModeId] = useState<EntryModeId>('story')
   const thinkRef = useRef<HTMLDivElement>(null)
   const storyRef = useRef<HTMLTextAreaElement>(null)
   const noteRef = useRef<HTMLTextAreaElement>(null)
@@ -116,16 +117,6 @@ export function App() {
       return
     }
     if (!busy && connected && !blockedReason(s)) void app.run(s)
-  }
-
-  const stageNote = (s: StageId): string => {
-    const passes = passesByStage.get(s)?.length ?? 0
-    if (passes && s === viewingStage) return 'You are reading this pass.'
-    if (passes) return `Click to read ${passes > 1 ? `the latest of ${passes} passes` : 'this pass'}.`
-    const blocked = blockedReason(s)
-    if (blocked) return blocked
-    if (!connected) return 'Connect a model to run it.'
-    return 'Not run yet — click to run it.'
   }
 
   useEffect(() => autosize(storyRef.current), [story, ready, editingSource])
@@ -192,6 +183,47 @@ export function App() {
     void app.run('freeform', text)
   }
 
+  const startFromEntry = async () => {
+    if (!story.trim() || busy || !connected) return
+    if (entryModeId === 'story') {
+      const planned = await app.run('breakdown')
+      // Story mode is the Long Media path: once the plan lands, author a
+      // prompt for every planned unit so the single multiclip gate is useful
+      // immediately. Each direct→draft pair remains in version history.
+      if (planned) {
+        try {
+          const breakdown = JSON.parse(planned.text) as Breakdown
+          for (const clip of breakdown.clips) {
+            app.setFilm({
+              role: clip.role,
+              spine: breakdown.spine,
+              precedes: clip.precedes,
+              follows: clip.follows,
+              covers: clip.covers,
+              title: clip.title,
+              clipIndex: clip.index,
+            })
+            const sheet = await app.run('direct')
+            if (!sheet) break
+            await app.run('draft')
+          }
+        } catch {
+          // The existing ClipPlan still exposes per-clip Direct actions if a
+          // provider returned a non-JSON plan; keep that recovery path intact.
+        }
+      }
+    } else if (entryModeId === 'prompt') {
+      await app.run('revise')
+    } else {
+      // Idea mode is a single guided action: Direct gives the model a
+      // direction sheet, then Draft turns that sheet into the canonical H3
+      // prompt. Both passes remain in history for inspection.
+      await app.rebuild()
+    }
+  }
+
+  const activeEntry = entryMode(entryModeId)
+
   // When a finished prompt is pasted it IS the document — show it typeset
   // rather than leaving the page looking empty below a wall of source text.
   // `||` rather than `??` on purpose: at the instant a run starts the stream
@@ -234,7 +266,7 @@ export function App() {
   // Direct and Critique return prose. Rendering markdown as one monospace
   // block made a structured critique read as an undifferentiated wall.
   const shownStage: StageId = streaming?.stage ?? current?.stage ?? (pastedPrompt ? 'draft' : 'direct')
-  const shownIsProse = shownStage === 'direct' || shownStage === 'critique'
+  const shownIsProse = shownStage !== 'draft' && shownStage !== 'revise' && shownStage !== 'freeform'
   const longSource = story.length > 600
   const collapseSource = (pastedPrompt || longSource) && !editingSource
   const loadedSkills = skills.filter((s) => settings.selection[s.id]?.length)
@@ -246,14 +278,22 @@ export function App() {
   // rather than showing the reader the markers themselves.
   const isSplitStage = shownStage === 'draft' || shownStage === 'revise' || shownStage === 'freeform'
   const liveSplit = useMemo(() => (isSplitStage && streaming ? splitReply(streaming.text) : null), [isSplitStage, streaming])
-  const promptText = liveSplit ? liveSplit.prompt : shown
+  const canonicalVersion = useMemo(() => {
+    if (current && PROMPT_STAGES_UI.has(current.stage)) return current
+    return [...versions].reverse().find((v) => PROMPT_STAGES_UI.has(v.stage)) ?? null
+  }, [current, versions])
+  const canonicalPrompt = canonicalVersion?.text ?? (looksLikePrompt(story) ? story : '')
+  // The canonical prompt is the only copy/lint/render payload. The visible
+  // document may be a direction sheet, critique, hand-off, or clip plan, but
+  // those are never valid substitutes for the current H3 prompt.
+  const promptText = liveSplit ? liveSplit.prompt : canonicalPrompt
   const explanationText = liveSplit ? liveSplit.explanation : current?.explanation ?? ''
   const changelogList = liveSplit ? liveSplit.changelog : current?.changelog
 
   // What "Copy prompt" copies, and what the linter runs on, must be the
   // prompt alone — never the explanation, never a raw marker.
   const copy = async () => {
-    if (!promptText) return
+    if (!promptText || streaming) return
     await navigator.clipboard.writeText(promptText)
     setCopied(true)
     setTimeout(() => setCopied(false), 1400)
@@ -268,508 +308,166 @@ export function App() {
   }
 
   return (
-    <div className="app">
-      {/* ── masthead ─────────────────────────────────────────────────── */}
-      <div className="masthead">
-        <div className="serif" style={{ fontSize: 21, letterSpacing: '-0.005em' }}>
-          H3 Prompt Studio
-        </div>
-        <div className="serif" style={{ fontStyle: 'italic', fontSize: 15, color: 'var(--ink3)' }}>
-          {current ? `${STAGE_LABEL[current.stage]} · pass ${versions.length}` : 'a new draft'}
-        </div>
-        <div style={{ flexGrow: 1 }} />
-        <button className="chip" onClick={() => setModal('connect')} title="Connect a model">
-          <span className={`dot ${connected ? 'ok' : probe?.state === 'mixed-content' ? 'err' : 'idle'}`} />
-          {settings.model || 'no model'}
+    <div className="app studio-app">
+      <header className="studio-topbar">
+        <div className="studio-wordmark"><span className="studio-mark">H3</span><span>Prompt Studio</span></div>
+        <div className="studio-project">{film.spine || (current ? `${STAGE_LABEL[current.stage]} · pass ${versions.length}` : '')}</div>
+        <div className="studio-grow" />
+        <button className="studio-health" onClick={() => setModal('connect')} title="Connect a model">
+          <span className={`studio-health-dot ${connected ? 'ok' : 'idle'}`} />
+          {connected ? `${settings.model} ready` : 'Connect model'}
         </button>
+        <button className="studio-top-action" onClick={() => setModal('skills')}>Skills <span>{loadedSkills.length}</span></button>
+        <button className="studio-top-action" onClick={() => setModal('settings')}>Settings</button>
         {confirmClear ? (
-          <>
-            <span className="tok" style={{ color: 'var(--ox)' }}>discard {versions.length} pass{versions.length === 1 ? '' : 'es'}?</span>
-            <button
-              className="btn pri"
-              onClick={() => {
-                void app.reset()
-                setConfirmClear(false)
-                setEditingSource(false)
-              }}
-            >
-              Discard
-            </button>
-            <button className="btn ghost" onClick={() => setConfirmClear(false)}>
-              Keep
-            </button>
-          </>
+          <div className="studio-clear-confirm" role="status">
+            <span className="tok">discard {versions.length} pass{versions.length === 1 ? '' : 'es'}?</span>
+            <button className="btn pri sm" onClick={() => { void app.reset(); setConfirmClear(false); setEditingSource(false) }}>Discard</button>
+            <button className="btn ghost sm" onClick={() => setConfirmClear(false)}>Keep</button>
+          </div>
         ) : (
+          <button className="studio-top-action" onClick={() => (versions.length || story ? setConfirmClear(true) : undefined)} disabled={!versions.length && !story}>New draft</button>
+        )}
+      </header>
+
+      <nav className="entry-tabs" role="tablist" aria-label="Choose how to start">
+        <div className="entry-label">Start with</div>
+        {ENTRY_MODES.map((mode) => (
           <button
-            className="btn ghost"
-            onClick={() => (versions.length || story ? setConfirmClear(true) : undefined)}
-            disabled={!versions.length && !story}
-            title="Clear the source and every pass, and start again"
+            key={mode.id}
+            id={`entry-${mode.id}-tab`}
+            className="entry-tab"
+            role="tab"
+            aria-selected={entryModeId === mode.id}
+            aria-controls="studio-workspace"
+            tabIndex={entryModeId === mode.id ? 0 : -1}
+            onClick={() => setEntryModeId(mode.id)}
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+                e.preventDefault()
+                setEntryModeId(ENTRY_MODES[(ENTRY_MODES.findIndex((m) => m.id === mode.id) + 1) % ENTRY_MODES.length].id)
+              }
+              if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+                e.preventDefault()
+                setEntryModeId(ENTRY_MODES[(ENTRY_MODES.findIndex((m) => m.id === mode.id) + ENTRY_MODES.length - 1) % ENTRY_MODES.length].id)
+              }
+            }}
           >
-            New draft
+            <strong>{mode.label}</strong><span>{mode.description}</span>
           </button>
-        )}
-        <button className="btn ghost" onClick={() => setModal('settings')}>
-          Settings
-        </button>
-        <button className="btn ghost" onClick={() => setModal('endpoint')} title="Where clips render">
-          {rendering ? `Rendering clip ${rendering.index}…` : 'Render'}
-        </button>
-        <button className="btn" onClick={() => void copy()} disabled={!promptText}>
-          {copied ? 'Copied' : 'Copy prompt'}
-        </button>
+        ))}
+      </nav>
+
+      <div className="studio-reading">
+        <span className="lbl">Reading</span>
+        <div className="studio-skill-list">
+          {skills.map((s) => {
+            const sel = settings.selection[s.id] || []
+            const cls = sel.length === 0 ? 'off' : sel.length === s.files.length ? 'on' : 'part'
+            return (
+              <button key={s.id} className={`chip ${cls}`} onClick={() => app.toggleSkill(s)} title={s.description}>
+                {s.name}{sel.length > 0 && <span className="tok">{fmtTokens(skillTokens(s, sel))}</span>}
+              </button>
+            )
+          })}
+        </div>
+        <button className="chip off" onClick={() => setModal('skills')}>＋ manage skills</button>
+        <div className="studio-grow" />
+        {context && <span className="tok studio-context">{fmtTokens(context.tokens)} est. · {loadedSkills.length} loaded · {wasSent(context.hash) ? 'cached' : 'not sent yet'}</span>}
       </div>
 
-      {/* ── reading strip ────────────────────────────────────────────── */}
-      <div className="reading">
-        <span className="lbl" style={{ marginRight: 3 }}>Reading</span>
-        {skills.map((s) => {
-          const sel = settings.selection[s.id] || []
-          const cls = sel.length === 0 ? 'off' : sel.length === s.files.length ? 'on' : 'part'
-          return (
-            <button key={s.id} className={`chip ${cls}`} onClick={() => app.toggleSkill(s)} title={s.description}>
-              {s.name}
-              {sel.length > 0 && <span className="tok" style={{ color: 'var(--ox)', opacity: 0.8 }}>{fmtTokens(skillTokens(s, sel))}</span>}
+      <main className="studio-main" id="studio-workspace" role="tabpanel" aria-labelledby={`entry-${entryModeId}-tab`}>
+        <section className="studio-source" aria-label="Source and clip plan">
+          <div className="studio-panel-head">
+            <div className="studio-kicker">01 · SOURCE</div>
+            <div className="studio-title-row"><h2>{activeEntry.title}</h2><span className="studio-kicker">{story.length.toLocaleString()} chars</span></div>
+          </div>
+          <div className="studio-source-editor">
+            {collapseSource ? (
+              <div className={`studio-source-preview ${pastedPrompt ? 'one' : 'two'}`} onClick={() => setEditingSource(true)} role="textbox" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setEditingSource(true) }}>
+                {story || activeEntry.placeholder}
+              </div>
+            ) : (
+              <textarea ref={storyRef} value={story} onChange={(e) => app.setStory(e.target.value)} placeholder={activeEntry.placeholder} rows={4} aria-label={activeEntry.title} />
+            )}
+            <div className="studio-source-hint">{activeEntry.id === 'story' ? 'H3 will divide this into dramatic units, then keep continuity across the resulting prompts.' : activeEntry.id === 'prompt' ? 'Skills preserve your intent while repairing structure, timing, and model-specific weaknesses.' : 'One sentence is enough; the skills will supply shot logic and sound.'}</div>
+            <button className="studio-source-action" onClick={() => void startFromEntry()} disabled={!story.trim() || busy || !connected}>
+              <span>{activeEntry.action}</span><span className="tok">⌘ ↵</span>
             </button>
-          )
-        })}
-        <button className="chip off" onClick={() => setModal('skills')}>
-          ＋ {skills.length ? 'manage' : 'add skills'}
-        </button>
-        <div style={{ flexGrow: 1, minWidth: 12 }} />
-        {context && (
-          <span className="tok" style={{ whiteSpace: 'nowrap' }}>
-            {fmtTokens(context.tokens)} est. · {loadedSkills.length} skill{loadedSkills.length === 1 ? '' : 's'} ·{' '}
-            <span style={{ color: wasSent(context.hash) ? 'var(--grn)' : 'var(--ink3)' }}>
-              {wasSent(context.hash) ? 'cached' : 'not sent yet'}
-            </span>
-          </span>
-        )}
-      </div>
-
-      <div className="body">
-        <div className="column">
-          {/* ── stage line ───────────────────────────────────────────── */}
-          <div className="stageline">
-            <div className="stagerow">
-              {STAGE_ORDER.map((s, i) => {
-                const blocked = blockedReason(s)
-                const done = reached.has(s)
-                const isNext = nextStage === s
-                return (
-                  <span key={s} style={{ display: 'contents' }}>
-                    {i > 0 && <span className={`stage-sep${isNext ? ' on' : ''}`} />}
-                    {/* The hover handlers sit on the wrapper, not the button:
-                        a disabled button receives no pointer events, and a
-                        blocked pass is precisely the one needing explanation. */}
-                    <span
-                      className={`stage-wrap${isNext ? ' on' : done ? ' done' : ''}`}
-                      onMouseEnter={() => setHoveredStage(s)}
-                      onMouseLeave={() => setHoveredStage(null)}
-                      title={blocked ?? (connected ? `${STAGE_LABEL[s]} — ${STAGE_INFO[s].blurb}` : 'Connect a model first')}
-                    >
-                      <span className="stage-num">{done ? '✓' : i + 1}</span>
-                      <button
-                        className={`stage${isNext ? ' on' : done ? ' done' : ''}${s === viewingStage ? ' viewing' : ''}`}
-                        onClick={() => openStage(s)}
-                        disabled={busy || (!done && (!connected || !!blocked))}
-                      >
-                        {STAGE_LABEL[s]}
-                      </button>
-                    </span>
-                  </span>
-                )
-              })}
-              <div style={{ flexGrow: 1 }} />
-              {busy ? (
-                <>
-                  <span className="spin" style={{ marginRight: 9 }} />
-                  <button className="btn" onClick={app.cancel}>Stop</button>
-                </>
-              ) : (
-                <>
-                  {documentIsPrompt && (
-                    <button
-                      className="btn"
-                      style={{ marginRight: 7 }}
-                      onClick={() => void app.rebuild()}
-                      disabled={!connected || !story.trim()}
-                      title="Re-read what is here, re-decide the film, and write the prompt again from scratch — not an edit"
-                    >
-                      Rebuild
-                    </button>
-                  )}
-                  {current && (
-                    <button
-                      className="btn"
-                      style={{ marginRight: 7 }}
-                      onClick={() => void app.run(current.stage)}
-                      disabled={!connected || !!blockedReason(current.stage)}
-                      title={`Run ${STAGE_LABEL[current.stage]} again on the same input`}
-                    >
-                      Re-run {STAGE_LABEL[current.stage]}
-                    </button>
-                  )}
-                  <button
-                    className="btn pri"
-                    onClick={() => void app.run(nextStage)}
-                    disabled={!connected || !!blockedReason(nextStage)}
-                    title={blockedReason(nextStage) ?? `Continue from the pass you are reading`}
-                  >
-                    {connected ? `Run ${STAGE_LABEL[nextStage]}` : 'Connect a model'}
-                  </button>
-                </>
-              )}
-            </div>
-
-            <div className="stagenote">
-              {(() => {
-                const s = hoveredStage ?? viewingStage ?? nextStage
-                return (
-                  <>
-                    <b>
-                      {STAGE_LABEL[s]} → {STAGE_INFO[s].produces}
-                    </b>{' '}
-                    {STAGE_INFO[s].blurb} <span style={{ color: 'var(--ink3)' }}>{stageNote(s)}</span>
-                    {!versions.length && ' Run them in order, or jump straight to the one you need.'}
-                    {documentIsPrompt && (s === 'revise' || s === 'direct') && (
-                      <span style={{ color: 'var(--ink3)' }}>
-                        {' '}Revise edits surgically; Direct → Draft rebuilds from scratch.
-                      </span>
-                    )}
-                  </>
-                )
-              })()}
-            </div>
+            <div className="studio-source-secondary"><button className="btn sm ghost" onClick={() => void app.run('breakdown')} disabled={!story.trim() || busy || !connected}>Break into clips</button><span className="tok">Long Media plan stays available from every entry mode.</span></div>
+            {!story && <div className="studio-examples"><span className="tok">try</span>{EXAMPLES.map((ex) => <button key={ex.label} className="btn sm ghost" onClick={() => app.setStory(ex.text)}>{ex.label}</button>)}</div>}
           </div>
 
-          {/* ── source ───────────────────────────────────────────────── */}
-          <div style={{ flex: '0 0 auto', padding: '16px 26px 0', minHeight: 0 }}>
-            <div className="pane input">
-              <div className="pane-head">
-                <span className="pane-tag in">INPUT</span>
-                <span className="tok" style={{ color: 'var(--ink2)' }}>
-                  {pastedPrompt ? 'a prompt you pasted' : 'your source'} · {story.length.toLocaleString()} characters
-                </span>
-                <div style={{ flexGrow: 1 }} />
-                <button
-                  className="btn sm ghost"
-                  onClick={() => void app.run('breakdown')}
-                  disabled={!connected || busy || !story.trim()}
-                  title="Decide how many clips this needs, and what each one covers"
-                >
-                  Break into clips
-                </button>
-                <button
-                  className={`btn sm ${film.role === 'standalone' ? 'ghost' : ''}`}
-                  onClick={() => setFilmOpen((v) => !v)}
-                  title="Tell it where this clip sits in a longer film"
-                >
-                  {film.role === 'standalone' ? 'standalone clip' : `part of a film · ${film.role}`}
-                </button>
-                {(pastedPrompt || longSource) && (
-                  <button className="btn sm ghost" onClick={() => setEditingSource((v) => !v)}>
-                    {collapseSource ? 'expand' : 'collapse'}
-                  </button>
-                )}
-              </div>
-
-              {filmOpen && (
-                <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--rule)', background: 'var(--paper)' }}>
-                  <div className="tok" style={{ lineHeight: 1.5, marginBottom: 10 }}>
-                    A clip inside a film should not hook, escalate and resolve on its own — that makes a row of little
-                    complete films rather than one. Say where this one sits and it will be directed as a part.
-                  </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 10 }}>
-                    {(['standalone', 'opening', 'rising', 'turn', 'falling', 'closing'] as const).map((r) => (
-                      <button key={r} className={`chip${film.role === r ? ' on' : ''}`} onClick={() => app.setFilm({ role: r })}>
-                        {r}
-                      </button>
-                    ))}
-                  </div>
-                  {film.covers && (
-                    <div className="tok" style={{ lineHeight: 1.55, marginBottom: 10, color: 'var(--ink2)' }}>
-                      <span className="lbl" style={{ marginRight: 6 }}>Covers</span>
-                      {film.covers}
-                    </div>
-                  )}
-                  {film.role !== 'standalone' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                      <input
-                        type="text"
-                        value={film.spine}
-                        onChange={(e) => app.setFilm({ spine: e.target.value })}
-                        placeholder="The whole film, in one line"
-                        style={{ width: '100%' }}
-                      />
-                      <input
-                        type="text"
-                        value={film.precedes}
-                        onChange={(e) => app.setFilm({ precedes: e.target.value })}
-                        placeholder="What the audience has just seen"
-                        style={{ width: '100%' }}
-                      />
-                      <input
-                        type="text"
-                        value={film.follows}
-                        onChange={(e) => app.setFilm({ follows: e.target.value })}
-                        placeholder="What the next clip has to open on"
-                        style={{ width: '100%' }}
-                      />
-                    </div>
-                  )}
-                </div>
-              )}
-              <div className="pane-body" style={{ paddingTop: 10, paddingBottom: 10 }}>
-                {collapseSource ? (
-                  <div className={`epigraph-preview ${pastedPrompt ? 'one' : 'two'}`} onClick={() => setEditingSource(true)}>
-                    {story}
-                  </div>
-                ) : (
-                  <textarea
-                    ref={storyRef}
-                    value={story}
-                    onChange={(e) => app.setStory(e.target.value)}
-                    placeholder="Paste a story, a beat sheet, a script, or a half-written prompt…"
-                    rows={1}
-                    aria-label="Source story"
-                  />
-                )}
-                {!story && (
-                  <div className="tok" style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <span>try</span>
-                    {EXAMPLES.map((ex) => (
-                      <button key={ex.label} className="btn sm ghost" style={{ padding: '1px 6px' }} onClick={() => app.setStory(ex.text)}>
-                        {ex.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* ── standing ─────────────────────────────────────────────── */}
-          {/* Tied to whether the source is READABLE, not to whether passes
-              exist: a source sitting there in full with its standing hidden is
-              the one case where the reader can see the text and not the read
-              of it. Collapsed, it is noise; expanded, it belongs. */}
-          {story.trim() && !streaming && (!current || !collapseSource) && (
-            <div style={{ flex: '0 0 auto', padding: '8px 26px 0' }}>
-              <div className="tok" style={{ lineHeight: 1.6 }}>
-                <span className="lbl" style={{ marginRight: 4 }}>Standing</span>{' '}
-                <b style={{ color: 'var(--ink2)', fontFamily: 'inherit' }}>{standing.kind}</b> · {standing.confidence} confidence — has:{' '}
-                {standing.has.length ? standing.has.join(', ') : 'nothing'}; lacks: {standing.lacks.length ? standing.lacks.join(', ') : 'nothing'}.
-              </div>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 3 }}>
-                <span className="tok" style={{ lineHeight: 1.6 }}>{standing.stands}</span>
-                <div style={{ flexGrow: 1 }} />
-                <button
-                  className="chip"
-                  disabled={busy || !connected}
-                  onClick={() => void app.run(standing.suggest)}
-                  title={`Run ${STAGE_LABEL[standing.suggest]}`}
-                >
-                  suggested: {STAGE_LABEL[standing.suggest]}
-                </button>
-              </div>
+          {filmOpen && (
+            <div className="studio-film-context">
+              <div className="tok">A clip inside a film should carry the film forward. Set its role and hand-off context here.</div>
+              <div className="studio-role-row">{(['standalone', 'opening', 'rising', 'turn', 'falling', 'closing'] as const).map((r) => <button key={r} className={`chip${film.role === r ? ' on' : ''}`} onClick={() => app.setFilm({ role: r })}>{r}</button>)}</div>
+              {film.role !== 'standalone' && <div className="studio-film-inputs"><input value={film.spine} onChange={(e) => app.setFilm({ spine: e.target.value })} placeholder="The whole film, in one line" /><input value={film.precedes} onChange={(e) => app.setFilm({ precedes: e.target.value })} placeholder="What the audience has just seen" /><input value={film.follows} onChange={(e) => app.setFilm({ follows: e.target.value })} placeholder="What the next clip has to open on" /></div>}
             </div>
           )}
 
-          {/* ── clip plan ────────────────────────────────────────────── */}
-          {app.breakdown && <ClipPlan />}
+          <div className="studio-clip-rail">
+            <div className="studio-clips-head"><span>CLIP PLAN</span><button className="chip off" onClick={() => setFilmOpen((v) => !v)}>{film.role === 'standalone' ? 'standalone' : `film · ${film.role}`}</button></div>
+            {app.breakdown?.clips.map((c) => {
+              const v = [...versions].reverse().find((x) => x.clipIndex === c.index && PROMPT_STAGES_UI.has(x.stage))
+              const active = film.clipIndex === c.index
+              return <button className="studio-clip-row" key={c.index} aria-current={active} onClick={() => { if (v) app.selectVersion(v.id); app.setFilm({ role: c.role, spine: app.breakdown?.spine ?? '', precedes: c.precedes, follows: c.follows, covers: c.covers, title: c.title, clipIndex: c.index }) }}><span className="studio-clip-no">{String(c.index).padStart(2, '0')}</span><span className="studio-clip-copy"><strong>{c.title || `Clip ${c.index}`}</strong><span>{c.covers || c.role}</span></span><span className={`studio-clip-state ${v ? 'ready' : ''}`}>{v ? 'ready' : `${c.seconds}s`}</span></button>
+            })}
+            {!app.breakdown && clips.length === 0 && <div className="studio-empty-rail">Generate a plan or render a prompt to start a clip rail.</div>}
+            {!app.breakdown && clips.map((c) => <button className="studio-clip-row" key={c.id} aria-current={c.id === app.clip?.id} onClick={() => app.selectClip(c.id)}><span className="studio-clip-no">{String(c.index).padStart(2, '0')}</span><span className="studio-clip-copy"><strong>Clip {c.index}</strong><span>{c.film?.role || 'standalone'} · {c.state}</span></span><span className="studio-clip-state">{c.frames ? `${(c.frames / (c.fps || 24)).toFixed(1)}s` : 'draft'}</span></button>)}
+          </div>
 
-          {/* ── the document ─────────────────────────────────────────── */}
-          <div className="scroll" ref={docRef} style={{ flex: '1 1 auto', padding: '0 26px', minHeight: 0 }}>
-            <div style={{ paddingTop: 14, paddingBottom: 20 }}>
-              {shown || reasoning ? (
-                <div className="pane output">
-                  <div className="pane-head">
-                    <span className="pane-tag out">OUTPUT</span>
-                    <span className="tok" style={{ color: 'var(--ink2)' }}>
-                      {streaming
-                        ? `${STAGE_LABEL[streaming.stage]} · ${live!.answer ? `~${fmtTokens(live!.answer)} tokens · ${live!.rate}/s` : 'thinking…'}${
-                            streaming.continuations > 0
-                              ? streaming.phase === 'thinking-recovery'
-                                ? ' · resuming from its notes'
-                                : ` · continuing (${streaming.continuations})`
-                              : ''
-                          }`
-                        : current
-                          ? `${settings.mode} · ${STAGE_LABEL[current.stage]} · pass ${versions.findIndex((v) => v.id === current.id) + 1}`
-                          : `${settings.mode} · unrefined — this is still your input`}
-                    </span>
-                    {current && !streaming && (
-                      <span className="tok" title="The model that produced this pass">
-                        written by {current.model} · {(current.ms / 1000).toFixed(1)}s
-                        {current.tokens
-                          ? ` · ${current.tokensEstimated ? '~' : ''}${fmtTokens(current.tokens)} tokens · ${Math.round(
-                              current.tokens / Math.max(0.001, current.ms / 1000),
-                            )}/s`
-                          : ''}
-                        {settings.model && current.model !== settings.model && (
-                          <span style={{ color: 'var(--amb)' }}> · you are now on {settings.model}</span>
-                        )}
-                        {!!current.continuations && !current.truncated && (
-                          <span style={{ color: 'var(--ink3)' }}> · stitched from {current.continuations} continuation{current.continuations === 1 ? '' : 's'}</span>
-                        )}
-                      </span>
-                    )}
-                    <div style={{ flexGrow: 1 }} />
-                    {diffable && (
-                      <div style={{ display: 'flex', gap: 4, marginRight: 4 }}>
-                        <button className={`chip${view === 'result' ? ' on' : ''}`} onClick={() => setView('result')}>
-                          Result
-                        </button>
-                        <button
-                          className={`chip${view === 'diff' ? ' on' : ''}`}
-                          onClick={() => setView('diff')}
-                          title="What this pass changed, side by side"
-                        >
-                          Diff{current?.changelog?.length ? ` · ${current.changelog.length}` : ''}
-                        </button>
-                      </div>
-                    )}
-                    {!streaming && (
-                      <button className="btn sm" onClick={() => void copy()}>
-                        {copied ? 'Copied' : 'Copy'}
-                      </button>
-                    )}
-                  </div>
-                  {reasoning && (
-                    <div className="think">
-                      <div className="think-head" onClick={() => setThinkOpen((v) => !v)}>
-                        <span className="tok" style={{ color: 'var(--ink3)' }}>{thinkOpen ? '▾' : '▸'}</span>
-                        <span className="lbl">Thinking</span>
-                        <span className="tok">
-                          {streaming
-                            ? `~${fmtTokens(live!.think)} tokens · ${live!.rate}/s · ${live!.secs.toFixed(0)}s`
-                            : `~${fmtTokens(estTokens(reasoning))} tokens, not part of the prompt`}
-                        </span>
-                        {reasoningStreaming && <span className="spin" />}
-                      </div>
-                      {thinkOpen && (
-                        <div className="think-body" ref={thinkRef}>
-                          {reasoning}
-                          {reasoningStreaming && <span className="think-caret" />}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  {!streaming && current?.truncated && (
-                    <div className="alert warn" style={{ margin: '10px 16px 0' }}>
-                      Cut off by the server's output cap even after {current.continuations ?? 0} continuation
-                      {current.continuations === 1 ? '' : 's'} — this text may be incomplete.
-                    </div>
-                  )}
-                  {!streaming && !shownIsProse && (
-                    <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--rule)', background: 'var(--paper)' }}>
-                      <Legend text={promptText} />
-                    </div>
-                  )}
-                  <div className="pane-body">
-                    {diffable && view === 'diff' ? (
-                      <DiffView before={diffable.before} after={diffable.after} beforeLabel={diffable.label} changelog={current?.changelog} />
-                    ) : shownIsProse ? (
-                      <ProseDoc text={shown} streaming={!!streaming} />
-                    ) : (
-                      <>
-                        {(explanationText.trim() || (changelogList?.length ?? 0) > 0) && (
-                          <div className="pane-tag in" style={{ marginBottom: 8 }}>THE PROMPT</div>
-                        )}
-                        <PromptDoc text={promptText} streaming={!!streaming} />
-                        <Explanation text={explanationText} changelog={changelogList} streaming={!!streaming} />
-                      </>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <div style={{ maxWidth: 520 }}>
-                  <div className="lbl" style={{ marginBottom: 9 }}>What comes back</div>
-                  <div style={{ fontFamily: 'var(--mono)', fontSize: 11.5, lineHeight: 1.7, color: 'var(--ink3)' }}>
-                    <span style={{ color: 'var(--ox)' }}>integrated_multimodal_description:</span> timed cuts, camera, blocking
-                    <br />
-                    <span style={{ color: 'var(--ox)' }}>overall_soundscape:</span> concrete sources, placed in time
-                    <br />
-                    <span style={{ color: 'var(--ox)' }}>non_diegetic_music:</span> <span style={{ color: 'var(--grn)' }}>N/A</span>
-                  </div>
-                  <div style={{ fontSize: 11.5, color: 'var(--ink3)', marginTop: 12, lineHeight: 1.6, borderTop: '1px solid var(--rule)', paddingTop: 11 }}>
-                    Checked against the rules before you copy it — including the ones that only show up after you’ve wasted a render.
-                  </div>
-                </div>
-              )}
+          {app.breakdown && <div className="studio-plan-details"><ClipPlan /></div>}
+          <div className="studio-source-clip"><ClipPlayer /></div>
+        </section>
 
-              {chat.length > 0 && (
-                <div className="thread">
-                  <div className="lbl" style={{ marginBottom: 2 }}>Conversation</div>
-                  {chat.map((t, i) => (
-                    <div className={`turn${t.role === 'user' ? ' you' : ''}`} key={i}>
-                      <div className="turn-role">
-                        {t.role === 'user' ? 'You' : 'Reply'}
-                        {t.versionId && <span className="turn-badge">updated the prompt · pass {versions.findIndex((v) => v.id === t.versionId) + 1}</span>}
-                      </div>
-                      <div className="turn-body">
-                        {t.role === 'user' ? t.text : <ProseDoc text={t.text} />}
-                      </div>
-                    </div>
-                  ))}
-                  {streaming?.stage === 'freeform' && (
-                    <div className="turn">
-                      <div className="turn-role">Reply</div>
-                      <div className="turn-body">
-                        <ProseDoc text={streaming.text} streaming />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {error && (
-                <div className="alert err" style={{ marginTop: 16, maxWidth: 660 }}>
-                  <div style={{ display: 'flex', gap: 10 }}>
-                    <span style={{ flexGrow: 1 }}>{error}</span>
-                    <button className="btn sm ghost" onClick={app.clearError}>dismiss</button>
-                  </div>
-                </div>
-              )}
+        <section className="studio-prompt" aria-label="Current H3 prompt">
+          <div className="studio-prompt-head">
+            <div>
+              <div className="studio-kicker">02 · CANONICAL PROMPT</div>
+              <div className="studio-title-row"><h2>{current && PROMPT_STAGES_UI.has(current.stage) ? STAGE_LABEL[current.stage] : 'Current H3 prompt'}</h2><span className="studio-pass-count">{current ? `v${versions.findIndex((v) => v.id === current.id) + 1}` : 'unrefined'}</span></div>
+              <div className="studio-canonical"><span className="studio-canonical-dot" />Current prompt · this is what Copy, Lint, and Render use</div>
+              <div className="studio-context-line">Context: {film.role === 'standalone' ? 'standalone clip' : `${film.role} · ${film.spine || 'film context'}`}{film.precedes ? ' + previous ending state' : ''}</div>
+            </div>
+            <div className="studio-version-menu" aria-label="Prompt history">
+              {versions.length > 0 && <select value={current?.id ?? ''} onChange={(e) => app.selectVersion(e.target.value)} aria-label="Select prompt version">{versions.map((v, i) => <option key={v.id} value={v.id}>v{i + 1} · {STAGE_LABEL[v.stage]}{v.note ? ` · ${v.note.slice(0, 18)}` : ''}</option>)}</select>}
             </div>
           </div>
 
-          {/* ── composer ─────────────────────────────────────────────── */}
-          <div className="composer">
-            <textarea
-              ref={noteRef}
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault()
-                  send()
-                }
-              }}
-              placeholder={connected ? 'lose the second cut, hold on her hand longer…' : 'connect a model to begin'}
-              rows={1}
-              disabled={!connected || (!current && !pastedPrompt)}
-              aria-label="Refinement instruction"
-            />
-            <button className="btn" onClick={send} disabled={!note.trim() || busy || !connected || (!current && !pastedPrompt)}>
-              Send
-            </button>
+          <div className="studio-stage-tools">
+            <div className="studio-stage-list">{STAGE_ORDER.map((s, i) => { const done = reached.has(s); const blocked = blockedReason(s); return <span key={s} className="studio-stage-item">{i > 0 && <span className="studio-stage-line" />}<button className={`studio-stage-button${s === nextStage ? ' active' : ''}${done ? ' done' : ''}${s === viewingStage ? ' viewing' : ''}`} onClick={() => openStage(s)} disabled={busy || (!done && (!connected || !!blocked))}><span>{done ? '✓' : i + 1}</span>{STAGE_LABEL[s]}</button></span> })}</div>
+            <div className="studio-stage-actions">{busy ? <><span className="spin" /><button className="btn sm" onClick={app.cancel}>Stop</button></> : <>{documentIsPrompt && <button className="btn sm ghost" onClick={() => void app.rebuild()} disabled={!connected || !story.trim()}>Rebuild</button>}<button className="btn sm ghost" onClick={() => void app.run(nextStage)} disabled={!connected || !!blockedReason(nextStage)}>{connected ? `Run ${STAGE_LABEL[nextStage]}` : 'Connect a model'}</button>{current && <button className="btn sm ghost" onClick={() => void app.run(current.stage)} disabled={!connected || !!blockedReason(current.stage)}>Re-run</button>}</>}</div>
           </div>
-        </div>
 
-        {/* ── the clip, and what it starts ─────────────────────────── */}
-        <div className="clipcol">
-          <ClipPlayer />
-          <div style={{ flexGrow: 1 }} />
-        </div>
+          <div className="studio-doc-tools"><button className={`studio-quiet-action${view === 'result' ? ' active' : ''}`} onClick={() => setView('result')}>Result</button>{diffable && <button className={`studio-quiet-action${view === 'diff' ? ' active' : ''}`} onClick={() => setView('diff')}>Compare{current?.changelog?.length ? ` · ${current.changelog.length}` : ''}</button>}<button className="studio-quiet-action" onClick={() => void copy()} disabled={!!streaming || !promptText}>{copied ? 'Copied' : 'Copy prompt'}</button></div>
 
-        <div className="renderrail">
-          <RenderRail onOpen={setModal} />
-        </div>
+          <div className="studio-doc" ref={docRef}>
+            {reasoning && <div className="think"><div className="think-head" onClick={() => setThinkOpen((v) => !v)}><span className="tok">{thinkOpen ? '▾' : '▸'}</span><span className="lbl">Thinking</span><span className="tok">{streaming ? `~${fmtTokens(live!.think)} tokens · ${live!.secs.toFixed(0)}s` : `~${fmtTokens(estTokens(reasoning))} tokens, not part of the prompt`}</span>{reasoningStreaming && <span className="spin" />}</div>{thinkOpen && <div className="think-body" ref={thinkRef}>{reasoning}{reasoningStreaming && <span className="think-caret" />}</div>}</div>}
+            {current?.truncated && !streaming && <div className="alert warn">Cut off by the server’s output cap after {current.continuations ?? 0} continuation{current.continuations === 1 ? '' : 's'} — this text may be incomplete.</div>}
+            {shown || reasoning ? (diffable && view === 'diff' ? <DiffView before={diffable.before} after={diffable.after} beforeLabel={diffable.label} changelog={current?.changelog} /> : shownIsProse ? <ProseDoc text={shown} streaming={!!streaming} /> : <><Legend text={promptText} /><PromptDoc text={promptText} streaming={!!streaming} /><Explanation text={explanationText} changelog={changelogList} streaming={!!streaming} /></>) : <div className="studio-empty-prompt"><div className="studio-kicker">THE CANONICAL PROMPT APPEARS HERE</div><p>Start with a story, prompt, or idea. Your current version stays singular and is the only text sent to Render.</p><div className="studio-format-preview"><span>integrated_multimodal_description:</span> timed cuts, camera, blocking<br /><span>overall_soundscape:</span> concrete sources, placed in time<br /><span>non_diegetic_music:</span> <em>N/A</em></div></div>}
+            {error && <div className="alert err studio-error"><span>{error}</span><button className="btn sm ghost" onClick={app.clearError}>dismiss</button></div>}
+          </div>
+        </section>
 
-        <Marginalia />
-      </div>
+        <aside className="studio-side" aria-label="Refine and render">
+          <section className="studio-chat">
+            <div className="studio-panel-head"><div className="studio-kicker">03 · REFINE</div><div className="studio-title-row"><h3>Direct with chat</h3><span className="studio-kicker">{loadedSkills.length} skills</span></div></div>
+            <div className="studio-chat-feed" aria-live="polite"><p className="studio-chat-note">Every accepted refinement becomes the new current prompt. Old versions stay in history.</p>{chat.map((t, i) => <div className={`studio-message${t.role === 'user' ? ' user' : ''}`} key={i}><div className="studio-message-role">{t.role === 'user' ? 'You' : 'Studio'}</div><div className="studio-message-body">{t.role === 'user' ? t.text : <ProseDoc text={t.text} />}</div>{t.versionId && <div className="studio-change">✓ v{versions.findIndex((v) => v.id === t.versionId) + 1} is now current</div>}</div>)}{streaming?.stage === 'freeform' && <div className="studio-message"><div className="studio-message-role">Studio</div><ProseDoc text={streaming.text} streaming /></div>}</div>
+            <div className="studio-chat-compose"><textarea ref={noteRef} value={note} onChange={(e) => setNote(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }} placeholder={connected ? 'Change the camera, action, dialogue, mood…' : 'Connect a model to refine'} rows={3} disabled={!connected || (!current && !pastedPrompt)} aria-label="Refinement instruction" /><div className="studio-compose-row"><span>Updates the current prompt</span><button className="studio-send" onClick={send} disabled={!note.trim() || busy || !connected || (!current && !pastedPrompt)}>{busy ? 'Working…' : 'Refine prompt'}</button></div></div>
+          </section>
+          <section className="studio-render">
+            <div className="studio-kicker">04 · RENDER</div><div className="studio-title-row"><h3>ComfyUI</h3><button className="studio-render-ready" onClick={() => setModal('endpoint')}><span className={`studio-health-dot ${app.comfyProbes[app.endpoint?.id ?? '']?.state === 'ok' ? 'ok' : 'idle'}`} />{app.endpoint?.label || 'configure endpoint'}</button></div>
+            <div className="studio-render-grid"><div><span>Recipe</span><strong>{app.recipe?.name || 'not configured'}</strong></div><div><span>References</span><strong>{app.plates.length} of 9 bound</strong></div><div><span>Geometry</span><strong>{app.recipe ? `${settings.width ?? app.recipe.defaults.width} × ${settings.height ?? app.recipe.defaults.height}` : '—'}</strong></div><div><span>Seed</span><strong>{settings.seed} · {settings.lockSeed ? 'locked' : 'random'}</strong></div></div>
+            {app.clip?.state === 'done' && <div className="studio-context-receipt"><strong>Continuation is available</strong>Carries the current prompt, film context, bound references, and this clip’s final frame into a new prompt.</div>}
+            <button className="studio-render-current" disabled={!!rendering || app.blockers.length > 0} onClick={() => void app.render()}><span>{rendering ? `Rendering clip ${rendering.index}…` : 'Render current prompt'}</span><span>current →</span></button>
+            {app.clip?.state === 'done' && <button className="studio-continue" disabled={!!rendering} onClick={() => void app.continueFrom(app.clip!.id)}><span>Continue from this clip</span><span>new prompt →</span></button>}
+            {app.blockers.length > 0 && <div className="studio-render-issues">{app.blockers.map((b) => <div key={b}>{b}</div>)}</div>}
+            {app.warnings.length > 0 && <div className="studio-render-warnings">{app.warnings.map((w) => <div key={w}>{w}</div>)}</div>}
+            <div className="studio-render-links"><button className="btn sm ghost" onClick={() => setModal('recipe')}>Recipe & geometry</button><button className="btn sm ghost" onClick={() => setModal('plates')}>Bind plates</button></div>
+          </section>
+          <section className="studio-audit"><Marginalia /></section>
+        </aside>
+      </main>
 
       <FilmStrip />
 

@@ -743,9 +743,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const rendering = useMemo(() => clips.find((c) => c.id === renderingId) ?? null, [clips, renderingId])
 
   const lastPromptText = useMemo(() => {
+    // Rendering, linting and copying all consume the one canonical prompt.
+    // Selecting a prose pass (Direct/Critique) for inspection must not make
+    // that prose accidentally become the render payload.
+    const selected = session.versions.find((x) => x.id === session.currentId)
+    if (selected && PROMPT_STAGES.has(selected.stage)) return selected.text
     const v = [...session.versions].reverse().find((x) => PROMPT_STAGES.has(x.stage))
     return v?.text ?? (looksLikePrompt(session.story) ? session.story : '')
-  }, [session.versions, session.story])
+  }, [session.versions, session.currentId, session.story])
 
   const blockers = useMemo(() => {
     const out: string[] = []

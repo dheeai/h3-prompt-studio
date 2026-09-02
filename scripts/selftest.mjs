@@ -57,6 +57,11 @@ check('entry dispatch: click and keyboard share the same workflow',
   entryWorkflow('story') === 'story-plan' && entryWorkflow('prompt') === 'prompt-revise' && entryWorkflow('idea') === 'idea-prompt')
 check('entry actions: Scene stops at a clip plan, Clip generates a prompt, Prompt exposes Revise',
   entryAction('story') === 'Create clip plan' && entryAction('idea') === 'Generate prompt' && entryAction('prompt') === 'Revise prompt')
+check('Direct contract: timing and sound anchors are allowed without obsolete stage debate', (() => {
+  const direct = DEFAULT_TEMPLATES.direct
+  return direct.includes('beat durations') && direct.includes('exact timecodes') && direct.includes('concrete sound anchors') &&
+    !direct.includes('Do not describe music or rhythm') && !direct.includes('Direct → Draft → Critique → Revise')
+})())
 check('story loop: only a completed pass advances to the next clip',
   shouldContinueStoryLoop({ status: 'ok' }) && !shouldContinueStoryLoop({ status: 'null' }) && !shouldContinueStoryLoop({ status: 'cancelled' }) && !shouldContinueStoryLoop({ status: 'error' }))
 check('prompt mode: rough source is a working prompt even without canonical fields',
@@ -213,7 +218,13 @@ check('prompt replacement parser: malformed two-block output is rejected', (() =
   const good = workflowModule.splitPromptReplacement('<<<PROMPT>>>\ncanonical\n<<<EXPLANATION>>>\nfixed timing')
   const missingExplanation = workflowModule.splitPromptReplacement('<<<PROMPT>>>\ncanonical')
   const unmarked = workflowModule.splitPromptReplacement('canonical with commentary')
-  return good?.prompt === 'canonical' && good?.explanation === 'fixed timing' && missingExplanation === null && unmarked === null
+  const preamble = workflowModule.splitPromptReplacement('preamble\n<<<PROMPT>>>\ncanonical\n<<<EXPLANATION>>>\nfixed timing')
+  const postscript = workflowModule.splitPromptReplacement('<<<PROMPT>>>\ncanonical\n<<<EXPLANATION>>>\nfixed timing\n<<<POSTSCRIPT>>>\nextra')
+  const duplicate = workflowModule.splitPromptReplacement('<<<PROMPT>>>\nfirst\n<<<PROMPT>>>\nsecond\n<<<EXPLANATION>>>\nfixed timing')
+  const reversed = workflowModule.splitPromptReplacement('<<<EXPLANATION>>>\nfixed timing\n<<<PROMPT>>>\ncanonical')
+  const changes = workflowModule.splitPromptReplacement('<<<PROMPT>>>\ncanonical\n<<<EXPLANATION>>>\nfixed timing\n<<<CHANGES>>>\n- changed')
+  return good?.prompt === 'canonical' && good?.explanation === 'fixed timing' && missingExplanation === null && unmarked === null &&
+    preamble === null && postscript === null && duplicate === null && reversed === null && changes === null
 })())
 
 {

@@ -131,8 +131,7 @@ Begin with these two blocks, before anything else:
 
 WHERE THE SOURCE STANDS
 - what kind of thing the source is, in your own judgement
-- where that puts it in the regime Direct → Draft → Critique → Revise
-- what it has already decided, and what it has not
+- what it has already decided, and what remains open for this direction sheet
 
 WHAT THE BRIEF FIXES
 - one short line per fixed element above, in your own words
@@ -152,8 +151,11 @@ Decide and state:
 - for each cut, a shot card: frame size, lens feel, camera behaviour, what the
   audience learns in that shot
 
-Do not write any prompt fields. Do not describe music or rhythm. Output the
-direction sheet only.
+Do not write any H3 prompt fields or a submission-ready prompt. Rhythm here is
+edit timing only: include beat durations, pauses, acceleration, and exact timecodes
+in the direction sheet. Include concrete sound anchors for every
+beat/shot as required by the loaded direction skill. Do not author
+non-diegetic music or a score in this pass. Output the direction sheet only.
 
 SOURCE
 {{story}}`,
@@ -201,9 +203,7 @@ Under ~300 words, prose or short bullets, covering these parts in order:
 
 WHERE THE SOURCE STOOD — what kind of thing the source was (a raw idea, a
 story, a brief, a direction sheet, a rough or badly formatted prompt, a
-structured prompt) and where that puts it in the regime
-Direct → Draft → Critique → Revise: which decisions it had already made and
-which it had not.
+structured prompt), which decisions it had already made, and which it had not.
 
 WHAT WAS FIXED AND WHAT WAS DECIDED — the fixed elements carried through, and
 the open craft decisions taken (framing, blocking, beats, sound), each naming
@@ -477,10 +477,16 @@ export function splitReply(raw: string): { prompt: string; explanation: string; 
  */
 export function splitPromptReplacement(raw: string): { prompt: string; explanation: string; changelog: string[] } | null {
   const text = raw.trim()
-  if (!text.includes(PROMPT_MARK) || !text.includes(EXPLANATION_MARK)) return null
-  const parsed = splitMarkers(text)
-  if (!parsed.prompt.trim() || !parsed.explanation.trim()) return null
-  return parsed
+  const promptIndex = text.indexOf(PROMPT_MARK)
+  const explanationIndex = text.indexOf(EXPLANATION_MARK)
+  if (promptIndex !== 0 || explanationIndex === -1 || explanationIndex <= promptIndex) return null
+  const markers = text.match(/<<<[^>\n]+>>>/g) ?? []
+  if (markers.length !== 2 || markers[0] !== PROMPT_MARK || markers[1] !== EXPLANATION_MARK) return null
+
+  const prompt = text.slice(PROMPT_MARK.length, explanationIndex).trim()
+  const explanation = text.slice(explanationIndex + EXPLANATION_MARK.length).trim()
+  if (!prompt || !explanation) return null
+  return { prompt, explanation, changelog: [] }
 }
 
 /** Did the model choose to rewrite, or just answer? */

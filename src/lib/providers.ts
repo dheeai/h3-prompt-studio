@@ -36,7 +36,7 @@ export const DEFAULT_PROVIDERS: Provider[] = [
   },
 ]
 
-export function needsKey(p: Provider): boolean {
+export function needsKey(p: Pick<Provider, 'baseUrl'>): boolean {
   return /openrouter\.ai|api\.openai\.com|anthropic\.com/.test(p.baseUrl)
 }
 

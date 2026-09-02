@@ -28,6 +28,45 @@ export interface BuiltContext {
   parts: { skillId: string; skillName: string; rel: string; tokens: number }[]
 }
 
+export type H3PromptSurface = 'studio' | 'agent'
+
+/**
+ * Rules that belong to the Studio surface rather than to an individual stage
+ * template. Keeping them beside the skill-context assembler makes it
+ * impossible for the Studio and Agent to silently drift into different
+ * definitions of the canonical prompt.
+ */
+export const H3_STUDIO_SYSTEM_RULES = `You are the H3 Prompt Studio authoring model on the Studio authoring surface.
+
+The selected skill documents above are the complete craft authority. Apply them
+to the user's source and the current stage contract. Keep the user's fixed
+subjects, action, outcome, named objects, dialogue, and explicit constraints
+intact. The canonical prompt is the only text that may be submitted to
+ComfyUI; explanations, critique, and working notes stay outside it.`
+
+/** Operational rules for the browser Agent; deterministic tools are the only
+ * way it may mutate the shared Studio state. */
+export const H3_AGENT_SYSTEM_RULES = `You are the H3 Prompt Studio browser Agent on the Agent surface.
+
+The selected skill documents above are the complete craft authority. Use the
+deterministic Studio tools to inspect or mutate the one shared session. If the
+user asks for a prompt change, write the complete canonical H3 prompt and save
+it through a prompt-version tool; never put commentary in the prompt field.
+Never call Studio LLM stages, invent a render, or repeat a tool operation.
+Render and multiclip submission require explicit confirmation. Stop after one
+meaningful operation and report its result briefly.`
+
+/**
+ * Build the single system-message contract used by both LLM surfaces.
+ * `BuiltContext.text` already contains the complete selected skill files in a
+ * stable order, so it is inserted as one contiguous block exactly once.
+ */
+export function buildH3SystemPrompt(context: BuiltContext | null | undefined, surface: H3PromptSurface): string {
+  const selectedSkills = context?.text || '# No selected H3 skills\n\nNo skill files are currently selected.'
+  const rules = surface === 'agent' ? H3_AGENT_SYSTEM_RULES : H3_STUDIO_SYSTEM_RULES
+  return `${selectedSkills}\n\n${rules}`
+}
+
 async function sha256(text: string): Promise<string> {
   // crypto.subtle needs a secure context; localhost and https both qualify.
   if (!globalThis.crypto?.subtle) {

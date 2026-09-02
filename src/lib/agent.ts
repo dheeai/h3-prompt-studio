@@ -1,8 +1,10 @@
 import { Type } from 'typebox'
 import type { Static } from 'typebox'
-import type { AgentTool, AgentToolResult } from '@mariozechner/pi-agent-core'
+import type { AgentEvent, AgentTool, AgentToolResult } from '@mariozechner/pi-agent-core'
 import type { Api } from '../app/state'
-import type { Breakdown, BreakdownClip } from './types'
+import { H3_AGENT_SYSTEM_RULES } from './context'
+import { needsKey } from './providers'
+import type { Breakdown, BreakdownClip, Provider } from './types'
 
 export type AgentConfirmation = 'render_current' | 'render_multiclip'
 
@@ -13,6 +15,148 @@ export interface AgentToolDetails {
   clipIndex?: number
   requiresConfirmation?: AgentConfirmation
   message?: string
+}
+
+export type AgentTranscriptItem = {
+  id: string
+  kind: 'user' | 'assistant' | 'thinking' | 'tool'
+  text: string
+  toolName?: string
+  status?: 'running' | 'done' | 'error'
+  details?: Record<string, unknown>
+  /** Timestamp shared by Pi's partial and final assistant messages. */
+  sourceId?: string
+}
+
+export type AgentEventStatus = {
+  kind: 'ready' | 'error' | 'aborted'
+  message: string
+}
+
+type AgentMessageLike = {
+  role?: string
+  content?: Array<{ type?: string; text?: string; thinking?: string }>
+  timestamp?: number
+  stopReason?: string
+  errorMessage?: string
+}
+
+function messageSourceId(message: AgentMessageLike, kind: 'assistant' | 'thinking'): string | undefined {
+  return typeof message.timestamp === 'number' ? `${kind}:${message.timestamp}` : undefined
+}
+
+function messageParts(message: AgentMessageLike): { text: string; thinking: string } {
+  let text = ''
+  let thinking = ''
+  for (const block of message.content ?? []) {
+    if (block.type === 'text') text += block.text ?? ''
+    if (block.type === 'thinking') thinking += block.thinking ?? ''
+  }
+  return { text, thinking }
+}
+
+function appendDelta(items: AgentTranscriptItem[], kind: 'assistant' | 'thinking', delta: string, sourceId?: string): AgentTranscriptItem[] {
+  if (!delta) return items
+  const index = sourceId
+    ? [...items].map((item, i) => ({ item, i })).reverse().find(({ item }) => item.kind === kind && item.sourceId === sourceId)?.i ?? -1
+    : -1
+  if (index !== -1) {
+    const item = items[index]
+    return [...items.slice(0, index), { ...item, text: item.text + delta }, ...items.slice(index + 1)]
+  }
+  return [...items, { id: `${kind}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`, kind, text: delta, sourceId }]
+}
+
+function finalizeAssistant(items: AgentTranscriptItem[], message: AgentMessageLike): AgentTranscriptItem[] {
+  const { text, thinking } = messageParts(message)
+  const assistantId = messageSourceId(message, 'assistant')
+  const thinkingId = messageSourceId(message, 'thinking')
+  let next = items
+
+  const upsert = (kind: 'assistant' | 'thinking', value: string, sourceId?: string) => {
+    if (!value) return
+    const index = sourceId
+      ? [...next].map((item, i) => ({ item, i })).reverse().find(({ item }) => item.kind === kind && item.sourceId === sourceId)?.i ?? -1
+      : -1
+    if (index === -1) {
+      next = [...next, { id: `${kind}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`, kind, text: value, sourceId }]
+    } else {
+      next = [...next.slice(0, index), { ...next[index], text: value }, ...next.slice(index + 1)]
+    }
+  }
+
+  upsert('thinking', thinking, thinkingId)
+  const assistantLengthBefore = next.length
+  upsert('assistant', text || message.errorMessage || '', assistantId)
+  if (!text && message.errorMessage) {
+    const index = assistantId
+      ? next.findIndex((item) => item.kind === 'assistant' && item.sourceId === assistantId)
+      : next.length > assistantLengthBefore ? next.length - 1 : -1
+    if (index !== -1) next = [...next.slice(0, index), { ...next[index], status: 'error' }, ...next.slice(index + 1)]
+  }
+  return next
+}
+
+/**
+ * Reduce Pi lifecycle events into the transcript the browser renders.
+ * `agent_end.messages` is authoritative for errors and for providers that
+ * finish without emitting a text_delta, so relying on deltas alone loses the
+ * only useful receipt in precisely those failure cases.
+ */
+export function reduceAgentEvent(items: AgentTranscriptItem[], event: AgentEvent): AgentTranscriptItem[] {
+  switch (event.type) {
+    case 'message_update': {
+      const streamEvent = event.assistantMessageEvent
+      const source = event.message as AgentMessageLike
+      if (streamEvent.type === 'thinking_delta') return appendDelta(items, 'thinking', streamEvent.delta, messageSourceId(source, 'thinking'))
+      if (streamEvent.type === 'text_delta') return appendDelta(items, 'assistant', streamEvent.delta, messageSourceId(source, 'assistant'))
+      return items
+    }
+    case 'message_end':
+      return event.message.role === 'assistant' ? finalizeAssistant(items, event.message as AgentMessageLike) : items
+    case 'agent_end': {
+      const finalAssistant = [...event.messages].reverse().find((message) => message.role === 'assistant')
+      return finalAssistant ? finalizeAssistant(items, finalAssistant as AgentMessageLike) : items
+    }
+    case 'tool_execution_start':
+      return [...items, { id: event.toolCallId, kind: 'tool', toolName: event.toolName, text: JSON.stringify(event.args), status: 'running' }]
+    case 'tool_execution_end': {
+      const details = event.result?.details && typeof event.result.details === 'object' ? event.result.details as Record<string, unknown> : undefined
+      const resultText = contentText(event.result)
+      return items.map((item) => item.id === event.toolCallId ? { ...item, status: event.isError ? 'error' : 'done', text: resultText || item.text, details } : item)
+    }
+    default:
+      return items
+  }
+}
+
+/** The terminal run status, including Pi's resolved-but-error agent_end path. */
+export function agentEventStatus(event: AgentEvent): AgentEventStatus | null {
+  if (event.type !== 'agent_end') return null
+  const finalAssistant = [...event.messages].reverse().find((message) => message.role === 'assistant') as AgentMessageLike | undefined
+  if (finalAssistant?.errorMessage || finalAssistant?.stopReason === 'error') {
+    return { kind: 'error', message: finalAssistant.errorMessage || 'The agent stopped with an error.' }
+  }
+  if (finalAssistant?.stopReason === 'aborted') {
+    return { kind: 'aborted', message: 'Stopped. Partial thinking remains in this transcript.' }
+  }
+  return { kind: 'ready', message: 'Ready. The shared Studio state is up to date.' }
+}
+
+/**
+ * pi-ai requires an apiKey option even for keyless OpenAI-compatible servers.
+ * The regular Studio client correctly omits Authorization for those servers,
+ * so give Pi a harmless placeholder whenever the provider does not require a
+ * key (including LAN, Tailscale, and custom compatible endpoints).
+ */
+export function agentApiKey(provider: Pick<Provider, 'baseUrl' | 'apiKey'>): string | undefined {
+  return provider.apiKey || (!needsKey(provider) ? 'local-browser-runtime' : undefined)
+}
+
+function contentText(result: unknown): string {
+  if (!result || typeof result !== 'object') return ''
+  const content = (result as { content?: Array<{ type?: string; text?: string }> }).content
+  return content?.filter((block) => block.type === 'text').map((block) => block.text ?? '').join('') ?? ''
 }
 
 const textResult = (details: AgentToolDetails, text: string, terminate = false): AgentToolResult<AgentToolDetails> => ({
@@ -180,11 +324,8 @@ export function buildAgentTools(app: Bridge, onConfirmation?: (type: AgentConfir
   return [readStudioState, setCurrentPrompt, appendPromptVersion, setClipPlan, prepareContinuation, renderCurrent, renderMulticlip]
 }
 
-export const AGENT_SYSTEM_PROMPT = `You are the H3 Prompt Studio browser agent. Work with the Studio state through deterministic tools.
-
-The canonical prompt is always the complete prompt in the current version. If the user asks for a prompt change, produce the complete updated prompt and call set_current_prompt or append_prompt_version. Never put explanation, markdown fences, or tool commentary in the prompt argument.
-
-Use read_studio_state before making decisions when context is missing. Use prepare_continuation for a selected rendered clip; it stages state but does not author text. Do not call Studio LLM stages and do not invent renders. Render and multiclip tools require explicit confirmation from the user; never pass confirmed=true until the user has confirmed in the interface. Keep the response concise and stop after one meaningful operation.`
+/** Kept as a named export for consumers that display the Agent contract. */
+export const AGENT_SYSTEM_PROMPT = H3_AGENT_SYSTEM_RULES
 
 export function buildAgentModel(provider: { id: string; baseUrl: string }, modelId: string) {
   return {

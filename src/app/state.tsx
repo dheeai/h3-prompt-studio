@@ -1,9 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { idb } from '../lib/db'
-import { buildContext, type BuiltContext } from '../lib/context'
+import { buildContext, buildH3SystemPrompt, type BuiltContext } from '../lib/context'
 import { classifyInput, findingsToText, lint, looksLikePrompt, standingToText } from '../lib/lint'
-import { streamChatComplete } from '../lib/llm'
+import { continuationBudgetFor, streamChatComplete } from '../lib/llm'
 import { DEFAULT_PROVIDERS, loadProviders, probe, saveProviders } from '../lib/providers'
 import { STAGE_LABEL, fillTemplate, filmBlock, hasPromptBlock, nextRole, parseBreakdown, splitHandoff, splitReply, templateFor } from '../lib/stages'
 import { DEFAULT_ENDPOINTS, lastFrameOf, poll, probeComfy, submit, uploadImage, viewUrl } from '../lib/comfy'
@@ -642,7 +642,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           // the frame and the thread follow, which is what makes a composer
           // turn a continuation rather than a cold single-shot request.
           messages: [
-            { role: 'system', content: ctx.text },
+            { role: 'system', content: buildH3SystemPrompt(ctx, 'studio') },
             { role: 'user', content: user },
             ...(stage === 'freeform'
               ? [
@@ -658,6 +658,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           // A continuation resumes from the last complete line, so the partial
           // one already on the page has to come back off it.
           onRewind: (chars) => setStreaming((s) => (s ? { ...s, text: s.text.slice(0, Math.max(0, s.text.length - chars)) } : s)),
+          maxContinuations: continuationBudgetFor(stage),
         })
 
         if (!result.text.trim()) {

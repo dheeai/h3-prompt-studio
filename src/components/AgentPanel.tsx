@@ -4,50 +4,44 @@ import type { AgentEvent } from '@mariozechner/pi-agent-core'
 import { streamSimpleOpenAICompletions } from '@mariozechner/pi-ai/openai-completions'
 import type { Model } from '@mariozechner/pi-ai'
 import { useApp } from '../app/state'
-import { AGENT_SYSTEM_PROMPT, buildAgentModel, buildAgentTools, type AgentConfirmation } from '../lib/agent'
+import { agentApiKey, agentEventStatus, buildAgentModel, buildAgentTools, reduceAgentEvent, type AgentConfirmation, type AgentTranscriptItem } from '../lib/agent'
+import { buildH3SystemPrompt } from '../lib/context'
 import { ProseDoc } from './ProseDoc'
 
 interface AgentPanelProps {
   onOpenStudio: () => void
 }
 
-type AgentItem = {
-  id: string
-  kind: 'user' | 'assistant' | 'thinking' | 'tool'
-  text: string
-  toolName?: string
-  status?: 'running' | 'done' | 'error'
-  details?: Record<string, unknown>
-}
-
-function contentText(result: unknown): string {
-  if (!result || typeof result !== 'object') return ''
-  const content = (result as { content?: Array<{ type?: string; text?: string }> }).content
-  return content?.filter((block) => block.type === 'text').map((block) => block.text ?? '').join('') ?? ''
-}
-
 export function AgentPanel({ onOpenStudio }: AgentPanelProps) {
   const app = useApp()
   const provider = app.providers.find((candidate) => candidate.id === app.settings.providerId)
-  const [items, setItems] = useState<AgentItem[]>([])
+  const [items, setItems] = useState<AgentTranscriptItem[]>([])
   const [input, setInput] = useState('')
   const [running, setRunning] = useState(false)
   const [pending, setPending] = useState<AgentConfirmation | null>(null)
   const [status, setStatus] = useState('Ready to work on the shared Studio state.')
   const agentRef = useRef<Agent | null>(null)
-  const runId = useRef(0)
 
-  const model = useMemo(() => provider && app.settings.model ? buildAgentModel(provider, app.settings.model) : null, [provider, app.settings.model])
-  const tools = useMemo(() => buildAgentTools(app, setPending), [app])
+  // AppProvider intentionally exposes a fresh API object when shared Studio
+  // state changes. Keep the Agent instance keyed only to the selected model;
+  // the refs below let its stream/tools see fresh state without aborting an
+  // active run every time a token or prompt version is committed.
+  const providerRef = useRef(provider)
+  providerRef.current = provider
+  const settingsRef = useRef(app.settings)
+  settingsRef.current = app.settings
+  const model = useMemo(() => provider && app.settings.model ? buildAgentModel(provider, app.settings.model) : null, [provider?.id, provider?.baseUrl, app.settings.model])
+  const tools = buildAgentTools(app, setPending)
 
   useEffect(() => {
     if (!provider || !model) {
+      agentRef.current?.abort()
       agentRef.current = null
       return
     }
     const agent = new Agent({
       initialState: {
-        systemPrompt: `${app.context?.text ?? '# No skills loaded'}\n\n${AGENT_SYSTEM_PROMPT}`,
+        systemPrompt: buildH3SystemPrompt(app.context, 'agent'),
         model,
         thinkingLevel: 'off',
         tools,
@@ -56,13 +50,14 @@ export function AgentPanel({ onOpenStudio }: AgentPanelProps) {
       toolExecution: 'sequential',
       streamFn: (streamModel, context, options) => streamSimpleOpenAICompletions(streamModel as Model<'openai-completions'>, context, {
         ...options,
-        apiKey: provider.apiKey,
-        temperature: app.settings.temperature,
-        ...(app.settings.maxTokens > 0 ? { maxTokens: app.settings.maxTokens } : {}),
+        apiKey: providerRef.current ? agentApiKey(providerRef.current) : undefined,
+        temperature: settingsRef.current.temperature,
+        ...(settingsRef.current.maxTokens > 0 ? { maxTokens: settingsRef.current.maxTokens } : {}),
       }),
     })
     let turns = 0
     const unsubscribe = agent.subscribe((event: AgentEvent) => {
+      if (event.type === 'agent_start') turns = 0
       if (event.type === 'turn_start') {
         turns += 1
         // A tool-capable model can get stuck repeating a read or mutation. A
@@ -70,25 +65,15 @@ export function AgentPanel({ onOpenStudio }: AgentPanelProps) {
         // creating the continuous loop the Studio deliberately avoids.
         if (turns > 4) agent.abort()
       }
-      if (event.type === 'message_update') {
-        const streamEvent = event.assistantMessageEvent
-        if (streamEvent.type === 'thinking_delta') {
-          setItems((previous) => appendStreaming(previous, 'thinking', streamEvent.delta))
-        } else if (streamEvent.type === 'text_delta') {
-          setItems((previous) => appendStreaming(previous, 'assistant', streamEvent.delta))
-        }
-      }
-      if (event.type === 'tool_execution_start') {
-        setItems((previous) => [...previous, { id: event.toolCallId, kind: 'tool', toolName: event.toolName, text: JSON.stringify(event.args), status: 'running' }])
-      }
+      setItems((previous) => reduceAgentEvent(previous, event))
       if (event.type === 'tool_execution_end') {
         const details = event.result?.details && typeof event.result.details === 'object' ? event.result.details as Record<string, unknown> : undefined
-        setItems((previous) => previous.map((item) => item.id === event.toolCallId ? { ...item, status: event.isError ? 'error' : 'done', text: contentText(event.result) || item.text, details } : item))
         if (details?.requiresConfirmation === 'render_current' || details?.requiresConfirmation === 'render_multiclip') setPending(details.requiresConfirmation)
       }
-      if (event.type === 'agent_end') {
+      const outcome = agentEventStatus(event)
+      if (outcome) {
         setRunning(false)
-        setStatus('Ready. The shared Studio state is up to date.')
+        setStatus(outcome.message)
       }
     })
     agentRef.current = agent
@@ -97,7 +82,18 @@ export function AgentPanel({ onOpenStudio }: AgentPanelProps) {
       agent.abort()
       if (agentRef.current === agent) agentRef.current = null
     }
-  }, [provider, model, app.context?.hash, app.settings.temperature, app.settings.maxTokens, tools])
+  }, [provider?.id, provider?.baseUrl, app.settings.model])
+
+  // Refresh the Agent's contract and deterministic tools in place. This
+  // effect deliberately does not own Agent construction, so a context update
+  // while the model is streaming cannot silently tear down that run.
+  useEffect(() => {
+    const agent = agentRef.current
+    if (!agent || !model) return
+    agent.state.systemPrompt = buildH3SystemPrompt(app.context, 'agent')
+    agent.state.model = model
+    agent.state.tools = tools
+  }, [app.context?.hash, model, tools])
 
   const send = async (text = input) => {
     const prompt = text.trim()
@@ -108,13 +104,15 @@ export function AgentPanel({ onOpenStudio }: AgentPanelProps) {
     setInput('')
     setRunning(true)
     setStatus('Thinking…')
-    runId.current += 1
     try {
       await agent.prompt(prompt)
     } catch (error) {
       if ((error as Error).name !== 'AbortError') {
-        setItems((previous) => [...previous, { id: `error-${Date.now().toString(36)}`, kind: 'assistant', status: 'error', text: String((error as Error).message || error) }])
-        setStatus('The agent stopped with an error. The last canonical prompt remains intact.')
+        const message = String((error as Error).message || error)
+        setItems((previous) => previous.some((item) => item.kind === 'assistant' && item.status === 'error' && item.text.includes(message))
+          ? previous
+          : [...previous, { id: `error-${Date.now().toString(36)}`, kind: 'assistant', status: 'error', text: message }])
+        setStatus(`The agent stopped with an error: ${message}`)
       }
       setRunning(false)
     }
@@ -159,10 +157,4 @@ export function AgentPanel({ onOpenStudio }: AgentPanelProps) {
       <aside className="agent-context"><div className="studio-kicker">SHARED CONTEXT</div><h2>Studio stays the source of truth</h2><div className="agent-context-card"><span>Canonical prompt</span><strong>{app.current && ['draft', 'revise', 'freeform'].includes(app.current.stage) ? `v${app.versions.findIndex((version) => version.id === app.current?.id) + 1}` : 'not written yet'}</strong></div><div className="agent-context-card"><span>Clip plan</span><strong>{app.breakdown ? `${app.breakdown.clips.length} clips` : 'not set'}</strong></div><div className="agent-context-card"><span>Skills</span><strong>{app.skills.filter((skill) => app.settings.selection[skill.id]?.length).length} loaded</strong></div><div className="agent-context-card"><span>ComfyUI</span><strong>{app.endpoint?.label || 'configure in Studio'}</strong></div><div className="agent-context-note">Render and multiclip submission always pause for confirmation. The Agent never calls Studio stages recursively.</div><button className="btn" onClick={onOpenStudio}>Open full Studio</button></aside>
     </main>
   )
-}
-
-function appendStreaming(items: AgentItem[], kind: 'assistant' | 'thinking', delta: string): AgentItem[] {
-  const last = items[items.length - 1]
-  if (last?.kind === kind && last.status !== 'error') return [...items.slice(0, -1), { ...last, text: last.text + delta }]
-  return [...items, { id: `${kind}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 5)}`, kind, text: delta }]
 }

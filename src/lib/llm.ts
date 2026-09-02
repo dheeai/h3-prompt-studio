@@ -1,5 +1,5 @@
 import { markSent, wasSent } from './context'
-import type { Provider } from './types'
+import type { Provider, StageId } from './types'
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant'
@@ -375,6 +375,17 @@ export function appendedFor(base: string, incoming: string, fromLineBoundary: bo
 
 export function joinRound(base: string, incoming: string, fromLineBoundary: boolean): string {
   return base + appendedFor(base, incoming, fromLineBoundary)
+}
+
+/**
+ * The provider-output recovery loop is useful for long direction sheets, but
+ * an interactive prompt edit must be one bounded request. In particular, a
+ * server that reports `length` for every request used to make Revise/freeform
+ * issue the generic eight follow-ups and concatenate eight prompt replies.
+ */
+export function continuationBudgetFor(stage: StageId): number {
+  if (stage === 'revise' || stage === 'freeform') return 0
+  return 2
 }
 
 export async function streamChatComplete(

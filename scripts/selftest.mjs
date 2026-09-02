@@ -11,7 +11,7 @@ import { fillTemplate, splitReply, parseBreakdown } from '../src/lib/stages.ts'
 import { classifyInput } from '../src/lib/lint.ts'
 // stitch lives in llm.ts alongside streamChatComplete; importing it here also
 // proves llm.ts loads cleanly under node — see the note above.
-import { stitch, toLineBoundary, appendedFor } from '../src/lib/llm.ts'
+import { stitch, toLineBoundary, appendedFor, continuationBudgetFor } from '../src/lib/llm.ts'
 import { buildMulticlipGraph, multiclipIssues, padForOverlap, snapUp } from '../src/lib/multiclip.ts'
 import {
   ENTRY_MODES,
@@ -26,7 +26,8 @@ import {
   interruptedReasoningText,
   shouldContinueStoryLoop,
 } from '../src/lib/entry.ts'
-import { buildAgentModel, buildAgentTools } from '../src/lib/agent.ts'
+import { agentApiKey, buildAgentModel, buildAgentTools, reduceAgentEvent, agentEventStatus } from '../src/lib/agent.ts'
+import { buildH3SystemPrompt } from '../src/lib/context.ts'
 
 let pass = 0
 let fail = 0
@@ -88,6 +89,43 @@ check('cancelled thinking: partial reasoning is retained, empty reasoning is not
   check('agent tools: render is confirmation-gated', pending.details.requiresConfirmation === 'render_current' && !calls.some((call) => call[0] === 'render'))
   const model = buildAgentModel({ id: 'ollama', baseUrl: 'http://localhost:11434/v1' }, 'test-model')
   check('agent model: reuses the configured provider endpoint', model.api === 'openai-completions' && model.baseUrl.endsWith('/v1') && model.id === 'test-model')
+  check('agent model: keyless local/LAN providers receive a non-secret compatibility key', agentApiKey({ baseUrl: 'http://localhost:11434/v1' }) === 'local-browser-runtime' && agentApiKey({ baseUrl: 'http://5090.tail3cca41.ts.net:9000/v1' }) === 'local-browser-runtime' && agentApiKey({ baseUrl: 'https://custom-model.example/v1' }) === 'local-browser-runtime' && agentApiKey({ baseUrl: 'https://openrouter.ai/api/v1' }) === undefined)
+}
+
+// Pi can finish a run without a text_delta (for example a provider error, or
+// a complete message delivered only through message_end). The browser reducer
+// must still leave a visible receipt and a non-ready status.
+{
+  const assistant = (text, stopReason = 'stop', errorMessage) => ({
+    role: 'assistant',
+    content: text ? [{ type: 'text', text }] : [],
+    stopReason,
+    ...(errorMessage ? { errorMessage } : {}),
+  })
+  const finalOnly = reduceAgentEvent([], { type: 'message_end', message: assistant('Final answer without a text delta') })
+  check('agent transcript: message_end surfaces a final assistant message', finalOnly.some((item) => item.kind === 'assistant' && item.text === 'Final answer without a text delta'), JSON.stringify(finalOnly))
+  const failedEvent = { type: 'agent_end', messages: [assistant('', 'error', 'Provider returned an empty response')] }
+  const withFailure = reduceAgentEvent(finalOnly, failedEvent)
+  check('agent transcript: agent_end surfaces a provider error', withFailure.some((item) => item.kind === 'assistant' && item.status === 'error' && item.text.includes('Provider returned an empty response')), JSON.stringify(withFailure))
+  check('agent status: an error agent_end is not reported as Ready', agentEventStatus(failedEvent).kind === 'error' && agentEventStatus(failedEvent).message.includes('Provider returned an empty response'))
+}
+
+check('studio refinement budget: revise and freeform do not retry the generic continuation loop', continuationBudgetFor('revise') === 0 && continuationBudgetFor('freeform') === 0)
+check('studio stage budgets: other stages remain explicitly finite', continuationBudgetFor('direct') > 0 && continuationBudgetFor('direct') < 8 && continuationBudgetFor('draft') > 0 && continuationBudgetFor('draft') < 8)
+
+{
+  const built = {
+    text: '# Loaded skills\n\n<skill name="Test Skill" file="SKILL.md">\nUNIQUE SKILL BODY\n</skill>',
+    hash: 'test',
+    tokens: 10,
+    parts: [{ skillId: 'test', skillName: 'Test Skill', rel: 'SKILL.md', tokens: 4 }],
+  }
+  const studioPrompt = buildH3SystemPrompt(built, 'studio')
+  const agentPrompt = buildH3SystemPrompt(built, 'agent')
+  const count = (haystack, needle) => haystack.split(needle).length - 1
+  check('H3 system prompt: Studio includes the complete selected skill context once', count(studioPrompt, built.text) === 1 && count(studioPrompt, 'UNIQUE SKILL BODY') === 1)
+  check('H3 system prompt: Agent includes the complete selected skill context once plus Agent rules', count(agentPrompt, built.text) === 1 && count(agentPrompt, 'UNIQUE SKILL BODY') === 1 && agentPrompt.includes('deterministic Studio tools'))
+  check('H3 system prompt: surfaces have distinct operational rules', studioPrompt.includes('Studio authoring surface') && !studioPrompt.includes('deterministic Studio tools') && agentPrompt.includes('deterministic Studio tools'))
 }
 
 check('continuation plates: a replaced frame is scoped to its source clip',

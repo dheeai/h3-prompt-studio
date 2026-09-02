@@ -12,7 +12,7 @@ import { buildMulticlipGraph, multiclipIssues, multiclipWarnings, overlapFramesO
 import type { MulticlipClip, PaddedClip } from '../lib/multiclip'
 import { fetchBundledSkills, loadSkills, removeSkill, saveSkill } from '../lib/skills'
 import { estTokens } from '../lib/tokens'
-import { appendContinuationHistory, authorContinuation, continuationContextOverride, continuationPlateIsFresh, continuationSource, interruptedReasoningText } from '../lib/entry'
+import { appendContinuationHistory, authorContinuation, continuationContextOverride, continuationPlateIsFresh, continuationSource, interruptedReasoningText, promptSourceForEntryMode } from '../lib/entry'
 import type { EntryModeId } from '../lib/entry'
 import type {
   Breakdown, ChatTurn, Clip, ComfyEndpoint, FilmContext, Finding, Plate, ProbeResult, Provider,
@@ -592,9 +592,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         working = (cur?.stage === 'direct' ? cur.text : lastOf('direct')?.text) ?? snap.story
       } else {
         // Critique, Revise and a freeform note all operate on the prompt.
-        working =
-          (cur && PROMPT_STAGES.has(cur.stage) ? cur.text : lastPrompt()?.text) ??
-          (looksLikePrompt(snap.story) ? snap.story : '')
+        const authoredPrompt = (cur && PROMPT_STAGES.has(cur.stage) ? cur.text : lastPrompt()?.text) ?? ''
+        working = promptSourceForEntryMode(
+          override?.studioMode ?? studioMode,
+          sourceStory,
+          authoredPrompt,
+          looksLikePrompt(sourceStory),
+        )
       }
 
       if (!sourceStory.trim() && !snap.versions.length) {

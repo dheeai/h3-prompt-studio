@@ -60,6 +60,24 @@ export function entryWorkflow(id: EntryModeId): EntryWorkflow {
   return 'idea-prompt'
 }
 
+/**
+ * Choose the prompt document for a prompt-oriented stage. An authored prompt
+ * is authoritative; Prompt entry mode deliberately treats its pasted source
+ * as a prompt even when it is rough enough to fail the structural heuristic.
+ * Other entry modes keep the heuristic so a story or idea is not accidentally
+ * placed in a prompt-only stage.
+ */
+export function promptSourceForEntryMode(
+  mode: EntryModeId,
+  source: string,
+  authoredPrompt: string,
+  looksLikePrompt: boolean,
+): string {
+  if (authoredPrompt.trim()) return authoredPrompt
+  if (mode === 'prompt') return source
+  return looksLikePrompt ? source : ''
+}
+
 /** Story mode only advances when the pass actually completed with a value. */
 export function shouldContinueStoryLoop(result: { status: 'ok' | 'null' | 'cancelled' | 'error' }): boolean {
   return result.status === 'ok'

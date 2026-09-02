@@ -23,6 +23,7 @@ import {
   entryAction,
   entryLabel,
   entryWorkflow,
+  promptSourceForEntryMode,
   interruptedReasoningText,
   shouldContinueStoryLoop,
 } from '../src/lib/entry.ts'
@@ -45,6 +46,14 @@ check('entry dispatch: click and keyboard share the same workflow',
   entryWorkflow('story') === 'story-plan' && entryWorkflow('prompt') === 'prompt-revise' && entryWorkflow('idea') === 'idea-prompt')
 check('story loop: only a completed pass advances to the next clip',
   shouldContinueStoryLoop({ status: 'ok' }) && !shouldContinueStoryLoop({ status: 'null' }) && !shouldContinueStoryLoop({ status: 'cancelled' }) && !shouldContinueStoryLoop({ status: 'error' }))
+check('prompt mode: rough source is a working prompt even without canonical fields',
+  promptSourceForEntryMode('prompt', 'a rough scene without H3 fields', '', false) === 'a rough scene without H3 fields')
+check('prompt mode: an authored prompt still takes precedence over source fallback',
+  promptSourceForEntryMode('prompt', 'rough source', 'canonical prompt', false) === 'canonical prompt')
+check('non-prompt modes: source fallback still requires the existing prompt heuristic',
+  promptSourceForEntryMode('story', 'rough source', '', true) === 'rough source' &&
+  promptSourceForEntryMode('story', 'rough source', '', false) === '' &&
+  promptSourceForEntryMode('idea', 'rough source', '', false) === '')
 
 {
   const source = continuationSource('', { precedes: 'she faces the hatch', follows: 'the hatch opens', open: 'the warning remains unresolved' })

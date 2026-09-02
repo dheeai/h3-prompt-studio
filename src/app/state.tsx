@@ -117,6 +117,24 @@ interface RunContextOverride {
   clipIndex?: number
 }
 
+/** A prompt version written by a deterministic surface such as Agent. */
+export interface PromptVersionInput {
+  text: string
+  explanation?: string
+  changelog?: string[]
+  note?: string
+  clipIndex?: number
+}
+
+/** The small, synchronous state bridge exposed to the browser Agent. */
+export interface PreparedContinuation {
+  clipId: string
+  clipIndex: number
+  prompt: string
+  film: FilmContext
+  hasEndingFrame: boolean
+}
+
 /** One plan clip's prompt and frame accounting, for the "Submit all as one job" panel. */
 interface MulticlipPreviewClip extends PaddedClip {
   index: number
@@ -135,7 +153,7 @@ interface MulticlipPreview {
   warnings: string[]
 }
 
-interface Api {
+export interface Api {
   ready: boolean
   skills: Skill[]
   settings: Settings
@@ -214,6 +232,12 @@ interface Api {
   selectClip: (id: string) => void
   /** Author the next prompt from a landed clip; rendering remains a separate action. */
   continueFrom: (clipId: string, note?: string) => Promise<void>
+  /** Append a canonical prompt version without invoking an LLM stage. */
+  appendPromptVersion: (input: PromptVersionInput) => Version | null
+  /** Save the clip plan without invoking an LLM stage. */
+  setBreakdown: (breakdown: Breakdown) => void
+  /** Select a clip and stage its deterministic continuation context. */
+  prepareContinuation: (clipId: string) => PreparedContinuation | null
   cancel: () => void
   selectVersion: (id: string) => void
   clearError: () => void
@@ -479,6 +503,38 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const setProviders = useCallback(async (next: Provider[]) => {
     setProvidersState(next)
     await saveProviders(next)
+  }, [])
+
+  const appendPromptVersion = useCallback((input: PromptVersionInput): Version | null => {
+    const text = input.text.trim()
+    if (!text) return null
+    const snap = sessionRef.current
+    const previous = [...snap.versions].reverse().find((v) => PROMPT_STAGES.has(v.stage))
+    const version: Version = {
+      id: `v${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`,
+      stage: 'freeform',
+      label: STAGE_LABEL.freeform,
+      text,
+      fromText: previous?.text,
+      explanation: input.explanation?.trim() || undefined,
+      changelog: input.changelog?.filter(Boolean),
+      model: settings.model,
+      providerId: settings.providerId,
+      at: Date.now(),
+      ms: 0,
+      note: input.note,
+      clipIndex: input.clipIndex ?? snap.film?.clipIndex,
+    }
+    const next = { ...snap, versions: [...snap.versions, version], currentId: version.id }
+    setSession(next)
+    sessionRef.current = next
+    return version
+  }, [settings.model, settings.providerId])
+
+  const setBreakdown = useCallback((breakdown: Breakdown) => {
+    const next = { ...sessionRef.current, breakdown }
+    setSession(next)
+    sessionRef.current = next
   }, [])
 
   const selectVersion = useCallback((id: string) => setSession((s) => ({ ...s, currentId: id })), [])
@@ -793,6 +849,35 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [clips, currentClipId],
   )
   const rendering = useMemo(() => clips.find((c) => c.id === renderingId) ?? null, [clips, renderingId])
+
+  const prepareContinuation = useCallback((clipId: string): PreparedContinuation | null => {
+    const source = clipsRef.current.find((c) => c.id === clipId)
+    if (!source) return null
+    const sourceFilm = source.film ?? DEFAULT_FILM
+    const preparedFilm: FilmContext = {
+      ...DEFAULT_FILM,
+      ...sourceFilm,
+      precedes: sourceFilm.precedes || `The audience has just watched clip ${source.index}.`,
+      clipIndex: undefined,
+    }
+    const next = {
+      ...sessionRef.current,
+      story: `Continue from clip ${source.index}. Preserve its final physical state and advance the unresolved action.`,
+      film: preparedFilm,
+      parentClipId: source.id,
+      parentPrompt: source.prompt,
+    }
+    setSession(next)
+    sessionRef.current = next
+    setCurrentClipId(source.id)
+    return {
+      clipId: source.id,
+      clipIndex: source.index,
+      prompt: source.prompt,
+      film: preparedFilm,
+      hasEndingFrame: !!source.lastFrame || !!source.output,
+    }
+  }, [])
 
   const lastPromptText = useMemo(() => {
     // Rendering, linting and copying all consume the one canonical prompt.
@@ -1426,6 +1511,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     copyMulticlipGraph,
     selectClip,
     continueFrom,
+    appendPromptVersion,
+    setBreakdown,
+    prepareContinuation,
     cancel,
     selectVersion,
     clearError: () => {

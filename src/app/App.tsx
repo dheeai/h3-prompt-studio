@@ -13,6 +13,7 @@ import { PlatesPanel } from '../components/PlatesPanel'
 import { RecipePanel } from '../components/RecipePanel'
 import { EndpointPanel } from '../components/RenderPanel'
 import { ClipPlayer, FilmStrip } from '../components/ClipDeck'
+import { AgentPanel } from '../components/AgentPanel'
 import { STAGE_INFO, STAGE_LABEL, STAGE_ORDER, splitReply } from '../lib/stages'
 import { skillTokens } from '../lib/skills'
 import { estTokens, fmtTokens } from '../lib/tokens'
@@ -58,6 +59,7 @@ export function App() {
   const [view, setView] = useState<'result' | 'diff'>('result')
   const [filmOpen, setFilmOpen] = useState(false)
   const [entryModeId, setEntryModeId] = useState<EntryModeId>('story')
+  const [workspace, setWorkspace] = useState<'studio' | 'agent'>('studio')
   const [promptLoop, setPromptLoop] = useState<{ index: number; total: number; stage: 'direct' | 'draft' } | null>(null)
   const promptLoopStopRef = useRef(false)
   const thinkRef = useRef<HTMLDivElement>(null)
@@ -337,6 +339,10 @@ export function App() {
     <div className="app studio-app">
       <header className="studio-topbar">
         <div className="studio-wordmark"><span className="studio-mark">H3</span><span>Prompt Studio</span></div>
+        <nav className="workspace-tabs" aria-label="Workspace">
+          <button className={workspace === 'studio' ? 'active' : ''} aria-current={workspace === 'studio' ? 'page' : undefined} onClick={() => setWorkspace('studio')}>Studio</button>
+          <button className={workspace === 'agent' ? 'active' : ''} aria-current={workspace === 'agent' ? 'page' : undefined} onClick={() => setWorkspace('agent')}>Agent <span>(beta)</span></button>
+        </nav>
         <div className="studio-project">{film.spine || (current ? `${STAGE_LABEL[current.stage]} · pass ${versions.length}` : '')}</div>
         <div className="studio-grow" />
         <button className="studio-health" onClick={() => setModal('connect')} title="Connect a model">
@@ -356,6 +362,7 @@ export function App() {
         )}
       </header>
 
+      <div className={`workspace-view ${workspace === 'studio' ? 'is-active' : 'is-hidden'}`} aria-hidden={workspace !== 'studio'}>
       <nav className="entry-tabs" role="tablist" aria-label="Choose how to start">
         <div className="entry-label">Start with</div>
         {ENTRY_MODES.map((mode) => (
@@ -518,6 +525,11 @@ export function App() {
       </main>
 
       <FilmStrip />
+      </div>
+
+      <div className={`workspace-view ${workspace === 'agent' ? 'is-active' : 'is-hidden'}`} aria-hidden={workspace !== 'agent'}>
+        <AgentPanel onOpenStudio={() => setWorkspace('studio')} />
+      </div>
 
       {modal === 'connect' && <ConnectPanel onClose={() => setModal(null)} />}
       {modal === 'skills' && <SkillsPanel onClose={() => setModal(null)} />}

@@ -16,6 +16,9 @@ import { buildMulticlipGraph, multiclipIssues, padForOverlap, snapUp } from '../
 import {
   ENTRY_MODES,
   authorContinuation,
+  continuationContextOverride,
+  appendContinuationHistory,
+  continuationPlateIsFresh,
   continuationSource,
   entryAction,
   entryLabel,
@@ -65,6 +68,33 @@ check('story loop: only a completed pass advances to the next clip',
 
 check('cancelled thinking: partial reasoning is retained, empty reasoning is not mislabeled',
   interruptedReasoningText('  the model was still weighing the shot  ') === 'the model was still weighing the shot' && interruptedReasoningText('   ') === null)
+
+check('continuation plates: a replaced frame is scoped to its source clip',
+  continuationPlateIsFresh({ mode: 'replaced', fromClipId: 'clip-2' }, 'clip-2') && !continuationPlateIsFresh({ mode: 'replaced', fromClipId: 'clip-1' }, 'clip-2') && continuationPlateIsFresh({ mode: 'carried' }, 'clip-2'))
+
+check('continuation context: hand-off override comes from the selected clip', (() => {
+  const override = continuationContextOverride({ prompt: 'historical prompt', film: { role: 'rising', spine: 'one film', precedes: 'last frame', follows: 'next beat' } })
+  return override.current === 'historical prompt' && override.film?.spine === 'one film' && override.film?.precedes === 'last frame'
+})())
+
+check('continuation history: prior versions remain before the new hand-off', (() => {
+  const first = { id: 'v1' }
+  const second = { id: 'v2' }
+  const handoff = { id: 'handoff' }
+  const next = appendContinuationHistory([first, second], handoff)
+  return next.length === 3 && next[0] === first && next[1] === second && next[2] === handoff
+})())
+
+{
+  const calls = []
+  let cancelled = true
+  const stoppedBeforeDirect = await authorContinuation(async (stage) => { calls.push(stage); return { stage } }, () => cancelled)
+  check('continuation cancellation: a stop before Direct prevents every authoring call', stoppedBeforeDirect === 'aborted' && calls.length === 0)
+  cancelled = false
+  const callsAfterDirect = []
+  const stoppedBeforeDraft = await authorContinuation(async (stage) => { callsAfterDirect.push(stage); cancelled = true; return { stage } }, () => cancelled)
+  check('continuation cancellation: a stop between Direct and Draft prevents Draft', stoppedBeforeDraft === 'aborted' && JSON.stringify(callsAfterDirect) === JSON.stringify(['direct']))
+}
 
 function check(name, cond, detail) {
   if (cond) {

@@ -188,15 +188,41 @@ export async function interrupt(ep: ComfyEndpoint): Promise<void> {
  * Seeking exactly to `duration` lands past the last frame in some browsers and
  * paints black, so back off a hair.
  */
-export function lastFrameOf(src: string): Promise<string> {
+export function lastFrameOf(src: string, signal?: AbortSignal): Promise<string> {
   return new Promise((resolve, reject) => {
     const v = document.createElement('video')
+    let settled = false
+    const cleanup = () => signal?.removeEventListener('abort', onAbort)
+    const finishResolve = (value: string) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      resolve(value)
+    }
+    const finishReject = (value: Error) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(value)
+    }
+    const onAbort = () => {
+      if (settled) return
+      v.pause()
+      v.removeAttribute('src')
+      v.load()
+      finishReject(new DOMException('The operation was aborted.', 'AbortError'))
+    }
+    if (signal?.aborted) {
+      onAbort()
+      return
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
     v.crossOrigin = 'anonymous'
     v.muted = true
     v.preload = 'auto'
     v.src = src
 
-    const fail = (why: string) => () => reject(new Error(why))
+    const fail = (why: string) => () => finishReject(new Error(why))
     v.onerror = fail('Could not load the clip to read its last frame.')
 
     v.onloadeddata = () => {
@@ -207,13 +233,13 @@ export function lastFrameOf(src: string): Promise<string> {
           c.width = v.videoWidth
           c.height = v.videoHeight
           const ctx = c.getContext('2d')
-          if (!ctx) return reject(new Error('No 2D canvas context.'))
+          if (!ctx) return finishReject(new Error('No 2D canvas context.'))
           ctx.drawImage(v, 0, 0)
-          resolve(c.toDataURL('image/png'))
+          finishResolve(c.toDataURL('image/png'))
         } catch (e) {
           // A cross-origin video taints the canvas. ComfyUI sends
           // access-control-allow-origin:*, so this only bites a box that does not.
-          reject(new Error(`Could not read the frame: ${(e as Error).message}`))
+          finishReject(new Error(`Could not read the frame: ${(e as Error).message}`))
         }
       }
       if (Number.isFinite(t) && t > 0) {

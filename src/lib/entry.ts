@@ -1,3 +1,5 @@
+import type { FilmContext } from './types'
+
 /** The three ways a new operator can enter the studio. */
 export type EntryModeId = 'story' | 'prompt' | 'idea'
 
@@ -69,6 +71,11 @@ export interface ContinuationHandoff {
   open: string
 }
 
+/** Explicit input override for hand-off authoring from a selected clip. */
+export function continuationContextOverride(clip: { prompt: string; film?: FilmContext; index?: number }): { current: string; film?: FilmContext; clipIndex?: number } {
+  return { current: clip.prompt, film: clip.film, clipIndex: clip.film?.clipIndex ?? clip.index }
+}
+
 /**
  * Give the next Direct pass a useful source even when the operator leaves the
  * optional continuation note empty. The hand-off is deliberately ordered from
@@ -87,15 +94,27 @@ export function continuationSource(note: string | undefined, handoff: Continuati
 /** Direct then Draft, stopping at the first cancelled or failed pass. */
 export async function authorContinuation(
   run: (stage: 'direct' | 'draft') => Promise<unknown | null>,
+  isCancelled: () => boolean = () => false,
 ): Promise<'ready' | 'aborted'> {
+  if (isCancelled()) return 'aborted'
   const directed = await run('direct')
-  if (!directed) return 'aborted'
+  if (isCancelled() || !directed) return 'aborted'
   const drafted = await run('draft')
-  return drafted ? 'ready' : 'aborted'
+  return isCancelled() || !drafted ? 'aborted' : 'ready'
 }
 
 /** Keep an interrupted model thought separate from a completed-run failure. */
 export function interruptedReasoningText(reasoning: string): string | null {
   const text = reasoning.trim()
   return text || null
+}
+
+/** A replaced plate may only be reused for the clip whose ending produced it. */
+export function continuationPlateIsFresh(plate: { mode: 'carried' | 'replaced'; fromClipId?: string }, clipId: string): boolean {
+  return plate.mode !== 'replaced' || plate.fromClipId === clipId
+}
+
+/** Append a continuation pass without severing the earlier version lineage. */
+export function appendContinuationHistory<T>(history: readonly T[], pass: T): T[] {
+  return [...history, pass]
 }

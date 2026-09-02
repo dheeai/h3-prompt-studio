@@ -63,7 +63,7 @@ inside the canonical prompt. Return any explanation or change log in its own
 response block required by the current stage template.`
 
 const H3_STUDIO_MODE_RULES: Record<EntryModeId, string> = {
-  story: `STORY MODE — NARRATIVE PLANNER AND CLIP AUTHOR
+  story: `SCENE (MULTI-SHOT) MODE — NARRATIVE PLANNER AND CLIP AUTHOR
 
 Treat the source as a film brief, story, beat sheet, or script whose narrative
 intent must survive conversion into H3 clips. Work in this order:
@@ -102,7 +102,7 @@ Treat the source as an existing prompt or near-prompt. Work in one finite pass:
 Be surgical and finite. Do not turn the request into a new concept, story
 outline, or multiclip plan unless the operator explicitly asks for that. Return
 one complete canonical replacement, never a patch, fragment, or endless retry.` ,
-  idea: `IDEA MODE — CREATIVE DIRECTOR AND H3 PROMPT AUTHOR
+  idea: `CLIP MODE — CREATIVE DIRECTOR AND H3 PROMPT AUTHOR
 
 Treat the source as an underspecified creative idea. Resolve it into one
 coherent, submission-ready scene in this order:

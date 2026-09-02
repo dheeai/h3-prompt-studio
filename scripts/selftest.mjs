@@ -22,6 +22,7 @@ import {
   continuationSource,
   entryAction,
   entryLabel,
+  entryMode,
   entryWorkflow,
   promptSourceForEntryMode,
   interruptedReasoningText,
@@ -38,10 +39,16 @@ let fail = 0
 const entryModesAreComplete = (() => {
   const modes = ENTRY_MODES.map((m) => m.id)
   return JSON.stringify(modes) === JSON.stringify(['story', 'prompt', 'idea']) &&
-    entryLabel('story') === 'A story' && entryLabel('prompt') === 'A prompt' && entryLabel('idea') === 'An idea' &&
-    entryAction('story') === 'Generate clip plan' && entryAction('prompt') === 'Refine prompt' && entryAction('idea') === 'Generate H3 prompt'
+    entryLabel('story') === 'Scene (Multi-shot)' && entryLabel('prompt') === 'Prompt' && entryLabel('idea') === 'Clip' &&
+    entryAction('story') === 'Generate multi-shot plan' && entryAction('prompt') === 'Refine prompt' && entryAction('idea') === 'Generate clip prompt'
 })()
 check('entry modes: Story/Prompt/Idea have explicit copy and actions', entryModesAreComplete)
+check('entry modes: approved user-facing names are Scene (Multi-shot), Prompt, and Clip',
+  JSON.stringify(ENTRY_MODES.map((m) => m.label)) === JSON.stringify(['Scene (Multi-shot)', 'Prompt', 'Clip']))
+check('entry modes: source metadata uses the approved terminology throughout',
+  entryMode('story').title === 'Scene (Multi-shot)' && entryMode('story').placeholder.includes('scene') &&
+  entryMode('prompt').title === 'Prompt' && entryMode('prompt').placeholder.includes('prompt') &&
+  entryMode('idea').title === 'Clip' && entryMode('idea').placeholder.includes('clip'))
 check('entry dispatch: click and keyboard share the same workflow',
   entryWorkflow('story') === 'story-plan' && entryWorkflow('prompt') === 'prompt-revise' && entryWorkflow('idea') === 'idea-prompt')
 check('story loop: only a completed pass advances to the next clip',
@@ -143,6 +150,11 @@ check('studio stage budgets: other stages remain explicitly finite', continuatio
     storyModePrompt !== promptModePrompt && promptModePrompt !== ideaModePrompt && storyModePrompt !== ideaModePrompt)
   check('H3 system prompt: Studio surface routes the selected entry mode',
     buildH3SystemPrompt(built, 'studio', 'prompt') === promptModePrompt)
+  check('H3 system prompt: human-readable entry contract names match approved Studio terminology',
+    storyModePrompt.includes('SCENE (MULTI-SHOT) MODE') &&
+    promptModePrompt.includes('PROMPT MODE') &&
+    ideaModePrompt.includes('CLIP MODE') &&
+    !storyModePrompt.includes('STORY MODE') && !ideaModePrompt.includes('IDEA MODE'))
   check('Studio system prompt: selected skills remain one contiguous block per mode',
     count(storyModePrompt, built.text) === 1 && count(promptModePrompt, built.text) === 1 && count(ideaModePrompt, built.text) === 1 &&
     count(storyModePrompt, 'UNIQUE SKILL BODY') === 1 && count(promptModePrompt, 'UNIQUE SKILL BODY') === 1 && count(ideaModePrompt, 'UNIQUE SKILL BODY') === 1)
@@ -154,7 +166,7 @@ check('studio stage budgets: other stages remain explicitly finite', continuatio
     promptModePrompt.includes('one complete replacement') && promptModePrompt.includes('surgical') &&
     ideaModePrompt.toLowerCase().includes('resolve the core moment') && ideaModePrompt.includes('submission-ready prompt'))
   check('Studio system prompt: missing context still returns a mode contract',
-    buildStudioSystemPrompt(undefined, 'idea').toLowerCase().includes('idea mode') && buildStudioSystemPrompt(undefined, 'idea').includes('# No selected H3 skills'))
+    buildStudioSystemPrompt(undefined, 'idea').toLowerCase().includes('clip mode') && buildStudioSystemPrompt(undefined, 'idea').includes('# No selected H3 skills'))
   check('H3 system prompt: Agent contract stays Agent-specific after Studio mode split',
     agentPrompt.includes('deterministic Studio tools') && !agentPrompt.includes('Idea mode') && !agentPrompt.includes('continuity-safe clips'))
 }

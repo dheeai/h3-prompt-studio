@@ -492,7 +492,7 @@ export function App() {
                 <Explanation text={explanationText} changelog={changelogList} streaming={!!streaming && !shownIsProse} />
               </div>
             ) : !shown && !reasoning ? (
-              <div className="studio-empty-prompt"><div className="studio-kicker">THE CANONICAL PROMPT APPEARS HERE</div><p>Start with a story, prompt, or idea. Your current version stays singular and is the only text sent to Render.</p><div className="studio-format-preview"><span>integrated_multimodal_description:</span> timed cuts, camera, blocking<br /><span>overall_soundscape:</span> concrete sources, placed in time<br /><span>non_diegetic_music:</span> <em>N/A</em></div></div>
+              <div className="studio-empty-prompt"><div className="studio-kicker">THE CANONICAL PROMPT APPEARS HERE</div><p>Start with a Scene (Multi-shot), Prompt, or Clip. Your current version stays singular and is the only text sent to Render.</p><div className="studio-format-preview"><span>integrated_multimodal_description:</span> timed cuts, camera, blocking<br /><span>overall_soundscape:</span> concrete sources, placed in time<br /><span>non_diegetic_music:</span> <em>N/A</em></div></div>
             ) : null}
             {shownIsProse && shown && <div className="studio-pass-preview"><div className="studio-canonical-document-label">PASS OUTPUT · {STAGE_LABEL[shownStage]} · inspect-only</div><ProseDoc text={shown} streaming={!!streaming} /></div>}
             {diffable && view === 'diff' && <div className="studio-pass-preview"><div className="studio-canonical-document-label">COMPARISON · inspect-only</div><DiffView before={diffable.before} after={diffable.after} beforeLabel={diffable.label} changelog={current?.changelog} /></div>}

@@ -7,8 +7,14 @@ function Thumb({ clip, active, onClick }: { clip: Clip; active: boolean; onClick
   const url = clipUrl(clip)
   const border = active ? '2px solid var(--ox)' : '1px solid var(--rule2)'
   return (
-    <div style={{ width: 152, flex: '0 0 auto' }} onClick={onClick}>
-      <div style={{ height: 66, border, background: 'var(--sunk)', overflow: 'hidden', cursor: 'pointer', position: 'relative' }}>
+    <button
+      type="button"
+      style={{ width: 152, flex: '0 0 auto', padding: 0, border: 0, background: 'transparent', textAlign: 'left', cursor: 'pointer' }}
+      onClick={onClick}
+      aria-label={`Select clip ${clip.index}, ${clip.state}${clip.film?.role ? `, ${clip.film.role}` : ''}`}
+      aria-current={active ? 'true' : undefined}
+    >
+      <div style={{ height: 66, border, background: 'var(--sunk)', overflow: 'hidden', position: 'relative' }}>
         {url && clip.state === 'done' ? (
           <video src={`${url}#t=0.1`} preload="metadata" muted style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
         ) : (
@@ -23,11 +29,11 @@ function Thumb({ clip, active, onClick }: { clip: Clip; active: boolean; onClick
         <div style={{ flexGrow: 1 }} />
         <span className="tok">{clip.frames ? `${(clip.frames / (clip.fps || 24)).toFixed(1)}s` : ''}</span>
       </div>
-    </div>
+    </button>
   )
 }
 
-/** The current clip, and the one control that starts the next one. */
+/** The current clip, plus the action that authors its next prompt. */
 export function ClipPlayer() {
   const { clip, clipUrl, continueFrom, rendering, film, continuation } = useApp()
   const [note, setNote] = useState('')

@@ -931,7 +931,9 @@ mark.w.del { background: oklch(0.895 0.060 25); color: oklch(0.36 0.13 27); text
   .studio-topbar { gap: 10px; padding: 0 14px; }
 }
 
-@media (max-width: 820px) {
+/* Reflow before the 210px source + 360px prompt minimums can clip the side rail
+   on tablet widths (the old 820px threshold left 821–869px in overflow). */
+@media (max-width: 960px) {
   .studio-app { overflow-y: auto; }
   .studio-main { grid-template-columns: 210px minmax(360px, 1fr); overflow: visible; }
   .studio-side { grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr) minmax(260px, .82fr); grid-template-rows: auto; overflow: visible; border-top: 1px solid var(--studio-line); }

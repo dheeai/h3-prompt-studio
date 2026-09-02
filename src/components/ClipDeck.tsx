@@ -29,10 +29,12 @@ function Thumb({ clip, active, onClick }: { clip: Clip; active: boolean; onClick
 
 /** The current clip, and the one control that starts the next one. */
 export function ClipPlayer() {
-  const { clip, clipUrl, continueFrom, rendering, film } = useApp()
+  const { clip, clipUrl, continueFrom, rendering, film, continuation } = useApp()
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const url = clip ? clipUrl(clip) : null
+  const continuing = !!clip && continuation?.clipId === clip.id && continuation.state === 'running'
+  const nextPromptReady = !!clip && continuation?.clipId === clip.id && continuation.state === 'ready'
 
   if (!clip) {
     return (
@@ -40,7 +42,7 @@ export function ClipPlayer() {
         <div className="lbl">No clip yet</div>
         <div style={{ fontSize: 11.5, color: 'var(--ink3)', lineHeight: 1.6, marginTop: 8, maxWidth: 330 }}>
           Write a prompt, then Render. When a clip lands it plays here, and Continue takes its last frame as the next
-          clip’s <span style={{ color: 'var(--kw-picture)' }}>&lt;Picture 1&gt;</span>.
+          clip’s <span style={{ color: 'var(--kw-picture)' }}>&lt;Picture 1&gt;</span> and authors its next prompt.
         </div>
       </div>
     )
@@ -86,7 +88,10 @@ export function ClipPlayer() {
       {clip.state === 'done' && (
         <div style={{ flex: '0 0 auto', padding: '13px 22px 0' }}>
           <div style={{ borderTop: '1px solid var(--rule)', paddingTop: 13 }}>
-            <div className="lbl" style={{ marginBottom: 8 }}>Prepare the next clip</div>
+            <div className="lbl" style={{ marginBottom: 8 }}>Continue from this clip</div>
+            {continuing && <div className="tok studio-continuation-progress" role="status" aria-live="polite">
+              {continuation.phase === 'frame' ? 'Taking the ending frame…' : continuation.phase === 'handoff' ? 'Writing the hand-off…' : continuation.phase === 'direct' ? 'Directing the next clip…' : 'Drafting the next prompt…'}
+            </div>}
             <textarea
               value={note}
               onChange={(e) => setNote(e.target.value)}
@@ -94,14 +99,14 @@ export function ClipPlayer() {
               style={{ width: '100%', minHeight: 68, resize: 'vertical', fontFamily: 'var(--serif)', fontSize: 15, lineHeight: 1.5 }}
             />
             <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-              <button className="btn pri" style={{ flexGrow: 1, justifyContent: 'center' }} disabled={busy || !!rendering} onClick={() => void go()}>
-                {busy ? 'Preparing context…' : 'Use ending as context'}
+              <button className="btn pri" style={{ flexGrow: 1, justifyContent: 'center' }} disabled={busy || !!rendering || continuing || nextPromptReady} onClick={() => void go()}>
+                {busy || continuing ? 'Continuing…' : nextPromptReady ? 'Next prompt ready' : 'Continue from this clip'}
               </button>
             </div>
             <div className="tok" style={{ display: 'block', marginTop: 8, lineHeight: 1.5 }}>
               Takes the last frame as <span style={{ color: 'var(--kw-picture)' }}>&lt;Picture 1&gt;</span>, writes the
-              hand-off, and advances the role from <b>{film.role}</b>. Then author the next prompt from the prepared
-              context.
+              hand-off, advances the role from <b>{film.role}</b>, and authors the next prompt. It does not render until
+              you choose Render current prompt.
             </div>
           </div>
         </div>

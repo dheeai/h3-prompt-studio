@@ -62,3 +62,40 @@ export function entryWorkflow(id: EntryModeId): EntryWorkflow {
 export function shouldContinueStoryLoop(result: { status: 'ok' | 'null' | 'cancelled' | 'error' }): boolean {
   return result.status === 'ok'
 }
+
+export interface ContinuationHandoff {
+  precedes: string
+  follows: string
+  open: string
+}
+
+/**
+ * Give the next Direct pass a useful source even when the operator leaves the
+ * optional continuation note empty. The hand-off is deliberately ordered from
+ * what remains open, through the next beat, back to the state just inherited.
+ */
+export function continuationSource(note: string | undefined, handoff: ContinuationHandoff): string {
+  const explicit = note?.trim()
+  if (explicit) return explicit
+  return [
+    handoff.open.trim() && `OPEN: ${handoff.open.trim()}`,
+    handoff.follows.trim() && `FOLLOWS: ${handoff.follows.trim()}`,
+    handoff.precedes.trim() && `PRECEDES: ${handoff.precedes.trim()}`,
+  ].filter(Boolean).join('\n') || 'Continue from the ending state of the previous clip.'
+}
+
+/** Direct then Draft, stopping at the first cancelled or failed pass. */
+export async function authorContinuation(
+  run: (stage: 'direct' | 'draft') => Promise<unknown | null>,
+): Promise<'ready' | 'aborted'> {
+  const directed = await run('direct')
+  if (!directed) return 'aborted'
+  const drafted = await run('draft')
+  return drafted ? 'ready' : 'aborted'
+}
+
+/** Keep an interrupted model thought separate from a completed-run failure. */
+export function interruptedReasoningText(reasoning: string): string | null {
+  const text = reasoning.trim()
+  return text || null
+}

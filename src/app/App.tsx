@@ -19,7 +19,7 @@ import { estTokens, fmtTokens } from '../lib/tokens'
 import { wasSent } from '../lib/context'
 import { classifyInput, looksLikePrompt } from '../lib/lint'
 import { ENTRY_MODES, entryMode, entryWorkflow, shouldContinueStoryLoop, type EntryModeId } from '../lib/entry'
-import type { Breakdown, StageId, Version } from '../lib/types'
+import type { StageId, Version } from '../lib/types'
 
 /** Stages whose output is a prompt — the only things worth diffing together. */
 const PROMPT_STAGES_UI = new Set<StageId>(['draft', 'revise', 'freeform'])
@@ -47,7 +47,7 @@ function autosize(el: HTMLTextAreaElement | null) {
 
 export function App() {
   const app = useApp()
-  const { ready, skills, settings, providers, probes, story, versions, current, streaming, chat, film, error, failedReasoning, context } = app
+  const { ready, skills, settings, providers, probes, story, versions, current, streaming, chat, film, error, failedReasoning, interruptedReasoning, continuation, context } = app
   const { clips, rendering } = app
   const [modal, setModal] = useState<'connect' | 'skills' | 'settings' | 'plates' | 'recipe' | 'endpoint' | null>(null)
   const [copied, setCopied] = useState(false)
@@ -58,6 +58,8 @@ export function App() {
   const [view, setView] = useState<'result' | 'diff'>('result')
   const [filmOpen, setFilmOpen] = useState(false)
   const [entryModeId, setEntryModeId] = useState<EntryModeId>('story')
+  const [promptLoop, setPromptLoop] = useState<{ index: number; total: number; stage: 'direct' | 'draft' } | null>(null)
+  const promptLoopStopRef = useRef(false)
   const thinkRef = useRef<HTMLDivElement>(null)
   const storyRef = useRef<HTMLTextAreaElement>(null)
   const noteRef = useRef<HTMLTextAreaElement>(null)
@@ -67,6 +69,7 @@ export function App() {
   const probe = provider ? probes[provider.id] : undefined
   const connected = probe?.state === 'ok' && !!settings.model
   const busy = !!streaming
+  const activeContinuation = app.clip && continuation?.clipId === app.clip.id ? continuation : null
 
   // A pasted prompt does not need directing — the useful next move is a
   // critique of what is already there.
@@ -175,31 +178,9 @@ export function App() {
     if (!story.trim() || busy || !connected) return
     const workflow = entryWorkflow(entryModeId)
     if (workflow === 'story-plan') {
-      const planned = await app.run('breakdown')
-      // Story mode is the Long Media path: once the plan lands, author a
-      // prompt for every planned unit so the single multiclip gate is useful
-      // immediately. Each direct→draft pair remains in version history.
-      if (planned) {
-        let breakdown: Breakdown | null = null
-        try { breakdown = JSON.parse(planned.text) as Breakdown } catch { /* ClipPlan remains available as recovery. */ }
-        if (breakdown?.clips?.length) {
-          for (const clip of breakdown.clips) {
-            app.setFilm({
-              role: clip.role,
-              spine: breakdown.spine,
-              precedes: clip.precedes,
-              follows: clip.follows,
-              covers: clip.covers,
-              title: clip.title,
-              clipIndex: clip.index,
-            })
-            const sheet = await app.run('direct')
-            if (!shouldContinueStoryLoop({ status: sheet ? 'ok' : 'null' })) break
-            const prompt = await app.run('draft')
-            if (!shouldContinueStoryLoop({ status: prompt ? 'ok' : 'null' })) break
-          }
-        }
-      }
+      // Story's primary action deliberately stops at the Long Media plan. A
+      // separate explicit action below starts the multi-call authoring loop.
+      await app.run('breakdown')
     } else if (workflow === 'prompt-revise') {
       await app.run('revise')
     } else {
@@ -208,6 +189,40 @@ export function App() {
       // prompt. Both passes remain in history for inspection.
       await app.rebuild()
     }
+  }
+
+  const generateAllPrompts = async () => {
+    const plan = app.breakdown
+    if (!plan?.clips.length || busy || !connected) return
+    promptLoopStopRef.current = false
+    try {
+      for (const [i, clip] of plan.clips.entries()) {
+        if (promptLoopStopRef.current) break
+        app.setFilm({
+          role: clip.role,
+          spine: plan.spine,
+          precedes: clip.precedes,
+          follows: clip.follows,
+          covers: clip.covers,
+          title: clip.title,
+          clipIndex: clip.index,
+        })
+        setPromptLoop({ index: i + 1, total: plan.clips.length, stage: 'direct' })
+        const sheet = await app.run('direct')
+        if (promptLoopStopRef.current || !shouldContinueStoryLoop({ status: sheet ? 'ok' : 'null' })) break
+        setPromptLoop({ index: i + 1, total: plan.clips.length, stage: 'draft' })
+        const prompt = await app.run('draft')
+        if (promptLoopStopRef.current || !shouldContinueStoryLoop({ status: prompt ? 'ok' : 'null' })) break
+      }
+    } finally {
+      setPromptLoop(null)
+    }
+  }
+
+  const stopPromptLoop = () => {
+    promptLoopStopRef.current = true
+    if (busy) app.cancel()
+    setPromptLoop(null)
   }
 
   const activeEntry = entryMode(entryModeId)
@@ -227,11 +242,12 @@ export function App() {
         e.preventDefault()
         void startFromEntry()
       }
-      if (e.key === 'Escape' && busy) app.cancel()
+      if (e.key === 'Escape' && promptLoop) stopPromptLoop()
+      else if (e.key === 'Escape' && busy) app.cancel()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [app, busy, startFromEntry])
+  }, [app, busy, promptLoop, startFromEntry, stopPromptLoop])
 
   // When a finished prompt is pasted it IS the document — show it typeset
   // rather than leaving the page looking empty below a wall of source text.
@@ -239,7 +255,8 @@ export function App() {
   // holds an empty string, which `??` would happily show — blanking the page
   // until the first token lands. Keep the previous pass up until then.
   const shown = streaming?.text || current?.text || (pastedPrompt ? story : '')
-  const reasoning = streaming ? streaming.reasoning : (failedReasoning ?? current?.reasoning ?? '')
+  const reasoningInterrupted = !streaming && !!interruptedReasoning
+  const reasoning = streaming ? streaming.reasoning : (interruptedReasoning ?? failedReasoning ?? current?.reasoning ?? '')
   const reasoningStreaming = !!streaming && !streaming.text
 
   // Live counts. Estimated while streaming — servers only report real usage at
@@ -403,7 +420,13 @@ export function App() {
             <button className="studio-source-action" onClick={() => void startFromEntry()} disabled={!story.trim() || busy || !connected}>
               <span>{activeEntry.action}</span><span className="tok">⌘ ↵</span>
             </button>
-            <div className="studio-source-secondary"><button className="btn sm ghost" onClick={() => void app.run('breakdown')} disabled={!story.trim() || busy || !connected}>Break into clips</button><span className="tok">Long Media plan stays available from every entry mode.</span></div>
+            <div className="studio-source-secondary">
+              {app.breakdown ? (
+                promptLoop ? <button className="btn sm ghost" onClick={stopPromptLoop}>Stop prompt generation</button> : <button className="btn sm ghost" onClick={() => void generateAllPrompts()} disabled={busy || !connected}>Generate all prompts</button>
+              ) : <button className="btn sm ghost" onClick={() => void app.run('breakdown')} disabled={!story.trim() || busy || !connected}>Break into clips</button>}
+              <span className="tok">Long Media plan stays available from every entry mode.</span>
+            </div>
+            {promptLoop && <div className="studio-loop-progress" role="status" aria-live="polite"><span>Prompt {promptLoop.index}/{promptLoop.total}</span><strong>{promptLoop.stage === 'direct' ? 'Directing' : 'Drafting'}</strong><span className="tok">Stop to leave the last successful prompt in place.</span></div>}
             {!story && <div className="studio-examples"><span className="tok">try</span>{EXAMPLES.map((ex) => <button key={ex.label} className="btn sm ghost" onClick={() => app.setStory(ex.text)}>{ex.label}</button>)}</div>}
           </div>
 
@@ -453,7 +476,7 @@ export function App() {
           <div className="studio-doc-tools"><button className={`studio-quiet-action${view === 'result' ? ' active' : ''}`} onClick={() => setView('result')}>Result</button>{diffable && <button className={`studio-quiet-action${view === 'diff' ? ' active' : ''}`} onClick={() => setView('diff')}>Compare{current?.changelog?.length ? ` · ${current.changelog.length}` : ''}</button>}<button className="studio-quiet-action" onClick={() => void copy()} disabled={!!streaming || !promptText}>{copied ? 'Copied' : 'Copy prompt'}</button></div>
 
           <div className="studio-doc" ref={docRef}>
-            {reasoning && <div className="think"><div className="think-head" onClick={() => setThinkOpen((v) => !v)}><span className="tok">{thinkOpen ? '▾' : '▸'}</span><span className="lbl">Thinking</span><span className="tok">{streaming ? `~${fmtTokens(live!.think)} tokens · ${live!.secs.toFixed(0)}s` : `~${fmtTokens(estTokens(reasoning))} tokens, not part of the prompt`}</span>{reasoningStreaming && <span className="spin" />}</div>{thinkOpen && <div className="think-body" ref={thinkRef}>{reasoning}{reasoningStreaming && <span className="think-caret" />}</div>}</div>}
+            {reasoning && <div className="think"><div className="think-head" onClick={() => setThinkOpen((v) => !v)}><span className="tok">{thinkOpen ? '▾' : '▸'}</span><span className="lbl">{reasoningInterrupted ? 'Interrupted thinking' : 'Thinking'}</span><span className="tok">{streaming ? `~${fmtTokens(live!.think)} tokens · ${live!.secs.toFixed(0)}s` : reasoningInterrupted ? 'stopped · not part of the prompt' : `~${fmtTokens(estTokens(reasoning))} tokens, not part of the prompt`}</span>{reasoningStreaming && <span className="spin" />}</div>{thinkOpen && <div className="think-body" ref={thinkRef}>{reasoning}{reasoningStreaming && <span className="think-caret" />}</div>}</div>}
             {current?.truncated && !streaming && <div className="alert warn">Cut off by the server’s output cap after {current.continuations ?? 0} continuation{current.continuations === 1 ? '' : 's'} — this text may be incomplete.</div>}
             {promptText ? (
               <div className="studio-canonical-document">
@@ -480,9 +503,11 @@ export function App() {
           <section className="studio-render">
             <div className="studio-kicker">04 · RENDER</div><div className="studio-title-row"><h3>ComfyUI</h3><button className="studio-render-ready" onClick={() => setModal('endpoint')}><span className={`studio-health-dot ${app.comfyProbes[app.endpoint?.id ?? '']?.state === 'ok' ? 'ok' : 'idle'}`} />{app.endpoint?.label || 'configure endpoint'}</button></div>
             <div className="studio-render-grid"><div><span>Recipe</span><strong>{app.recipe?.name || 'not configured'}</strong></div><div><span>References</span><strong>{app.plates.length} of 9 bound</strong></div><div><span>Geometry</span><strong>{app.recipe ? `${settings.width ?? app.recipe.defaults.width} × ${settings.height ?? app.recipe.defaults.height}` : '—'}</strong></div><div><span>Seed</span><strong>{settings.seed} · {settings.lockSeed ? 'locked' : 'random'}</strong></div></div>
-            {app.clip?.state === 'done' && <div className="studio-context-receipt"><strong>Next clip context is ready</strong>Use the ending frame, current prompt, film context, and bound references to prepare the next clip. You’ll author its prompt in the source rail.</div>}
+            {activeContinuation?.state === 'ready' && <div className="studio-context-receipt"><strong>Next prompt is ready</strong>Direct → Draft used the ending frame, current prompt, film context, and bound references. Refine it in chat or render it as the next clip.</div>}
+            {activeContinuation?.state === 'failed' && <div className="studio-context-receipt studio-context-failed"><strong>Continuation stopped during {activeContinuation.phase}</strong>{error || 'The previous successful prompt and rendered clip remain available.'}</div>}
+            {activeContinuation?.state === 'running' && <div className="studio-context-receipt" role="status" aria-live="polite"><strong>Continuing · {activeContinuation.phase}</strong>{activeContinuation.phase === 'frame' ? 'Taking the ending frame as Picture 1.' : activeContinuation.phase === 'handoff' ? 'Writing the next clip hand-off.' : activeContinuation.phase === 'direct' ? 'Directing the next clip.' : 'Drafting the next canonical prompt.'}</div>}
             <button className="studio-render-current" disabled={!!rendering || app.blockers.length > 0} onClick={() => void app.render()}><span>{rendering ? `Rendering clip ${rendering.index}…` : 'Render current prompt'}</span><span>current →</span></button>
-            {app.clip?.state === 'done' && <button className="studio-continue" disabled={!!rendering} onClick={() => void app.continueFrom(app.clip!.id)}><span>Prepare next clip</span><span>use ending as context →</span></button>}
+            {app.clip?.state === 'done' && <button className="studio-continue" disabled={busy || !!rendering || activeContinuation?.state === 'running' || activeContinuation?.state === 'ready'} onClick={() => void app.continueFrom(app.clip!.id)}><span>Continue from this clip</span><span>{activeContinuation?.state === 'running' ? `${activeContinuation.phase}…` : activeContinuation?.state === 'ready' ? 'next prompt ready' : 'next prompt →'}</span></button>}
             {app.blockers.length > 0 && <div className="studio-render-issues">{app.blockers.map((b) => <div key={b}>{b}</div>)}</div>}
             {app.warnings.length > 0 && <div className="studio-render-warnings">{app.warnings.map((w) => <div key={w}>{w}</div>)}</div>}
             <div className="studio-render-links"><button className="btn sm ghost" onClick={() => setModal('recipe')}>Recipe & geometry</button><button className="btn sm ghost" onClick={() => setModal('plates')}>Bind plates</button></div>

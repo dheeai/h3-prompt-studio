@@ -817,6 +817,8 @@ mark.w.del { background: oklch(0.895 0.060 25); color: oklch(0.36 0.13 27); text
 .studio-source-action:disabled, .studio-render-current:disabled { opacity: .4; cursor: not-allowed; }
 .studio-source-secondary { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 7px; }
 .studio-source-secondary .tok { color: var(--studio-faint); font-size: 9.5px; }
+.studio-loop-progress { display: flex; align-items: baseline; flex-wrap: wrap; gap: 7px; margin-top: 7px; padding: 7px 9px; border-left: 2px solid var(--studio-blue); background: var(--studio-work); color: var(--studio-soft); font: 9.5px/1.4 var(--mono); }
+.studio-loop-progress strong { color: var(--studio-blue); font-weight: 600; }
 .studio-examples { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; margin-top: 11px; }
 .studio-standing { padding: 11px 16px 13px; border-bottom: 1px solid var(--studio-line); background: var(--studio-work); }
 .studio-standing-head { display: flex; align-items: baseline; gap: 7px; }
@@ -908,6 +910,9 @@ mark.w.del { background: oklch(0.895 0.060 25); color: oklch(0.36 0.13 27); text
 .studio-render-grid strong { color: var(--studio-ink); font: 10px var(--mono); overflow-wrap: anywhere; }
 .studio-context-receipt { margin: 3px 0 11px; padding: 9px 10px; border-left: 2px solid var(--studio-blue); background: var(--studio-work); color: var(--studio-soft); font-size: 10px; line-height: 1.45; }
 .studio-context-receipt strong { display: block; margin-bottom: 2px; color: var(--studio-blue); font-weight: 600; }
+.studio-context-failed { border-left-color: var(--studio-hot); }
+.studio-context-failed strong { color: var(--studio-hot); }
+.studio-continuation-progress { margin: -2px 0 8px; color: var(--studio-blue); }
 .studio-continue { appearance: none; width: 100%; display: flex; align-items: center; justify-content: space-between; margin-top: 8px; border: 1px solid var(--studio-ink); background: transparent; padding: 10px 12px; cursor: pointer; font-weight: 700; }
 .studio-continue:hover:not(:disabled) { background: var(--studio-ink); color: var(--studio-shell); }
 .studio-continue:disabled { opacity: .45; cursor: not-allowed; }

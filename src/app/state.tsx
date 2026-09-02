@@ -12,6 +12,7 @@ import { buildMulticlipGraph, multiclipIssues, multiclipWarnings, overlapFramesO
 import type { MulticlipClip, PaddedClip } from '../lib/multiclip'
 import { fetchBundledSkills, loadSkills, removeSkill, saveSkill } from '../lib/skills'
 import { estTokens } from '../lib/tokens'
+import { authorContinuation, continuationSource, interruptedReasoningText } from '../lib/entry'
 import type {
   Breakdown, ChatTurn, Clip, ComfyEndpoint, FilmContext, Finding, Plate, ProbeResult, Provider,
   Recipe, Selection, Settings, Skill, StageId, Version,
@@ -88,8 +89,19 @@ interface Session {
   film?: FilmContext
   /** The clip this draft continues from — set by Continue, null for a head. */
   parentClipId?: string | null
+  /** The prompt that produced parentClipId, available to continuation Direct. */
+  parentPrompt?: string
   /** The last Break down pass, if the story has been split into clips. */
   breakdown?: Breakdown
+}
+
+type ContinuationPhase = 'frame' | 'handoff' | 'direct' | 'draft' | 'ready'
+
+interface ContinuationStatus {
+  clipId: string
+  phase: ContinuationPhase
+  state: 'running' | 'ready' | 'failed'
+  source?: string
 }
 
 /** One plan clip's prompt and frame accounting, for the "Submit all as one job" panel. */
@@ -134,6 +146,8 @@ interface Api {
   error: string | null
   /** Thinking from a run that produced no answer, kept so it is not lost. */
   failedReasoning: string | null
+  /** Partial thinking captured when the operator stopped an in-flight run. */
+  interruptedReasoning: string | null
   findings: Finding[]
   context: BuiltContext | null
 
@@ -168,6 +182,8 @@ interface Api {
   warnings: string[]
   /** The current clip plan's multiclip accounting and gate, or null with no plan yet. */
   multiclipPreview: MulticlipPreview | null
+  /** End-to-end continuation progress, retained as a receipt once ready or failed. */
+  continuation: ContinuationStatus | null
   addPlate: (p: Omit<Plate, 'id' | 'addedAt'>) => Promise<void>
   updatePlate: (id: string, patch: Partial<Plate>) => Promise<void>
   deletePlate: (id: string) => Promise<void>
@@ -219,6 +235,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null)
   const [context, setContext] = useState<BuiltContext | null>(null)
   const [failedReasoning, setFailedReasoning] = useState<string | null>(null)
+  const [interruptedReasoning, setInterruptedReasoning] = useState<string | null>(null)
+  const [continuation, setContinuation] = useState<ContinuationStatus | null>(null)
   const [plates, setPlates] = useState<Plate[]>([])
   const [recipes, setRecipes] = useState<Recipe[]>([])
   const [endpoints, setEndpointsState] = useState<ComfyEndpoint[]>(DEFAULT_ENDPOINTS)
@@ -452,10 +470,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const selectVersion = useCallback((id: string) => setSession((s) => ({ ...s, currentId: id })), [])
 
   const cancel = useCallback(() => {
+    const thought = interruptedReasoningText(streaming?.reasoning ?? '')
+    if (thought) setInterruptedReasoning(thought)
     abortRef.current?.abort()
     abortRef.current = null
     setStreaming(null)
-  }, [])
+  }, [streaming?.reasoning])
 
   const run = useCallback(
     async (stage: StageId, note?: string): Promise<Version | null> => {
@@ -518,6 +538,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const user = fillTemplate(template, {
         story: snap.story,
         current: working,
+        previous: snap.parentPrompt,
         mode: settings.mode,
         film: filmBlock(snap.film),
         notes: note,
@@ -528,6 +549,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       const ac = new AbortController()
       abortRef.current = ac
+      setFailedReasoning(null)
+      setInterruptedReasoning(null)
       setStreaming({ stage, text: '', reasoning: '', startedAt: Date.now(), continuations: 0 })
       setError(null)
 
@@ -710,7 +733,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setError(null)
     // Clears the draft, not the film: clips, plates and the film context are
     // the production and survive a reset of the page you are writing on.
-    setSession((s) => ({ story: '', versions: [], currentId: null, chat: [], film: s.film, parentClipId: s.parentClipId, breakdown: undefined }))
+    setSession((s) => ({ story: '', versions: [], currentId: null, chat: [], film: s.film, parentClipId: s.parentClipId, parentPrompt: s.parentPrompt, breakdown: undefined }))
+    setInterruptedReasoning(null)
+    setFailedReasoning(null)
   }, [])
 
   // ── the render loop ───────────────────────────────────────────────────
@@ -1125,26 +1150,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const selectClip = useCallback((id: string) => setCurrentClipId(id), [])
 
   /**
-   * Close the loop.
+   * Close the loop end to end.
    *
    * The clip's last frame becomes the next clip's <Picture 1>, a hand-off
-   * paragraph is written from the prompt that produced it, the role advances,
-   * and the page is cleared for the next clip — with the film context, the
-   * plates and the seed all carried.
+   * paragraph is written from the prompt that produced it, then Direct → Draft
+   * authors the next prompt. The rendered parent clip remains in the filmstrip
+   * and carries the parent prompt, plates, seed and film context into render.
    */
   const continueFrom = useCallback(
     async (clipId: string, note?: string) => {
       const c = clipsRef.current.find((x) => x.id === clipId)
       if (!c) return
       const url = clipUrl(c)
-      if (!url) {
+      if (!url && !c.lastFrame) {
         setError('That clip has no file yet.')
         return
       }
 
       setError(null)
+      setContinuation({ clipId, phase: 'frame', state: 'running' })
       try {
-        const frame = c.lastFrame ?? (await lastFrameOf(url))
+        const frame = c.lastFrame ?? (url ? await lastFrameOf(url) : '')
+        if (!frame) throw new Error('The clip has no readable ending frame.')
         if (!c.lastFrame) patchClip(clipId, { lastFrame: frame })
 
         // One replaced plate at a time — otherwise every continuation adds
@@ -1169,28 +1196,63 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setError(`Could not take the last frame: ${(e as Error).message}`)
       }
 
+      setContinuation({ clipId, phase: 'handoff', state: 'running' })
       const written = await run('handoff')
       // A cancelled or failed hand-off must leave the current prompt/session
       // intact. Continue is a preparation step; clearing here would make a
       // failed hand-off look like a successful transition to a new clip.
-      if (!written) return
+      if (!written) {
+        setContinuation({ clipId, phase: 'handoff', state: 'failed' })
+        return
+      }
       const parsed = splitHandoff(written.text)
 
-      setSession((sn) => ({
-        story: note?.trim() ? note.trim() : '',
-        versions: [],
-        currentId: null,
+      const nextSource = continuationSource(note, parsed)
+      const nextSession: Session = {
+        story: nextSource,
+        // Keep the successful hand-off as the first pass of the new session;
+        // the old rendered prompt remains reachable through parentClipId.
+        versions: [written],
+        currentId: written.id,
         chat: [],
         parentClipId: clipId,
+        parentPrompt: c.prompt,
         film: {
           ...DEFAULT_FILM,
-          ...sn.film,
-          role: nextRole(sn.film?.role ?? 'standalone'),
-          precedes: parsed?.precedes || sn.film?.precedes || '',
-          follows: parsed?.follows || '',
+          ...sessionRef.current.film,
+          role: nextRole(sessionRef.current.film?.role ?? 'standalone'),
+          precedes: parsed.precedes || sessionRef.current.film?.precedes || '',
+          follows: parsed.follows || sessionRef.current.film?.follows || '',
         },
-      }))
+      }
+      // `run()` snapshots sessionRef synchronously. Keep it in lockstep with
+      // the state update so Direct starts from the new hand-off source rather
+      // than the old prompt during this same async turn.
+      setSession(nextSession)
+      sessionRef.current = nextSession
       setCurrentClipId(clipId)
+
+      let failedStage: 'direct' | 'draft' = 'direct'
+      let authored: 'ready' | 'aborted'
+      try {
+        authored = await authorContinuation(async (stage) => {
+          failedStage = stage
+          setContinuation({ clipId, phase: stage, state: 'running', source: nextSource })
+          return run(stage)
+        })
+      } catch (e) {
+        // `run()` normally turns provider failures into null, but preserve an
+        // unexpected failure as a visible error and a failed receipt too.
+        const message = String((e as Error).message || e)
+        setError(message)
+        setContinuation({ clipId, phase: failedStage, state: 'failed', source: nextSource })
+        return
+      }
+      if (authored !== 'ready') {
+        setContinuation({ clipId, phase: failedStage, state: 'failed', source: nextSource })
+        return
+      }
+      setContinuation({ clipId, phase: 'ready', state: 'ready', source: nextSource })
     },
     [clipUrl, patchClip, savePlate, run],
   )
@@ -1210,6 +1272,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     breakdown: session.breakdown ?? null,
     error,
     failedReasoning,
+    interruptedReasoning,
+    continuation,
     findings,
     context,
     setStory,
@@ -1255,6 +1319,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     clearError: () => {
       setError(null)
       setFailedReasoning(null)
+      setInterruptedReasoning(null)
     },
     reset,
   }

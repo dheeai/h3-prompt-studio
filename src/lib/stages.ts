@@ -66,7 +66,7 @@ export const STAGE_LABEL: Record<StageId, string> = {
  * Stage templates. Editable by the user and stored in settings, so these are
  * only the starting point.
  *
- * Placeholders: {{story}} {{current}} {{mode}} {{notes}} {{findings}} {{critique}} {{film}} {{standing}}
+ * Placeholders: {{story}} {{current}} {{mode}} {{notes}} {{findings}} {{critique}} {{film}} {{standing}} {{previous}}
  *
  * Each one deliberately refuses to restate the loaded skills — the skills are
  * already in the system block, and repeating them here would both waste the
@@ -113,6 +113,9 @@ If you genuinely believe the requested action cannot work as asked, say so in
 one line — then direct the requested action anyway.
 
 {{film}}
+
+PREVIOUS CLIP PROMPT (continuity reference only — do not recreate its whole action)
+{{previous}}
 
 A DETERMINISTIC READ OF THE SOURCE, computed before you looked at it — confirm
 it or correct it, don't just restate it:
@@ -550,6 +553,8 @@ export function fillTemplate(
     film?: string
     /** The deterministic read of the source — see `classifyInput` / `standingToText` in lint.ts. */
     standing?: string
+    /** The prompt that produced the rendered parent clip, for continuation Direct. */
+    previous?: string
   },
 ): string {
   return template
@@ -561,6 +566,7 @@ export function fillTemplate(
     .replace(/\{\{findings\}\}/g, vars.findings?.trim() || '(the deterministic check found nothing)')
     .replace(/\{\{notes\}\}/g, vars.notes ? `ALSO\n${vars.notes}` : '')
     .replace(/\{\{standing\}\}/g, vars.standing?.trim() || '(not computed)')
+    .replace(/\{\{previous\}\}/g, vars.previous?.trim() || '(none — this is the first clip)')
     .trim()
 }
 

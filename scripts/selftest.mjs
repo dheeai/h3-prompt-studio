@@ -7,13 +7,22 @@
 // (used only inside the OpenRouter branch of streamChat) never gets evaluated
 // for a non-OpenRouter provider — if it did, importing this file would throw.
 
-import { splitReply, parseBreakdown } from '../src/lib/stages.ts'
+import { fillTemplate, splitReply, parseBreakdown } from '../src/lib/stages.ts'
 import { classifyInput } from '../src/lib/lint.ts'
 // stitch lives in llm.ts alongside streamChatComplete; importing it here also
 // proves llm.ts loads cleanly under node — see the note above.
 import { stitch, toLineBoundary, appendedFor } from '../src/lib/llm.ts'
 import { buildMulticlipGraph, multiclipIssues, padForOverlap, snapUp } from '../src/lib/multiclip.ts'
-import { ENTRY_MODES, entryAction, entryLabel, entryWorkflow, shouldContinueStoryLoop } from '../src/lib/entry.ts'
+import {
+  ENTRY_MODES,
+  authorContinuation,
+  continuationSource,
+  entryAction,
+  entryLabel,
+  entryWorkflow,
+  interruptedReasoningText,
+  shouldContinueStoryLoop,
+} from '../src/lib/entry.ts'
 
 let pass = 0
 let fail = 0
@@ -31,6 +40,31 @@ check('entry dispatch: click and keyboard share the same workflow',
   entryWorkflow('story') === 'story-plan' && entryWorkflow('prompt') === 'prompt-revise' && entryWorkflow('idea') === 'idea-prompt')
 check('story loop: only a completed pass advances to the next clip',
   shouldContinueStoryLoop({ status: 'ok' }) && !shouldContinueStoryLoop({ status: 'null' }) && !shouldContinueStoryLoop({ status: 'cancelled' }) && !shouldContinueStoryLoop({ status: 'error' }))
+
+{
+  const source = continuationSource('', { precedes: 'she faces the hatch', follows: 'the hatch opens', open: 'the warning remains unresolved' })
+  check('continuation source: blank note carries hand-off fields forward',
+    source === 'OPEN: the warning remains unresolved\nFOLLOWS: the hatch opens\nPRECEDES: she faces the hatch', source)
+  check('continuation source: an optional note takes precedence',
+    continuationSource('Make the next beat quieter', { precedes: 'old state', follows: 'old future', open: 'old question' }) === 'Make the next beat quieter')
+  check('continuation source: previous prompt context has a dedicated template slot',
+    fillTemplate('SOURCE {{story}}\nPREVIOUS {{previous}}', { story: source, previous: 'the prompt that produced the last clip' }).includes('PREVIOUS the prompt that produced the last clip'))
+}
+
+{
+  const calls = []
+  const ready = await authorContinuation(async (stage) => { calls.push(stage); return { stage } })
+  check('continuation authoring: Direct then Draft reaches ready', ready === 'ready' && JSON.stringify(calls) === JSON.stringify(['direct', 'draft']), JSON.stringify({ ready, calls }))
+  const directFails = []
+  const abortedAtDirect = await authorContinuation(async (stage) => { directFails.push(stage); return null })
+  check('continuation authoring: Direct failure aborts before Draft', abortedAtDirect === 'aborted' && JSON.stringify(directFails) === JSON.stringify(['direct']), JSON.stringify({ abortedAtDirect, directFails }))
+  const draftFails = []
+  const abortedAtDraft = await authorContinuation(async (stage) => { draftFails.push(stage); return stage === 'direct' ? { stage } : null })
+  check('continuation authoring: Draft failure stops with failure visible', abortedAtDraft === 'aborted' && JSON.stringify(draftFails) === JSON.stringify(['direct', 'draft']), JSON.stringify({ abortedAtDraft, draftFails }))
+}
+
+check('cancelled thinking: partial reasoning is retained, empty reasoning is not mislabeled',
+  interruptedReasoningText('  the model was still weighing the shot  ') === 'the model was still weighing the shot' && interruptedReasoningText('   ') === null)
 
 function check(name, cond, detail) {
   if (cond) {

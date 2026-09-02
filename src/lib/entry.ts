@@ -115,6 +115,64 @@ export function continuationSource(note: string | undefined, handoff: Continuati
   ].filter(Boolean).join('\n') || 'Continue from the ending state of the previous clip.'
 }
 
+/**
+ * Find the latest canonical prompt from an earlier clip in a Scene plan.
+ *
+ * A Scene plan keeps its continuity facts (precedes/follows) on the film
+ * context, but the director also needs the actual prompt that produced the
+ * preceding clip. Keep this lookup independent of React state so every entry
+ * point (selected clip, generate-all, and the Clip plan card) applies the same
+ * rule. A missing intermediate prompt is allowed: use the nearest earlier
+ * generated prompt rather than claiming there is no previous clip at all.
+ */
+export function previousPromptForClip(
+  versions: readonly { stage: string; text: string; clipIndex?: number }[],
+  clipIndex?: number,
+): string | undefined {
+  if (clipIndex === undefined || !Number.isFinite(clipIndex) || clipIndex <= 1) return undefined
+  const canonical = new Set(['draft', 'revise', 'rebuild', 'freeform'])
+  let best: { text: string; clipIndex: number } | undefined
+  for (let i = versions.length - 1; i >= 0; i--) {
+    const version = versions[i]
+    if (!canonical.has(version.stage) || version.clipIndex === undefined || version.clipIndex >= clipIndex) continue
+    const text = version.text.trim()
+    if (!text) continue
+    if (!best || version.clipIndex > best.clipIndex) best = { text, clipIndex: version.clipIndex }
+  }
+  return best?.text
+}
+
+/** The parts of a draft that must never leak into a new standalone entry. */
+export interface DraftContextState {
+  story: string
+  versions: unknown[]
+  currentId: string | null
+  chat?: unknown[]
+  film?: FilmContext
+  parentClipId?: string | null
+  parentPrompt?: string
+  breakdown?: unknown
+}
+
+/**
+ * Start a clean writing context while leaving production/configuration state
+ * (clips, plates, recipes, endpoints) to the caller. In particular, a new
+ * standalone Clip must not inherit an earlier Scene's film or parent prompt.
+ */
+export function clearDraftContext<T extends DraftContextState>(session: T): T {
+  return {
+    ...session,
+    story: '',
+    versions: [],
+    currentId: null,
+    chat: [],
+    film: undefined,
+    parentClipId: null,
+    parentPrompt: undefined,
+    breakdown: undefined,
+  }
+}
+
 /** Direct then Draft, stopping at the first cancelled or failed pass. */
 export async function authorContinuation<T>(
   run: (stage: 'direct' | 'draft', previous?: T) => Promise<T | null>,

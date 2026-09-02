@@ -28,6 +28,8 @@ import {
   entryWorkflow,
   promptSourceForEntryMode,
   interruptedReasoningText,
+  previousPromptForClip,
+  clearDraftContext,
   shouldContinueStoryLoop,
 } from '../src/lib/entry.ts'
 import { agentApiKey, buildAgentModel, buildAgentTools, reduceAgentEvent, agentEventStatus } from '../src/lib/agent.ts'
@@ -81,6 +83,37 @@ check('non-prompt modes: source fallback still requires the existing prompt heur
     continuationSource('Make the next beat quieter', { precedes: 'old state', follows: 'old future', open: 'old question' }) === 'Make the next beat quieter')
   check('continuation source: previous prompt context has a dedicated template slot',
     fillTemplate('SOURCE {{story}}\nPREVIOUS {{previous}}', { story: source, previous: 'the prompt that produced the last clip' }).includes('PREVIOUS the prompt that produced the last clip'))
+
+check('continuity: a later Scene clip inherits the nearest earlier canonical prompt', (() => {
+  if (typeof previousPromptForClip !== 'function') return false
+  const versions = [
+    { stage: 'draft', clipIndex: 1, text: 'clip one canonical prompt' },
+    { stage: 'direct', clipIndex: 2, text: 'clip two direction sheet' },
+    { stage: 'draft', clipIndex: 4, text: 'clip four canonical prompt' },
+  ]
+  return previousPromptForClip(versions, 2) === 'clip one canonical prompt' &&
+    previousPromptForClip(versions, 3) === 'clip one canonical prompt' &&
+    previousPromptForClip(versions, 1) === undefined
+})())
+
+check('new draft: clears film, parent continuation, plan, and passes without touching unrelated state', (() => {
+  if (typeof clearDraftContext !== 'function') return false
+  const previous = {
+    story: 'old scene',
+    versions: [{ id: 'v1' }],
+    currentId: 'v1',
+    chat: [{ role: 'user', text: 'old note' }],
+    film: { role: 'rising', spine: 'old film', precedes: 'old ending', follows: 'next beat', clipIndex: 2 },
+    parentClipId: 'clip-1',
+    parentPrompt: 'old prompt',
+    breakdown: { spine: 'old film', clips: [] },
+    keep: 'configuration',
+  }
+  const next = clearDraftContext(previous)
+  return next.story === '' && next.versions.length === 0 && next.currentId === null &&
+    next.chat.length === 0 && next.film === undefined && next.parentClipId === null &&
+    next.parentPrompt === undefined && next.breakdown === undefined && next.keep === 'configuration'
+})())
 }
 
 {

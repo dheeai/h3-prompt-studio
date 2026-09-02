@@ -12,7 +12,7 @@ import { buildMulticlipGraph, multiclipIssues, multiclipWarnings, overlapFramesO
 import type { MulticlipClip, PaddedClip } from '../lib/multiclip'
 import { fetchBundledSkills, loadSkills, removeSkill, saveSkill } from '../lib/skills'
 import { estTokens } from '../lib/tokens'
-import { appendContinuationHistory, authorContinuation, continuationContextOverride, continuationPlateIsFresh, continuationSource, interruptedReasoningText, promptSourceForEntryMode } from '../lib/entry'
+import { appendContinuationHistory, authorContinuation, clearDraftContext, continuationContextOverride, continuationPlateIsFresh, continuationSource, interruptedReasoningText, previousPromptForClip, promptSourceForEntryMode } from '../lib/entry'
 import type { EntryModeId } from '../lib/entry'
 import { isSingleRequestStage, type StudioRunPhase } from '../lib/studio-workflow'
 import type {
@@ -583,6 +583,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const lastPrompt = () => [...snap.versions].reverse().find((v) => PROMPT_STAGES.has(v.stage)) ?? null
 
       const sourceStory = override?.story ?? snap.story
+      const clipIndex = override?.clipIndex ?? override?.film?.clipIndex ?? snap.film?.clipIndex
+      // Scene's film context describes the hand-off state, but the previous
+      // canonical prompt is equally important to Direct: it shows the model
+      // exactly what produced that state. Continuation explicitly supplies
+      // parentPrompt; planned clips derive it from earlier canonical passes.
+      const previousPrompt = override?.previous ?? snap.parentPrompt ?? previousPromptForClip(snap.versions, clipIndex)
       let working: string
       if (stage === 'direct' || stage === 'breakdown') {
         working = ''
@@ -624,7 +630,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const user = fillTemplate(template, {
         story: sourceStory,
         current: working,
-        previous: override?.previous ?? snap.parentPrompt,
+        previous: previousPrompt,
         mode: settings.mode,
         film: filmBlock(override?.film ?? snap.film),
         notes: note,
@@ -722,7 +728,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
             tokensEstimated: result.usage?.completion === undefined,
             continuations: result.continuations || undefined,
             truncated: result.truncated || undefined,
-            clipIndex: override?.clipIndex ?? override?.film?.clipIndex ?? snap.film?.clipIndex,
+            clipIndex,
+          }
+          const nextSession = {
+            ...sessionRef.current,
+            versions: [...sessionRef.current.versions, version],
+            currentId: version.id,
+            breakdown: parsed ?? sessionRef.current.breakdown,
           }
           setSession((s) => ({
             ...s,
@@ -730,6 +742,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
             currentId: version.id,
             breakdown: parsed ?? s.breakdown,
           }))
+          // A caller may start the next planned clip immediately after this
+          // promise resolves, before React has committed the functional state
+          // update. Keep the synchronous snapshot just as setFilm() does.
+          sessionRef.current = nextSession
           return version
         }
 
@@ -787,7 +803,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
           note,
           continuations: result.continuations || undefined,
           truncated: result.truncated || undefined,
-          clipIndex: override?.clipIndex ?? override?.film?.clipIndex ?? snap.film?.clipIndex,
+          clipIndex,
+        }
+        const nextSession = {
+          ...sessionRef.current,
+          versions: [...sessionRef.current.versions, version],
+          currentId: version.id,
+          chat:
+            stage === 'freeform'
+              ? [
+                  ...(sessionRef.current.chat ?? []),
+                  { role: 'user' as const, text: note ?? '', at: Date.now() },
+                  {
+                    role: 'assistant' as const,
+                    text: changelog.length ? changelog.map((c) => `- ${c}`).join('\n') : 'Updated the prompt.',
+                    at: Date.now(),
+                    versionId: version.id,
+                  },
+                ]
+              : sessionRef.current.chat,
         }
         setSession((s) => ({
           ...s,
@@ -807,6 +841,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 ]
               : s.chat,
         }))
+        // Keep chained calls (notably Generate all prompts) from reading the
+        // pre-pass versions while React is still batching the update.
+        sessionRef.current = nextSession
         return version
       } catch (e) {
         if ((e as Error).name !== 'AbortError') setError(String((e as Error).message || e))
@@ -836,9 +873,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     abortRef.current = null
     setStreaming(null)
     setError(null)
-    // Clears the draft, not the film: clips, plates and the film context are
-    // the production and survive a reset of the page you are writing on.
-    setSession((s) => ({ story: '', versions: [], currentId: null, chat: [], film: s.film, parentClipId: s.parentClipId, parentPrompt: s.parentPrompt, breakdown: undefined }))
+    // A new draft is a new writing context. Keep rendered production and
+    // configuration, but never let a Scene plan, selected film position, or
+    // continuation parent leak into a standalone Clip/Prompt entry.
+    const next = clearDraftContext(sessionRef.current)
+    setSession(next)
+    // run() snapshots this ref synchronously. Keep it aligned with the reset
+    // so a fast tab switch and submit cannot send the previous Scene context.
+    sessionRef.current = next
+    setCurrentClipId(null)
+    setContinuation(null)
+    setPlates((prev) => prev.filter((p) => p.mode !== 'replaced'))
     setInterruptedReasoning(null)
     setFailedReasoning(null)
   }, [])
@@ -876,7 +921,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [endpoints, settings.comfyEndpointId],
   )
   const clip = useMemo(
-    () => clips.find((c) => c.id === currentClipId) ?? clips[clips.length - 1] ?? null,
+    () => clips.find((c) => c.id === currentClipId) ?? null,
     [clips, currentClipId],
   )
   const rendering = useMemo(() => clips.find((c) => c.id === renderingId) ?? null, [clips, renderingId])

@@ -23,6 +23,7 @@ import {
   entryAction,
   entryLabel,
   entryMode,
+  entryStartCopy,
   entryWorkflow,
   promptSourceForEntryMode,
   interruptedReasoningText,
@@ -49,6 +50,8 @@ check('entry modes: source metadata uses the approved terminology throughout',
   entryMode('story').title === 'Scene (Multi-shot)' && entryMode('story').placeholder.includes('scene') &&
   entryMode('prompt').title === 'Prompt' && entryMode('prompt').placeholder.includes('prompt') &&
   entryMode('idea').title === 'Clip' && entryMode('idea').placeholder.includes('clip'))
+check('entry modes: empty-state copy follows the approved visible order',
+  entryStartCopy() === 'Start with a Scene (Multi-shot), Clip, or Prompt.')
 check('entry dispatch: click and keyboard share the same workflow',
   entryWorkflow('story') === 'story-plan' && entryWorkflow('prompt') === 'prompt-revise' && entryWorkflow('idea') === 'idea-prompt')
 check('story loop: only a completed pass advances to the next clip',

@@ -53,6 +53,12 @@ export function entryAction(id: EntryModeId): string {
   return entryMode(id).action
 }
 
+/** Empty-state copy kept in the same order as the visible entry tabs. */
+export function entryStartCopy(): string {
+  const [first, second, third] = ENTRY_MODES
+  return `Start with a ${first.label}, ${second.label}, or ${third.label}.`
+}
+
 /** The canonical action behind both the visible CTA and Cmd/Ctrl+Enter. */
 export function entryWorkflow(id: EntryModeId): EntryWorkflow {
   if (id === 'story') return 'story-plan'

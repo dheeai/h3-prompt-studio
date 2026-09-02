@@ -476,15 +476,29 @@ export function splitReply(raw: string): { prompt: string; explanation: string; 
  * payload.
  */
 export function splitPromptReplacement(raw: string): { prompt: string; explanation: string; changelog: string[] } | null {
-  const text = raw.trim()
+  // Local llama models sometimes honor the two-block contract but wrap the
+  // whole answer in a harmless Markdown fence. Remove only that outer fence;
+  // anything else still has to satisfy the exact replacement grammar below.
+  const text = stripFence(raw.trim())
+  // JSON is an equally strict representation of the same two blocks and is a
+  // common fallback for instruction-tuned local models. Require both non-empty
+  // fields so a partial object can never replace the canonical prompt.
+  const json = parseJsonReply(text)
+  if (json?.prompt && json.explanation) return { prompt: json.prompt, explanation: json.explanation, changelog: [] }
   const promptIndex = text.indexOf(PROMPT_MARK)
   const explanationIndex = text.indexOf(EXPLANATION_MARK)
   if (promptIndex !== 0 || explanationIndex === -1 || explanationIndex <= promptIndex) return null
   const markers = text.match(/<<<[^>\n]+>>>/g) ?? []
-  if (markers.length !== 2 || markers[0] !== PROMPT_MARK || markers[1] !== EXPLANATION_MARK) return null
+  // Older cached Prompt-mode instructions taught Revise to emit a third
+  // CHANGES block. It is safe to tolerate that trailing block for backwards
+  // compatibility, but never let it become part of the explanation or the
+  // canonical prompt. New responses still use only PROMPT + EXPLANATION.
+  const hasLegacyChanges = markers.length === 3 && markers[2] === CHANGES_MARK
+  if ((!hasLegacyChanges && markers.length !== 2) || markers[0] !== PROMPT_MARK || markers[1] !== EXPLANATION_MARK) return null
 
   const prompt = text.slice(PROMPT_MARK.length, explanationIndex).trim()
-  const explanation = text.slice(explanationIndex + EXPLANATION_MARK.length).trim()
+  const changesIndex = hasLegacyChanges ? text.indexOf(CHANGES_MARK, explanationIndex + EXPLANATION_MARK.length) : -1
+  const explanation = text.slice(explanationIndex + EXPLANATION_MARK.length, changesIndex === -1 ? undefined : changesIndex).trim()
   if (!prompt || !explanation) return null
   return { prompt, explanation, changelog: [] }
 }

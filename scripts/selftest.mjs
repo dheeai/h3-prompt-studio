@@ -9,7 +9,7 @@
 
 import { readFileSync } from 'node:fs'
 import { DEFAULT_TEMPLATES, fillTemplate, splitReply, parseBreakdown } from '../src/lib/stages.ts'
-import { classifyInput } from '../src/lib/lint.ts'
+import { classifyInput, standingToText } from '../src/lib/lint.ts'
 // stitch lives in llm.ts alongside streamChatComplete; importing it here also
 // proves llm.ts loads cleanly under node — see the note above.
 import { stitch, toLineBoundary, appendedFor, continuationBudgetFor, streamChatComplete } from '../src/lib/llm.ts'
@@ -256,8 +256,25 @@ check('prompt replacement parser: malformed two-block output is rejected', (() =
   const duplicate = workflowModule.splitPromptReplacement('<<<PROMPT>>>\nfirst\n<<<PROMPT>>>\nsecond\n<<<EXPLANATION>>>\nfixed timing')
   const reversed = workflowModule.splitPromptReplacement('<<<EXPLANATION>>>\nfixed timing\n<<<PROMPT>>>\ncanonical')
   const changes = workflowModule.splitPromptReplacement('<<<PROMPT>>>\ncanonical\n<<<EXPLANATION>>>\nfixed timing\n<<<CHANGES>>>\n- changed')
+  const jsonChanges = workflowModule.splitPromptReplacement('{"prompt":"canonical","explanation":"fixed timing","changes":["legacy"]}')
   return good?.prompt === 'canonical' && good?.explanation === 'fixed timing' && missingExplanation === null && unmarked === null &&
-    preamble === null && postscript === null && duplicate === null && reversed === null && changes === null
+    preamble === null && postscript === null && duplicate === null && reversed === null &&
+    changes?.prompt === 'canonical' && changes?.explanation === 'fixed timing' && changes?.changelog.length === 0 &&
+    jsonChanges?.prompt === 'canonical' && jsonChanges?.explanation === 'fixed timing' && jsonChanges?.changelog.length === 0
+})())
+check('prompt replacement parser: accepts fenced markers and strict JSON from local models', (() => {
+  if (!workflowModule) return false
+  const fenced = workflowModule.splitPromptReplacement('```text\n<<<PROMPT>>>\ncanonical\n<<<EXPLANATION>>>\nfixed timing\n```')
+  const json = workflowModule.splitPromptReplacement('{"prompt":"canonical","explanation":"fixed timing"}')
+  const incomplete = workflowModule.splitPromptReplacement('{"prompt":"canonical"}')
+  return fenced?.prompt === 'canonical' && fenced?.explanation === 'fixed timing' &&
+    json?.prompt === 'canonical' && json?.explanation === 'fixed timing' && incomplete === null
+})())
+
+check('standing: source description does not reference the retired stage regime', (() => {
+  const standing = classifyInput('integrated_multimodal_description: a complete prompt\noverall_soundscape: rain on glass\nnon_diegetic_music: N/A')
+  const text = standingToText(standing)
+  return standing.suggest === 'revise' && !/Before Direct|After Direct|After Draft|ready for Critique|before Draft|Direct → Draft → Critique → Revise/i.test(text)
 })())
 
 {

@@ -133,7 +133,7 @@ export function looksLikePrompt(text: string): boolean {
  * colon, no formatting on top. `classifyInput` needs this exact distinction
  * to tell a finished prompt apart from a rough one; the loosened
  * `looksLikePrompt` above deliberately can no longer make that call, since it
- * treats both as "a prompt" for the purpose of unlocking Critique/Revise.
+ * treats both as "a prompt" for the purpose of enabling prompt operations.
  */
 function looksLikePromptStrict(text: string): boolean {
   return /(^|\n)[ \t]*(integrated_multimodal_description|overall_soundscape|non_diegetic_music|detailed_description|retention_analysis|subject_definitions)[ \t]*:/i.test(
@@ -149,7 +149,7 @@ export interface Standing {
   evidence: string[]
   has: string[]
   lacks: string[]
-  /** One sentence placing it in the Direct → Draft → Critique → Revise regime. */
+  /** One sentence describing the source and the useful next authoring move. */
   stands: string
   suggest: StageId
 }
@@ -240,12 +240,12 @@ function detectAspects(text: string): Record<string, boolean> {
 
 const STANDS: Record<Standing['kind'], string> = {
   empty: 'Nothing pasted yet.',
-  idea: 'Before Direct: barely more than a premise — nothing has been decided about how it is shot.',
-  story: 'Before Direct: nothing has been decided about how it is shot.',
-  brief: 'Before Direct: a specification of what is wanted, not yet a decision about how to shoot it.',
-  'direction-sheet': 'After Direct: ready for Draft.',
-  'rough-prompt': 'After Direct, before Draft: the shot decisions exist but not the official field structure.',
-  prompt: 'After Draft: ready for Critique.',
+  idea: 'This is an idea: decide the observable action, ending state, and craft choices.',
+  story: 'This is a story: preserve its fixed events, then resolve the H3 shooting decisions.',
+  brief: 'This is a brief: preserve its requested constraints, then resolve the H3 shooting decisions.',
+  'direction-sheet': 'This is a direction sheet: use its shot decisions to build the canonical prompt.',
+  'rough-prompt': 'This is a rough prompt: preserve its intent and complete the canonical H3 structure.',
+  prompt: 'This is a prompt: diagnose material weaknesses, then return a complete replacement.',
 }
 
 const SUGGEST: Record<Standing['kind'], StageId> = {
@@ -255,7 +255,7 @@ const SUGGEST: Record<Standing['kind'], StageId> = {
   brief: 'direct',
   'direction-sheet': 'draft',
   'rough-prompt': 'direct',
-  prompt: 'critique',
+  prompt: 'revise',
 }
 
 function buildStanding(kind: Standing['kind'], confidence: Standing['confidence'], evidence: string[], text: string): Standing {
@@ -304,8 +304,8 @@ function narrativeSentences(text: string): number {
 }
 
 /**
- * A deterministic read of a pasted source: what kind of thing it is, and
- * where that puts it in the Direct → Draft → Critique → Revise regime.
+ * A deterministic read of a pasted source: what kind of thing it is and what
+ * authoring work remains.
  *
  * No model involved — cheap keyword heuristics. They will occasionally be
  * wrong about a borderline source, which is fine: this is a first read for
@@ -565,7 +565,7 @@ export function summarise(findings: Finding[]) {
   }
 }
 
-/** The text handed to the REVISE stage. Passes are omitted — they are not work. */
+/** The actionable findings handed to a prompt replacement operation. */
 export function findingsToText(findings: Finding[]): string {
   const actionable = findings.filter((f) => f.severity !== 'pass')
   if (!actionable.length) return '(the deterministic check found nothing)'

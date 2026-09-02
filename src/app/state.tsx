@@ -1170,7 +1170,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
 
       const written = await run('handoff')
-      const parsed = written ? splitHandoff(written.text) : null
+      // A cancelled or failed hand-off must leave the current prompt/session
+      // intact. Continue is a preparation step; clearing here would make a
+      // failed hand-off look like a successful transition to a new clip.
+      if (!written) return
+      const parsed = splitHandoff(written.text)
 
       setSession((sn) => ({
         story: note?.trim() ? note.trim() : '',

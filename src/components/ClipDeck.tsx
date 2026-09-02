@@ -86,21 +86,22 @@ export function ClipPlayer() {
       {clip.state === 'done' && (
         <div style={{ flex: '0 0 auto', padding: '13px 22px 0' }}>
           <div style={{ borderTop: '1px solid var(--rule)', paddingTop: 13 }}>
-            <div className="lbl" style={{ marginBottom: 8 }}>Direct the next one</div>
+            <div className="lbl" style={{ marginBottom: 8 }}>Prepare the next clip</div>
             <textarea
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="What should change? A note here outranks the hand-off…"
+              placeholder="Optional direction for the next clip…"
               style={{ width: '100%', minHeight: 68, resize: 'vertical', fontFamily: 'var(--serif)', fontSize: 15, lineHeight: 1.5 }}
             />
             <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
               <button className="btn pri" style={{ flexGrow: 1, justifyContent: 'center' }} disabled={busy || !!rendering} onClick={() => void go()}>
-                {busy ? 'Reading the frame…' : 'Continue from here'}
+                {busy ? 'Preparing context…' : 'Use ending as context'}
               </button>
             </div>
             <div className="tok" style={{ display: 'block', marginTop: 8, lineHeight: 1.5 }}>
               Takes the last frame as <span style={{ color: 'var(--kw-picture)' }}>&lt;Picture 1&gt;</span>, writes the
-              hand-off, advances the role from <b>{film.role}</b>, then Direct.
+              hand-off, and advances the role from <b>{film.role}</b>. Then author the next prompt from the prepared
+              context.
             </div>
           </div>
         </div>

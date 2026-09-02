@@ -13,7 +13,7 @@ import { classifyInput } from '../src/lib/lint.ts'
 // proves llm.ts loads cleanly under node — see the note above.
 import { stitch, toLineBoundary, appendedFor } from '../src/lib/llm.ts'
 import { buildMulticlipGraph, multiclipIssues, padForOverlap, snapUp } from '../src/lib/multiclip.ts'
-import { ENTRY_MODES, entryAction, entryLabel } from '../src/lib/entry.ts'
+import { ENTRY_MODES, entryAction, entryLabel, entryWorkflow, shouldContinueStoryLoop } from '../src/lib/entry.ts'
 
 let pass = 0
 let fail = 0
@@ -27,6 +27,10 @@ const entryModesAreComplete = (() => {
     entryAction('story') === 'Generate clip plan' && entryAction('prompt') === 'Refine prompt' && entryAction('idea') === 'Generate H3 prompt'
 })()
 check('entry modes: Story/Prompt/Idea have explicit copy and actions', entryModesAreComplete)
+check('entry dispatch: click and keyboard share the same workflow',
+  entryWorkflow('story') === 'story-plan' && entryWorkflow('prompt') === 'prompt-revise' && entryWorkflow('idea') === 'idea-prompt')
+check('story loop: only a completed pass advances to the next clip',
+  shouldContinueStoryLoop({ status: 'ok' }) && !shouldContinueStoryLoop({ status: 'null' }) && !shouldContinueStoryLoop({ status: 'cancelled' }) && !shouldContinueStoryLoop({ status: 'error' }))
 
 function check(name, cond, detail) {
   if (cond) {

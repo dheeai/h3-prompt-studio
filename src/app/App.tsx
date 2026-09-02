@@ -18,7 +18,7 @@ import { skillTokens } from '../lib/skills'
 import { estTokens, fmtTokens } from '../lib/tokens'
 import { wasSent } from '../lib/context'
 import { classifyInput, looksLikePrompt } from '../lib/lint'
-import { ENTRY_MODES, entryMode, type EntryModeId } from '../lib/entry'
+import { ENTRY_MODES, entryMode, entryWorkflow, shouldContinueStoryLoop, type EntryModeId } from '../lib/entry'
 import type { Breakdown, StageId, Version } from '../lib/types'
 
 /** Stages whose output is a prompt — the only things worth diffing together. */
@@ -164,18 +164,6 @@ export function App() {
     if (nearBottom) el.scrollTop = el.scrollHeight
   }, [streaming])
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-        e.preventDefault()
-        if (!busy && connected) void app.run(nextStage)
-      }
-      if (e.key === 'Escape' && busy) app.cancel()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [app, busy, connected, nextStage])
-
   const send = () => {
     const text = note.trim()
     if (!text || busy || !connected) return
@@ -185,14 +173,16 @@ export function App() {
 
   const startFromEntry = async () => {
     if (!story.trim() || busy || !connected) return
-    if (entryModeId === 'story') {
+    const workflow = entryWorkflow(entryModeId)
+    if (workflow === 'story-plan') {
       const planned = await app.run('breakdown')
       // Story mode is the Long Media path: once the plan lands, author a
       // prompt for every planned unit so the single multiclip gate is useful
       // immediately. Each direct→draft pair remains in version history.
       if (planned) {
-        try {
-          const breakdown = JSON.parse(planned.text) as Breakdown
+        let breakdown: Breakdown | null = null
+        try { breakdown = JSON.parse(planned.text) as Breakdown } catch { /* ClipPlan remains available as recovery. */ }
+        if (breakdown?.clips?.length) {
           for (const clip of breakdown.clips) {
             app.setFilm({
               role: clip.role,
@@ -204,15 +194,13 @@ export function App() {
               clipIndex: clip.index,
             })
             const sheet = await app.run('direct')
-            if (!sheet) break
-            await app.run('draft')
+            if (!shouldContinueStoryLoop({ status: sheet ? 'ok' : 'null' })) break
+            const prompt = await app.run('draft')
+            if (!shouldContinueStoryLoop({ status: prompt ? 'ok' : 'null' })) break
           }
-        } catch {
-          // The existing ClipPlan still exposes per-clip Direct actions if a
-          // provider returned a non-JSON plan; keep that recovery path intact.
         }
       }
-    } else if (entryModeId === 'prompt') {
+    } else if (workflow === 'prompt-revise') {
       await app.run('revise')
     } else {
       // Idea mode is a single guided action: Direct gives the model a
@@ -223,6 +211,27 @@ export function App() {
   }
 
   const activeEntry = entryMode(entryModeId)
+  const focusEntryTab = (id: EntryModeId) => {
+    setEntryModeId(id)
+    // Roving tab stops are only useful when the newly selected tab also owns
+    // DOM focus. Defer until React has committed the selected tab's tabIndex.
+    window.requestAnimationFrame(() => document.getElementById(`entry-${id}-tab`)?.focus())
+  }
+
+  // The visible entry CTA and Cmd/Ctrl+Enter intentionally share this one
+  // dispatcher so the keyboard shortcut cannot silently run a different
+  // stage than the selected Story/Prompt/Idea workflow.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault()
+        void startFromEntry()
+      }
+      if (e.key === 'Escape' && busy) app.cancel()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [app, busy, startFromEntry])
 
   // When a finished prompt is pasted it IS the document — show it typeset
   // rather than leaving the page looking empty below a wall of source text.
@@ -287,8 +296,8 @@ export function App() {
   // document may be a direction sheet, critique, hand-off, or clip plan, but
   // those are never valid substitutes for the current H3 prompt.
   const promptText = liveSplit ? liveSplit.prompt : canonicalPrompt
-  const explanationText = liveSplit ? liveSplit.explanation : current?.explanation ?? ''
-  const changelogList = liveSplit ? liveSplit.changelog : current?.changelog
+  const explanationText = liveSplit ? liveSplit.explanation : canonicalVersion?.explanation ?? ''
+  const changelogList = liveSplit ? liveSplit.changelog : canonicalVersion?.changelog
 
   // What "Copy prompt" copies, and what the linter runs on, must be the
   // prompt alone — never the explanation, never a raw marker.
@@ -345,11 +354,11 @@ export function App() {
             onKeyDown={(e) => {
               if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
                 e.preventDefault()
-                setEntryModeId(ENTRY_MODES[(ENTRY_MODES.findIndex((m) => m.id === mode.id) + 1) % ENTRY_MODES.length].id)
+                focusEntryTab(ENTRY_MODES[(ENTRY_MODES.findIndex((m) => m.id === mode.id) + 1) % ENTRY_MODES.length].id)
               }
               if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
                 e.preventDefault()
-                setEntryModeId(ENTRY_MODES[(ENTRY_MODES.findIndex((m) => m.id === mode.id) + ENTRY_MODES.length - 1) % ENTRY_MODES.length].id)
+                focusEntryTab(ENTRY_MODES[(ENTRY_MODES.findIndex((m) => m.id === mode.id) + ENTRY_MODES.length - 1) % ENTRY_MODES.length].id)
               }
             }}
           >
@@ -398,6 +407,8 @@ export function App() {
             {!story && <div className="studio-examples"><span className="tok">try</span>{EXAMPLES.map((ex) => <button key={ex.label} className="btn sm ghost" onClick={() => app.setStory(ex.text)}>{ex.label}</button>)}</div>}
           </div>
 
+          {story.trim() && <div className="studio-standing"><div className="studio-standing-head"><span className="studio-kicker">STANDING</span><strong>{standing.kind}</strong><span className="tok">{standing.confidence} confidence</span></div><div className="studio-standing-copy">{standing.stands}</div><div className="studio-standing-facts"><span><b>has</b> {standing.has.length ? standing.has.join(', ') : 'nothing yet'}</span><span><b>lacks</b> {standing.lacks.length ? standing.lacks.join(', ') : 'nothing'}</span></div><button className="chip" disabled={busy || !connected} onClick={() => void app.run(standing.suggest)}>suggested: {STAGE_LABEL[standing.suggest]} →</button></div>}
+
           {filmOpen && (
             <div className="studio-film-context">
               <div className="tok">A clip inside a film should carry the film forward. Set its role and hand-off context here.</div>
@@ -444,7 +455,18 @@ export function App() {
           <div className="studio-doc" ref={docRef}>
             {reasoning && <div className="think"><div className="think-head" onClick={() => setThinkOpen((v) => !v)}><span className="tok">{thinkOpen ? '▾' : '▸'}</span><span className="lbl">Thinking</span><span className="tok">{streaming ? `~${fmtTokens(live!.think)} tokens · ${live!.secs.toFixed(0)}s` : `~${fmtTokens(estTokens(reasoning))} tokens, not part of the prompt`}</span>{reasoningStreaming && <span className="spin" />}</div>{thinkOpen && <div className="think-body" ref={thinkRef}>{reasoning}{reasoningStreaming && <span className="think-caret" />}</div>}</div>}
             {current?.truncated && !streaming && <div className="alert warn">Cut off by the server’s output cap after {current.continuations ?? 0} continuation{current.continuations === 1 ? '' : 's'} — this text may be incomplete.</div>}
-            {shown || reasoning ? (diffable && view === 'diff' ? <DiffView before={diffable.before} after={diffable.after} beforeLabel={diffable.label} changelog={current?.changelog} /> : shownIsProse ? <ProseDoc text={shown} streaming={!!streaming} /> : <><Legend text={promptText} /><PromptDoc text={promptText} streaming={!!streaming} /><Explanation text={explanationText} changelog={changelogList} streaming={!!streaming} /></>) : <div className="studio-empty-prompt"><div className="studio-kicker">THE CANONICAL PROMPT APPEARS HERE</div><p>Start with a story, prompt, or idea. Your current version stays singular and is the only text sent to Render.</p><div className="studio-format-preview"><span>integrated_multimodal_description:</span> timed cuts, camera, blocking<br /><span>overall_soundscape:</span> concrete sources, placed in time<br /><span>non_diegetic_music:</span> <em>N/A</em></div></div>}
+            {promptText ? (
+              <div className="studio-canonical-document">
+                <div className="studio-canonical-document-label">CURRENT PROMPT PAYLOAD · copy / lint / render</div>
+                <Legend text={promptText} />
+                <PromptDoc text={promptText} streaming={!!streaming && !shownIsProse} />
+                <Explanation text={explanationText} changelog={changelogList} streaming={!!streaming && !shownIsProse} />
+              </div>
+            ) : !shown && !reasoning ? (
+              <div className="studio-empty-prompt"><div className="studio-kicker">THE CANONICAL PROMPT APPEARS HERE</div><p>Start with a story, prompt, or idea. Your current version stays singular and is the only text sent to Render.</p><div className="studio-format-preview"><span>integrated_multimodal_description:</span> timed cuts, camera, blocking<br /><span>overall_soundscape:</span> concrete sources, placed in time<br /><span>non_diegetic_music:</span> <em>N/A</em></div></div>
+            ) : null}
+            {shownIsProse && shown && <div className="studio-pass-preview"><div className="studio-canonical-document-label">PASS OUTPUT · {STAGE_LABEL[shownStage]} · inspect-only</div><ProseDoc text={shown} streaming={!!streaming} /></div>}
+            {diffable && view === 'diff' && <div className="studio-pass-preview"><div className="studio-canonical-document-label">COMPARISON · inspect-only</div><DiffView before={diffable.before} after={diffable.after} beforeLabel={diffable.label} changelog={current?.changelog} /></div>}
             {error && <div className="alert err studio-error"><span>{error}</span><button className="btn sm ghost" onClick={app.clearError}>dismiss</button></div>}
           </div>
         </section>
@@ -458,9 +480,9 @@ export function App() {
           <section className="studio-render">
             <div className="studio-kicker">04 · RENDER</div><div className="studio-title-row"><h3>ComfyUI</h3><button className="studio-render-ready" onClick={() => setModal('endpoint')}><span className={`studio-health-dot ${app.comfyProbes[app.endpoint?.id ?? '']?.state === 'ok' ? 'ok' : 'idle'}`} />{app.endpoint?.label || 'configure endpoint'}</button></div>
             <div className="studio-render-grid"><div><span>Recipe</span><strong>{app.recipe?.name || 'not configured'}</strong></div><div><span>References</span><strong>{app.plates.length} of 9 bound</strong></div><div><span>Geometry</span><strong>{app.recipe ? `${settings.width ?? app.recipe.defaults.width} × ${settings.height ?? app.recipe.defaults.height}` : '—'}</strong></div><div><span>Seed</span><strong>{settings.seed} · {settings.lockSeed ? 'locked' : 'random'}</strong></div></div>
-            {app.clip?.state === 'done' && <div className="studio-context-receipt"><strong>Continuation is available</strong>Carries the current prompt, film context, bound references, and this clip’s final frame into a new prompt.</div>}
+            {app.clip?.state === 'done' && <div className="studio-context-receipt"><strong>Next clip context is ready</strong>Use the ending frame, current prompt, film context, and bound references to prepare the next clip. You’ll author its prompt in the source rail.</div>}
             <button className="studio-render-current" disabled={!!rendering || app.blockers.length > 0} onClick={() => void app.render()}><span>{rendering ? `Rendering clip ${rendering.index}…` : 'Render current prompt'}</span><span>current →</span></button>
-            {app.clip?.state === 'done' && <button className="studio-continue" disabled={!!rendering} onClick={() => void app.continueFrom(app.clip!.id)}><span>Continue from this clip</span><span>new prompt →</span></button>}
+            {app.clip?.state === 'done' && <button className="studio-continue" disabled={!!rendering} onClick={() => void app.continueFrom(app.clip!.id)}><span>Prepare next clip</span><span>use ending as context →</span></button>}
             {app.blockers.length > 0 && <div className="studio-render-issues">{app.blockers.map((b) => <div key={b}>{b}</div>)}</div>}
             {app.warnings.length > 0 && <div className="studio-render-warnings">{app.warnings.map((w) => <div key={w}>{w}</div>)}</div>}
             <div className="studio-render-links"><button className="btn sm ghost" onClick={() => setModal('recipe')}>Recipe & geometry</button><button className="btn sm ghost" onClick={() => setModal('plates')}>Bind plates</button></div>

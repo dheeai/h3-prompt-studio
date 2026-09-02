@@ -10,6 +10,8 @@ export interface EntryMode {
   action: string
 }
 
+export type EntryWorkflow = 'story-plan' | 'prompt-revise' | 'idea-prompt'
+
 export const ENTRY_MODES: readonly EntryMode[] = [
   {
     id: 'story',
@@ -47,4 +49,16 @@ export function entryLabel(id: EntryModeId): string {
 
 export function entryAction(id: EntryModeId): string {
   return entryMode(id).action
+}
+
+/** The canonical action behind both the visible CTA and Cmd/Ctrl+Enter. */
+export function entryWorkflow(id: EntryModeId): EntryWorkflow {
+  if (id === 'story') return 'story-plan'
+  if (id === 'prompt') return 'prompt-revise'
+  return 'idea-prompt'
+}
+
+/** Story mode only advances when the pass actually completed with a value. */
+export function shouldContinueStoryLoop(result: { status: 'ok' | 'null' | 'cancelled' | 'error' }): boolean {
+  return result.status === 'ok'
 }

@@ -48,7 +48,7 @@ function autosize(el: HTMLTextAreaElement | null) {
 
 export function App() {
   const app = useApp()
-  const { ready, skills, settings, providers, probes, story, versions, current, streaming, chat, film, error, failedReasoning, interruptedReasoning, continuation, context } = app
+  const { ready, skills, settings, providers, probes, story, versions, current, streaming, chat, film, error, failedReasoning, interruptedReasoning, continuation, context, studioMode: entryModeId } = app
   const { clips, rendering } = app
   const [modal, setModal] = useState<'connect' | 'skills' | 'settings' | 'plates' | 'recipe' | 'endpoint' | null>(null)
   const [copied, setCopied] = useState(false)
@@ -58,7 +58,6 @@ export function App() {
   const [confirmClear, setConfirmClear] = useState(false)
   const [view, setView] = useState<'result' | 'diff'>('result')
   const [filmOpen, setFilmOpen] = useState(false)
-  const [entryModeId, setEntryModeId] = useState<EntryModeId>('story')
   const [workspace, setWorkspace] = useState<'studio' | 'agent'>('studio')
   const [promptLoop, setPromptLoop] = useState<{ index: number; total: number; stage: 'direct' | 'draft' } | null>(null)
   const promptLoopStopRef = useRef(false)
@@ -173,7 +172,7 @@ export function App() {
     const text = note.trim()
     if (!text || busy || !connected) return
     setNote('')
-    void app.run('freeform', text)
+    void app.run('freeform', text, { studioMode: entryModeId })
   }
 
   const startFromEntry = async () => {
@@ -182,14 +181,14 @@ export function App() {
     if (workflow === 'story-plan') {
       // Story's primary action deliberately stops at the Long Media plan. A
       // separate explicit action below starts the multi-call authoring loop.
-      await app.run('breakdown')
+      await app.run('breakdown', undefined, { studioMode: 'story' })
     } else if (workflow === 'prompt-revise') {
-      await app.run('revise')
+      await app.run('revise', undefined, { studioMode: 'prompt' })
     } else {
       // Idea mode is a single guided action: Direct gives the model a
       // direction sheet, then Draft turns that sheet into the canonical H3
       // prompt. Both passes remain in history for inspection.
-      await app.rebuild()
+      await app.rebuild('idea')
     }
   }
 
@@ -210,10 +209,10 @@ export function App() {
           clipIndex: clip.index,
         })
         setPromptLoop({ index: i + 1, total: plan.clips.length, stage: 'direct' })
-        const sheet = await app.run('direct')
+        const sheet = await app.run('direct', undefined, { studioMode: 'story' })
         if (promptLoopStopRef.current || !shouldContinueStoryLoop({ status: sheet ? 'ok' : 'null' })) break
         setPromptLoop({ index: i + 1, total: plan.clips.length, stage: 'draft' })
-        const prompt = await app.run('draft')
+        const prompt = await app.run('draft', undefined, { studioMode: 'story' })
         if (promptLoopStopRef.current || !shouldContinueStoryLoop({ status: prompt ? 'ok' : 'null' })) break
       }
     } finally {
@@ -229,7 +228,7 @@ export function App() {
 
   const activeEntry = entryMode(entryModeId)
   const focusEntryTab = (id: EntryModeId) => {
-    setEntryModeId(id)
+    app.setStudioMode(id)
     // Roving tab stops are only useful when the newly selected tab also owns
     // DOM focus. Defer until React has committed the selected tab's tabIndex.
     window.requestAnimationFrame(() => document.getElementById(`entry-${id}-tab`)?.focus())
@@ -374,7 +373,7 @@ export function App() {
             aria-selected={entryModeId === mode.id}
             aria-controls="studio-workspace"
             tabIndex={entryModeId === mode.id ? 0 : -1}
-            onClick={() => setEntryModeId(mode.id)}
+            onClick={() => focusEntryTab(mode.id)}
             onKeyDown={(e) => {
               if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
                 e.preventDefault()
@@ -430,7 +429,7 @@ export function App() {
             <div className="studio-source-secondary">
               {app.breakdown ? (
                 promptLoop ? <button className="btn sm ghost" onClick={stopPromptLoop}>Stop prompt generation</button> : <button className="btn sm ghost" onClick={() => void generateAllPrompts()} disabled={busy || !connected}>Generate all prompts</button>
-              ) : <button className="btn sm ghost" onClick={() => void app.run('breakdown')} disabled={!story.trim() || busy || !connected}>Break into clips</button>}
+              ) : <button className="btn sm ghost" onClick={() => void app.run('breakdown', undefined, { studioMode: 'story' })} disabled={!story.trim() || busy || !connected}>Break into clips</button>}
               <span className="tok">Long Media plan stays available from every entry mode.</span>
             </div>
             {promptLoop && <div className="studio-loop-progress" role="status" aria-live="polite"><span>Prompt {promptLoop.index}/{promptLoop.total}</span><strong>{promptLoop.stage === 'direct' ? 'Directing' : 'Drafting'}</strong><span className="tok">Stop to leave the last successful prompt in place.</span></div>}

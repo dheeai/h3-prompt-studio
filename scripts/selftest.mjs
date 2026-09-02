@@ -27,7 +27,7 @@ import {
   shouldContinueStoryLoop,
 } from '../src/lib/entry.ts'
 import { agentApiKey, buildAgentModel, buildAgentTools, reduceAgentEvent, agentEventStatus } from '../src/lib/agent.ts'
-import { buildH3SystemPrompt } from '../src/lib/context.ts'
+import { buildH3SystemPrompt, buildStudioSystemPrompt } from '../src/lib/context.ts'
 
 let pass = 0
 let fail = 0
@@ -122,10 +122,32 @@ check('studio stage budgets: other stages remain explicitly finite', continuatio
   }
   const studioPrompt = buildH3SystemPrompt(built, 'studio')
   const agentPrompt = buildH3SystemPrompt(built, 'agent')
+  const storyModePrompt = buildStudioSystemPrompt(built, 'story')
+  const promptModePrompt = buildStudioSystemPrompt(built, 'prompt')
+  const ideaModePrompt = buildStudioSystemPrompt(built, 'idea')
   const count = (haystack, needle) => haystack.split(needle).length - 1
   check('H3 system prompt: Studio includes the complete selected skill context once', count(studioPrompt, built.text) === 1 && count(studioPrompt, 'UNIQUE SKILL BODY') === 1)
   check('H3 system prompt: Agent includes the complete selected skill context once plus Agent rules', count(agentPrompt, built.text) === 1 && count(agentPrompt, 'UNIQUE SKILL BODY') === 1 && agentPrompt.includes('deterministic Studio tools'))
   check('H3 system prompt: surfaces have distinct operational rules', studioPrompt.includes('Studio authoring surface') && !studioPrompt.includes('deterministic Studio tools') && agentPrompt.includes('deterministic Studio tools'))
+  check('Studio system prompt: each entry mode has a non-empty, distinct contract',
+    storyModePrompt.length > 500 && promptModePrompt.length > 500 && ideaModePrompt.length > 500 &&
+    storyModePrompt !== promptModePrompt && promptModePrompt !== ideaModePrompt && storyModePrompt !== ideaModePrompt)
+  check('H3 system prompt: Studio surface routes the selected entry mode',
+    buildH3SystemPrompt(built, 'studio', 'prompt') === promptModePrompt)
+  check('Studio system prompt: selected skills remain one contiguous block per mode',
+    count(storyModePrompt, built.text) === 1 && count(promptModePrompt, built.text) === 1 && count(ideaModePrompt, built.text) === 1 &&
+    count(storyModePrompt, 'UNIQUE SKILL BODY') === 1 && count(promptModePrompt, 'UNIQUE SKILL BODY') === 1 && count(ideaModePrompt, 'UNIQUE SKILL BODY') === 1)
+  check('Studio system prompt: contracts explain how to specify and build the canonical prompt',
+    [storyModePrompt, promptModePrompt, ideaModePrompt].every((prompt) =>
+      prompt.includes('canonical prompt') && prompt.includes('integrated_multimodal_description') && prompt.includes('overall_soundscape')))
+  check('Studio system prompt: mode contracts route to their intended authoring process',
+    storyModePrompt.toLowerCase().includes('extract the narrative spine') && storyModePrompt.includes('continuity-safe clips') &&
+    promptModePrompt.includes('one complete replacement') && promptModePrompt.includes('surgical') &&
+    ideaModePrompt.toLowerCase().includes('resolve the core moment') && ideaModePrompt.includes('submission-ready prompt'))
+  check('Studio system prompt: missing context still returns a mode contract',
+    buildStudioSystemPrompt(undefined, 'idea').toLowerCase().includes('idea mode') && buildStudioSystemPrompt(undefined, 'idea').includes('# No selected H3 skills'))
+  check('H3 system prompt: Agent contract stays Agent-specific after Studio mode split',
+    agentPrompt.includes('deterministic Studio tools') && !agentPrompt.includes('Idea mode') && !agentPrompt.includes('continuity-safe clips'))
 }
 
 check('continuation plates: a replaced frame is scoped to its source clip',

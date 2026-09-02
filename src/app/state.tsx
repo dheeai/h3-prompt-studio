@@ -13,6 +13,7 @@ import type { MulticlipClip, PaddedClip } from '../lib/multiclip'
 import { fetchBundledSkills, loadSkills, removeSkill, saveSkill } from '../lib/skills'
 import { estTokens } from '../lib/tokens'
 import { appendContinuationHistory, authorContinuation, continuationContextOverride, continuationPlateIsFresh, continuationSource, interruptedReasoningText } from '../lib/entry'
+import type { EntryModeId } from '../lib/entry'
 import type {
   Breakdown, ChatTurn, Clip, ComfyEndpoint, FilmContext, Finding, Plate, ProbeResult, Provider,
   Recipe, Selection, Settings, Skill, StageId, Version,
@@ -115,6 +116,8 @@ interface RunContextOverride {
   previous?: string
   /** Attribute the pass to the selected clip's position in the film. */
   clipIndex?: number
+  /** Explicit Studio entry contract for this pass. */
+  studioMode?: EntryModeId
 }
 
 /** A prompt version written by a deterministic surface such as Agent. */
@@ -181,8 +184,11 @@ export interface Api {
   interruptedReasoning: string | null
   findings: Finding[]
   context: BuiltContext | null
+  /** Current Studio entry mode; Agent has its own fixed contract. */
+  studioMode: EntryModeId
 
   setStory: (s: string) => void
+  setStudioMode: (mode: EntryModeId) => void
   setFilm: (f: Partial<FilmContext>) => void
   patchSettings: (p: Partial<Settings>) => void
   toggleSkill: (skill: Skill) => void
@@ -193,7 +199,7 @@ export interface Api {
   refreshProbe: (id: string) => Promise<void>
   run: (stage: StageId, note?: string, override?: RunContextOverride) => Promise<Version | null>
   /** Direct then Draft — a full re-synthesis rather than an edit. */
-  rebuild: () => Promise<void>
+  rebuild: (studioMode?: EntryModeId) => Promise<void>
 
   // ── the render loop ─────────────────────────────────────────────────
   plates: Plate[]
@@ -256,6 +262,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false)
   const [skills, setSkills] = useState<Skill[]>([])
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
+  const [studioMode, setStudioMode] = useState<EntryModeId>('story')
   const [providers, setProvidersState] = useState<Provider[]>(DEFAULT_PROVIDERS)
   const [probes, setProbes] = useState<Record<string, ProbeResult>>({})
   const [session, setSession] = useState<Session>({ story: '', versions: [], currentId: null, chat: [] })
@@ -642,7 +649,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           // the frame and the thread follow, which is what makes a composer
           // turn a continuation rather than a cold single-shot request.
           messages: [
-            { role: 'system', content: buildH3SystemPrompt(ctx, 'studio') },
+            { role: 'system', content: buildH3SystemPrompt(ctx, 'studio', override?.studioMode ?? studioMode) },
             { role: 'user', content: user },
             ...(stage === 'freeform'
               ? [
@@ -793,13 +800,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setStreaming(null)
       }
     },
-    [providers, settings, context, skills, findings],
+    [providers, settings, context, skills, findings, studioMode],
   )
 
-  const rebuild = useCallback(async () => {
-    const sheet = await run('direct')
-    if (sheet) await run('draft')
-  }, [run])
+  const rebuild = useCallback(async (mode?: EntryModeId) => {
+    const studioModeOverride = mode ?? studioMode
+    const sheet = await run('direct', undefined, { studioMode: studioModeOverride })
+    if (sheet) await run('draft', undefined, { studioMode: studioModeOverride })
+  }, [run, studioMode])
 
   const reset = useCallback(async () => {
     abortRef.current?.abort()
@@ -1366,7 +1374,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // A user may have selected an older clip before pressing Continue. The
       // hand-off must read that clip's stored prompt and film context, never
       // the session's currently selected pass.
-      const written = await run('handoff', undefined, continuationContextOverride(c))
+      const written = await run('handoff', undefined, { ...continuationContextOverride(c), studioMode: 'story' })
       if (isCancelled()) {
         markCancelled('handoff')
         return
@@ -1420,7 +1428,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           if (isCancelled()) return null
           failedStage = stage
           setContinuation({ clipId, phase: stage, state: 'running', source: nextSource })
-          return run(stage)
+          return run(stage, undefined, { studioMode: 'story' })
         }, isCancelled)
       } catch (e) {
         // `run()` normally turns provider failures into null, but preserve an
@@ -1474,7 +1482,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     continuation,
     findings,
     context,
+    studioMode,
     setStory,
+    setStudioMode,
     setFilm,
     patchSettings,
     toggleSkill,

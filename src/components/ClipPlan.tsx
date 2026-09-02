@@ -51,7 +51,7 @@ export function ClipPlan() {
                     title: c.title,
                     clipIndex: c.index,
                   })
-                  void app.run('direct')
+                  void app.run('direct', undefined, { studioMode: 'story' })
                 }}
               >
                 Direct this clip

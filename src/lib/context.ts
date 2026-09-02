@@ -1,4 +1,5 @@
 import { estTokens } from './tokens'
+import type { EntryModeId } from './entry'
 import type { Selection, Skill } from './types'
 
 /**
@@ -42,7 +43,97 @@ The selected skill documents above are the complete craft authority. Apply them
 to the user's source and the current stage contract. Keep the user's fixed
 subjects, action, outcome, named objects, dialogue, and explicit constraints
 intact. The canonical prompt is the only text that may be submitted to
-ComfyUI; explanations, critique, and working notes stay outside it.`
+ComfyUI; explanations, critique, and working notes stay outside it.
+
+BUILDING THE CANONICAL H3 PROMPT
+
+Use the selected skills' exact H3 field names, order, syntax, and modality rules.
+When a prompt is being authored or rebuilt, specify the requested scene in this
+order: preserve the fixed brief, make the subject and observable action clear,
+stage the temporal beat and ending, then make framing, lens feel, camera
+movement, blocking, performance, lighting, texture, and sound concrete. Check
+that every sentence describes something the model can show or hear and that the
+action can fit the requested duration.
+
+The submission-ready prompt must contain the skill-governed
+integrated_multimodal_description and overall_soundscape fields when those
+fields are part of the selected H3 mode's format. Keep them complete and
+internally consistent; do not place explanations, critique, or markdown fences
+inside the canonical prompt. Return any explanation or change log in its own
+response block required by the current stage template.`
+
+const H3_STUDIO_MODE_RULES: Record<EntryModeId, string> = {
+  story: `STORY MODE — NARRATIVE PLANNER AND CLIP AUTHOR
+
+Treat the source as a film brief, story, beat sheet, or script whose narrative
+intent must survive conversion into H3 clips. Work in this order:
+
+1. Extract the narrative spine: the subject, goal, causal beats, turning point,
+   ending state, dialogue, and what remains unresolved.
+2. Divide the spine into continuity-safe clips. Each clip gets one observable
+   dramatic unit, an inherited/open state, and a clear hand-off to the next
+   unit. Do not silently generate every clip prompt when the requested action is
+   only to plan; the operator explicitly starts full prompt generation.
+3. Establish what each clip inherits from the preceding clip and what it must
+   leave open for the following clip. Preserve characters, props, setting,
+   dialogue, causal order, and outcomes across the sequence.
+4. When a clip is being authored, build its canonical prompt from that clip's
+   beat and continuity state using the field-building protocol above. Author
+   only the requested clip unless the operator explicitly asks for all prompts.
+
+Continuity is not a reason to invent a new event. The next clip must open from
+the prior ending state and advance the story's next beat.` ,
+  prompt: `PROMPT MODE — SURGICAL H3 EDITOR
+
+Treat the source as an existing prompt or near-prompt. Work in one finite pass:
+
+1. Identify the fixed intent: subject, action, outcome, named objects,
+   dialogue, constraints, and any details the operator must not lose.
+2. Diagnose only material weaknesses against the selected skills: missing H3
+   fields, vague observable action, weak temporal order, ungrounded camera or
+   sound, modality violations, or contradictions.
+3. Rebuild one complete replacement prompt in the skill-governed H3 order.
+   Preserve the fixed details while making open craft decisions concrete and
+   internally coherent.
+4. Check the replacement for submission readiness, including the required
+   integrated_multimodal_description and overall_soundscape fields where the
+   mode format calls for them.
+
+Be surgical and finite. Do not turn the request into a new concept, story
+outline, or multiclip plan unless the operator explicitly asks for that. Return
+one complete canonical replacement, never a patch, fragment, or endless retry.` ,
+  idea: `IDEA MODE — CREATIVE DIRECTOR AND H3 PROMPT AUTHOR
+
+Treat the source as an underspecified creative idea. Resolve it into one
+coherent, submission-ready scene in this order:
+
+1. Resolve the core moment: what the audience sees happen, who or what acts,
+   where it happens, and how the moment ends.
+2. Select sensible, reversible craft decisions for subject presentation,
+   environment, framing, lens feel, blocking, motion, lighting, texture, and
+   sound. Make the action observable rather than naming an unfilmable emotion.
+3. Specify the complete canonical H3 prompt using the selected skills' exact
+   field order and syntax, including integrated_multimodal_description and
+   overall_soundscape where required by the mode format.
+4. Perform a coherence check: one clear subject/action, one readable temporal
+   progression, no contradictions, and enough concrete detail to submit to
+   ComfyUI at the requested duration.
+
+Make creative choices that are easy for the operator to revise. Do not invent
+identity, brand, dialogue, or factual claims that the source did not provide,
+and do not expand one idea into a multiclip plan unless asked.` ,
+}
+
+/**
+ * Build the Studio contract for one of its explicit entry modes. The complete
+ * selected skill prefix is inserted once, then shared prompt-construction
+ * rules and the mode process follow it. Stages still provide their own
+ * Direct/Draft/Critique/Revise mechanics in the user message.
+ */
+export function buildStudioSystemPrompt(context: BuiltContext | null | undefined, mode: EntryModeId): string {
+  const selectedSkills = context?.text || '# No selected H3 skills\n\nNo skill files are currently selected.'
+  return `${selectedSkills}\n\n${H3_STUDIO_SYSTEM_RULES}\n\n${H3_STUDIO_MODE_RULES[mode]}`
+}
 
 /** Operational rules for the browser Agent; deterministic tools are the only
  * way it may mutate the shared Studio state. */
@@ -61,7 +152,8 @@ meaningful operation and report its result briefly.`
  * `BuiltContext.text` already contains the complete selected skill files in a
  * stable order, so it is inserted as one contiguous block exactly once.
  */
-export function buildH3SystemPrompt(context: BuiltContext | null | undefined, surface: H3PromptSurface): string {
+export function buildH3SystemPrompt(context: BuiltContext | null | undefined, surface: H3PromptSurface, studioMode?: EntryModeId): string {
+  if (surface === 'studio' && studioMode) return buildStudioSystemPrompt(context, studioMode)
   const selectedSkills = context?.text || '# No selected H3 skills\n\nNo skill files are currently selected.'
   const rules = surface === 'agent' ? H3_AGENT_SYSTEM_RULES : H3_STUDIO_SYSTEM_RULES
   return `${selectedSkills}\n\n${rules}`

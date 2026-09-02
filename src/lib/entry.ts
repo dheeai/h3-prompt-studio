@@ -24,20 +24,20 @@ export const ENTRY_MODES: readonly EntryMode[] = [
     action: 'Generate multi-shot plan',
   },
   {
-    id: 'prompt',
-    label: 'Prompt',
-    title: 'Prompt',
-    description: 'Improve an existing prompt',
-    placeholder: 'Paste a rough or finished H3 prompt…',
-    action: 'Refine prompt',
-  },
-  {
     id: 'idea',
     label: 'Clip',
     title: 'Clip',
     description: 'Turn an idea into one H3 clip',
     placeholder: 'Describe the clip you want…',
     action: 'Generate clip prompt',
+  },
+  {
+    id: 'prompt',
+    label: 'Prompt',
+    title: 'Prompt',
+    description: 'Improve an existing prompt',
+    placeholder: 'Paste a rough or finished H3 prompt…',
+    action: 'Refine prompt',
   },
 ]
 

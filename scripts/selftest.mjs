@@ -38,13 +38,13 @@ let fail = 0
 
 const entryModesAreComplete = (() => {
   const modes = ENTRY_MODES.map((m) => m.id)
-  return JSON.stringify(modes) === JSON.stringify(['story', 'prompt', 'idea']) &&
+  return JSON.stringify(modes) === JSON.stringify(['story', 'idea', 'prompt']) &&
     entryLabel('story') === 'Scene (Multi-shot)' && entryLabel('prompt') === 'Prompt' && entryLabel('idea') === 'Clip' &&
     entryAction('story') === 'Generate multi-shot plan' && entryAction('prompt') === 'Refine prompt' && entryAction('idea') === 'Generate clip prompt'
 })()
 check('entry modes: Story/Prompt/Idea have explicit copy and actions', entryModesAreComplete)
 check('entry modes: approved user-facing names are Scene (Multi-shot), Prompt, and Clip',
-  JSON.stringify(ENTRY_MODES.map((m) => m.label)) === JSON.stringify(['Scene (Multi-shot)', 'Prompt', 'Clip']))
+  JSON.stringify(ENTRY_MODES.map((m) => m.label)) === JSON.stringify(['Scene (Multi-shot)', 'Clip', 'Prompt']))
 check('entry modes: source metadata uses the approved terminology throughout',
   entryMode('story').title === 'Scene (Multi-shot)' && entryMode('story').placeholder.includes('scene') &&
   entryMode('prompt').title === 'Prompt' && entryMode('prompt').placeholder.includes('prompt') &&

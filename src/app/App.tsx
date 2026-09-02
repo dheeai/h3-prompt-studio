@@ -14,16 +14,17 @@ import { RecipePanel } from '../components/RecipePanel'
 import { EndpointPanel } from '../components/RenderPanel'
 import { ClipPlayer, FilmStrip } from '../components/ClipDeck'
 import { AgentPanel } from '../components/AgentPanel'
-import { STAGE_INFO, STAGE_LABEL, STAGE_ORDER, splitReply } from '../lib/stages'
+import { STAGE_LABEL, splitReply } from '../lib/stages'
 import { skillTokens } from '../lib/skills'
 import { estTokens, fmtTokens } from '../lib/tokens'
 import { wasSent } from '../lib/context'
 import { classifyInput, looksLikePrompt } from '../lib/lint'
 import { ENTRY_MODES, entryMode, entryStartCopy, entryWorkflow, shouldContinueStoryLoop, type EntryModeId } from '../lib/entry'
-import type { StageId, Version } from '../lib/types'
+import { runStatusText, studioActions, type StudioActionId } from '../lib/studio-workflow'
+import type { StageId } from '../lib/types'
 
 /** Stages whose output is a prompt — the only things worth diffing together. */
-const PROMPT_STAGES_UI = new Set<StageId>(['draft', 'revise', 'freeform'])
+const PROMPT_STAGES_UI = new Set<StageId>(['draft', 'revise', 'rebuild', 'freeform'])
 
 const EXAMPLES: { label: string; text: string }[] = [
   {
@@ -80,48 +81,6 @@ export function App() {
   // shown to the operator directly (the Standing strip) and handed to the
   // model as {{standing}} so Direct can confirm or correct it.
   const standing = useMemo(() => classifyInput(story), [story])
-
-  const nextStage: StageId = useMemo(() => {
-    if (!current) return standing.suggest
-    const i = STAGE_ORDER.indexOf(current.stage)
-    if (i === -1) return 'revise'
-    return STAGE_ORDER[Math.min(i + 1, STAGE_ORDER.length - 1)]
-  }, [current, standing])
-
-  // The rail is a timeline of passes, so clicking one navigates to it. Running
-  // is the button's job — conflating the two meant a completed pass could only
-  // ever be re-run, never re-read.
-  const passesByStage = useMemo(() => {
-    const m = new Map<StageId, Version[]>()
-    for (const v of versions) m.set(v.stage, [...(m.get(v.stage) ?? []), v])
-    return m
-  }, [versions])
-
-  const reached = useMemo(() => new Set(versions.map((v) => v.stage)), [versions])
-  const viewingStage = current?.stage ?? null
-
-  // Critique and Revise operate on a prompt. A direction sheet is prose, and
-  // auditing it for prompt fields produces confident nonsense — so say what is
-  // missing rather than letting it run.
-  const documentIsPrompt = current ? current.stage !== 'direct' : looksLikePrompt(story)
-  const blockedReason = (stage: StageId): string | null => {
-    const needs = STAGE_INFO[stage].needs
-    if (needs === 'story' && !story.trim()) return 'Paste something first.'
-    if (needs === 'anything' && !story.trim() && !current) return 'Paste something first.'
-    if (needs === 'prompt' && !documentIsPrompt) {
-      return current ? 'Needs a prompt — the page currently holds a direction sheet. Run Draft first.' : 'Needs a prompt. Paste one, or run Direct then Draft.'
-    }
-    return null
-  }
-
-  const openStage = (s: StageId) => {
-    const passes = passesByStage.get(s)
-    if (passes?.length) {
-      app.selectVersion(passes[passes.length - 1].id)
-      return
-    }
-    if (!busy && connected && !blockedReason(s)) void app.run(s)
-  }
 
   useEffect(() => autosize(storyRef.current), [story, ready, editingSource])
 
@@ -227,6 +186,32 @@ export function App() {
   }
 
   const activeEntry = entryMode(entryModeId)
+  const visibleActions = useMemo(() => studioActions(entryModeId, !!app.breakdown), [entryModeId, app.breakdown])
+  const primaryAction = visibleActions[0]
+
+  const generateSelectedPrompt = async () => {
+    const plan = app.breakdown
+    if (!plan?.clips.length || busy || !connected) return
+    const selected = plan.clips.find((clip) => clip.index === film.clipIndex) ?? plan.clips[0]
+    app.setFilm({
+      role: selected.role,
+      spine: plan.spine,
+      precedes: selected.precedes,
+      follows: selected.follows,
+      covers: selected.covers,
+      title: selected.title,
+      clipIndex: selected.index,
+    })
+    await app.rebuild('story')
+  }
+
+  const runVisibleAction = async (id: StudioActionId) => {
+    if (id === 'generate-selected') return generateSelectedPrompt()
+    if (id === 'generate-all') return generateAllPrompts()
+    if (id === 'rebuild') return app.rebuild('prompt')
+    return startFromEntry()
+  }
+
   const focusEntryTab = (id: EntryModeId) => {
     app.setStudioMode(id)
     // Roving tab stops are only useful when the newly selected tab also owns
@@ -293,7 +278,7 @@ export function App() {
   // Direct and Critique return prose. Rendering markdown as one monospace
   // block made a structured critique read as an undifferentiated wall.
   const shownStage: StageId = streaming?.stage ?? current?.stage ?? (pastedPrompt ? 'draft' : 'direct')
-  const shownIsProse = shownStage !== 'draft' && shownStage !== 'revise' && shownStage !== 'freeform'
+  const shownIsProse = shownStage !== 'draft' && shownStage !== 'revise' && shownStage !== 'rebuild' && shownStage !== 'freeform'
   const longSource = story.length > 600
   const collapseSource = (pastedPrompt || longSource) && !editingSource
   const loadedSkills = skills.filter((s) => settings.selection[s.id]?.length)
@@ -303,7 +288,7 @@ export function App() {
   // in the raw text, so the live text is split too — this is what keeps the
   // prompt section filling in first and the explanation arriving separately,
   // rather than showing the reader the markers themselves.
-  const isSplitStage = shownStage === 'draft' || shownStage === 'revise' || shownStage === 'freeform'
+  const isSplitStage = shownStage === 'draft' || shownStage === 'revise' || shownStage === 'rebuild' || shownStage === 'freeform'
   const liveSplit = useMemo(() => (isSplitStage && streaming ? splitReply(streaming.text) : null), [isSplitStage, streaming])
   const canonicalVersion = useMemo(() => {
     if (current && PROMPT_STAGES_UI.has(current.stage)) return current
@@ -423,20 +408,22 @@ export function App() {
               <textarea ref={storyRef} value={story} onChange={(e) => app.setStory(e.target.value)} placeholder={activeEntry.placeholder} rows={4} aria-label={activeEntry.title} />
             )}
             <div className="studio-source-hint">{activeEntry.id === 'story' ? 'H3 will divide this into dramatic units, then keep continuity across the resulting prompts.' : activeEntry.id === 'prompt' ? 'Skills preserve your intent while repairing structure, timing, and model-specific weaknesses.' : 'One sentence is enough; the skills will supply shot logic and sound.'}</div>
-            <button className="studio-source-action" onClick={() => void startFromEntry()} disabled={!story.trim() || busy || !connected}>
-              <span>{activeEntry.action}</span><span className="tok">⌘ ↵</span>
+            <button className="studio-source-action" onClick={() => primaryAction && void runVisibleAction(primaryAction.id)} disabled={!story.trim() || busy || !connected}>
+              <span>{busy && streaming ? runStatusText(streaming.stage, streaming.phase, streaming.continuations) : primaryAction?.label ?? activeEntry.action}</span><span className="tok">⌘ ↵</span>
             </button>
             <div className="studio-source-secondary">
-              {app.breakdown ? (
-                promptLoop ? <button className="btn sm ghost" onClick={stopPromptLoop}>Stop prompt generation</button> : <button className="btn sm ghost" onClick={() => void generateAllPrompts()} disabled={busy || !connected}>Generate all prompts</button>
-              ) : <button className="btn sm ghost" onClick={() => void app.run('breakdown', undefined, { studioMode: 'story' })} disabled={!story.trim() || busy || !connected}>Break into clips</button>}
-              <span className="tok">Long Media plan stays available from every entry mode.</span>
+              {busy ? <button className="btn sm ghost" onClick={promptLoop ? stopPromptLoop : app.cancel}>Stop</button> : visibleActions.slice(1).map((action) => (
+                <button key={action.id} className="btn sm ghost" onClick={() => void runVisibleAction(action.id)} disabled={!story.trim() || !connected}>
+                  {action.label}
+                </button>
+              ))}
+              <span className="tok">{entryModeId === 'story' ? 'Plan first, then author selected or all prompts.' : entryModeId === 'prompt' ? 'Both operations return one canonical prompt.' : 'The generated prompt becomes the current render payload.'}</span>
             </div>
-            {promptLoop && <div className="studio-loop-progress" role="status" aria-live="polite"><span>Prompt {promptLoop.index}/{promptLoop.total}</span><strong>{promptLoop.stage === 'direct' ? 'Directing' : 'Drafting'}</strong><span className="tok">Stop to leave the last successful prompt in place.</span></div>}
+            {promptLoop && <div className="studio-loop-progress" role="status" aria-live="polite"><span>Prompt {promptLoop.index}/{promptLoop.total}</span><strong>Authoring</strong><span className="tok">Stop to leave the last successful prompt in place.</span></div>}
             {!story && <div className="studio-examples"><span className="tok">try</span>{EXAMPLES.map((ex) => <button key={ex.label} className="btn sm ghost" onClick={() => app.setStory(ex.text)}>{ex.label}</button>)}</div>}
           </div>
 
-          {story.trim() && <div className="studio-standing"><div className="studio-standing-head"><span className="studio-kicker">STANDING</span><strong>{standing.kind}</strong><span className="tok">{standing.confidence} confidence</span></div><div className="studio-standing-copy">{standing.stands}</div><div className="studio-standing-facts"><span><b>has</b> {standing.has.length ? standing.has.join(', ') : 'nothing yet'}</span><span><b>lacks</b> {standing.lacks.length ? standing.lacks.join(', ') : 'nothing'}</span></div><button className="chip" disabled={busy || !connected} onClick={() => void app.run(standing.suggest)}>suggested: {STAGE_LABEL[standing.suggest]} →</button></div>}
+          {story.trim() && <div className="studio-standing"><div className="studio-standing-head"><span className="studio-kicker">STANDING</span><strong>{standing.kind}</strong><span className="tok">{standing.confidence} confidence</span></div><div className="studio-standing-copy">{standing.stands}</div><div className="studio-standing-facts"><span><b>has</b> {standing.has.length ? standing.has.join(', ') : 'nothing yet'}</span><span><b>lacks</b> {standing.lacks.length ? standing.lacks.join(', ') : 'nothing'}</span></div><button className="chip" disabled={busy || !connected || !primaryAction} onClick={() => primaryAction && void runVisibleAction(primaryAction.id)}>next: {primaryAction?.label ?? activeEntry.action} →</button></div>}
 
           {filmOpen && (
             <div className="studio-film-context">
@@ -474,9 +461,19 @@ export function App() {
             </div>
           </div>
 
-          <div className="studio-stage-tools">
-            <div className="studio-stage-list">{STAGE_ORDER.map((s, i) => { const done = reached.has(s); const blocked = blockedReason(s); return <span key={s} className="studio-stage-item">{i > 0 && <span className="studio-stage-line" />}<button className={`studio-stage-button${s === nextStage ? ' active' : ''}${done ? ' done' : ''}${s === viewingStage ? ' viewing' : ''}`} onClick={() => openStage(s)} disabled={busy || (!done && (!connected || !!blocked))}><span>{done ? '✓' : i + 1}</span>{STAGE_LABEL[s]}</button></span> })}</div>
-            <div className="studio-stage-actions">{busy ? <><span className="spin" /><button className="btn sm" onClick={app.cancel}>Stop</button></> : <>{documentIsPrompt && <button className="btn sm ghost" onClick={() => void app.rebuild()} disabled={!connected || !story.trim()}>Rebuild</button>}<button className="btn sm ghost" onClick={() => void app.run(nextStage)} disabled={!connected || !!blockedReason(nextStage)}>{connected ? `Run ${STAGE_LABEL[nextStage]}` : 'Connect a model'}</button>{current && <button className="btn sm ghost" onClick={() => void app.run(current.stage)} disabled={!connected || !!blockedReason(current.stage)}>Re-run</button>}</>}</div>
+          <div className="studio-workflow-tools" aria-label={`${activeEntry.label} workflow`}>
+            <div>
+              <div className="studio-kicker">WORKFLOW</div>
+              <div className="studio-workflow-summary">
+                {entryModeId === 'story'
+                  ? app.breakdown ? 'Plan ready · choose a prompt to author' : 'Source → clip plan'
+                  : entryModeId === 'prompt' ? 'Source → canonical replacement' : 'Idea → canonical prompt'}
+              </div>
+            </div>
+            <div className="studio-workflow-note">
+              {entryModeId === 'prompt' ? 'Revise and Rebuild each run once; chat continues from the latest canonical prompt.' : 'Quality passes stay bounded and internal; the current prompt is always the render payload.'}
+            </div>
+            {streaming && <div className="studio-run-status" role="status" aria-live="polite"><span className="spin" /><strong>{runStatusText(streaming.stage, streaming.phase, streaming.continuations)}</strong></div>}
           </div>
 
           <div className="studio-doc-tools"><button className={`studio-quiet-action${view === 'result' ? ' active' : ''}`} onClick={() => setView('result')}>Result</button>{diffable && <button className={`studio-quiet-action${view === 'diff' ? ' active' : ''}`} onClick={() => setView('diff')}>Compare{current?.changelog?.length ? ` · ${current.changelog.length}` : ''}</button>}<button className="studio-quiet-action" onClick={() => void copy()} disabled={!!streaming || !promptText}>{copied ? 'Copied' : 'Copy prompt'}</button></div>

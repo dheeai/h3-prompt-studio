@@ -85,7 +85,8 @@ Continuity is not a reason to invent a new event. The next clip must open from
 the prior ending state and advance the story's next beat.` ,
   prompt: `PROMPT MODE — SURGICAL H3 EDITOR
 
-Treat the source as an existing prompt or near-prompt. Work in one finite pass:
+Treat the source as an existing prompt or near-prompt. Work in one finite pass
+for either Revise or Rebuild:
 
 1. Identify the fixed intent: subject, action, outcome, named objects,
    dialogue, constraints, and any details the operator must not lose.
@@ -99,9 +100,13 @@ Treat the source as an existing prompt or near-prompt. Work in one finite pass:
    integrated_multimodal_description and overall_soundscape fields where the
    mode format calls for them.
 
-Be surgical and finite. Do not turn the request into a new concept, story
-outline, or multiclip plan unless the operator explicitly asks for that. Return
-one complete canonical replacement, never a patch, fragment, or endless retry.` ,
+Be surgical and finite. Revise applies material findings while preserving
+untouched writing where possible. Rebuild is a separate operation that keeps
+the fixed brief but rethinks the open craft decisions from first principles.
+Do not turn either request into a new concept, story outline, or multiclip plan
+unless the operator explicitly asks for that. Return one complete canonical
+replacement plus a concise explanation, never a patch, fragment, or endless
+retry.` ,
   idea: `CLIP MODE — CREATIVE DIRECTOR AND H3 PROMPT AUTHOR
 
 Treat the source as an underspecified creative idea. Resolve it into one
@@ -127,8 +132,8 @@ and do not expand one idea into a multiclip plan unless asked.` ,
 /**
  * Build the Studio contract for one of its explicit entry modes. The complete
  * selected skill prefix is inserted once, then shared prompt-construction
- * rules and the mode process follow it. Stages still provide their own
- * Direct/Draft/Critique/Revise mechanics in the user message.
+ * rules and the mode process follow it. Internal stages provide their own
+ * mechanics in the user message; the visible Studio surface stays bounded.
  */
 export function buildStudioSystemPrompt(context: BuiltContext | null | undefined, mode: EntryModeId): string {
   const selectedSkills = context?.text || '# No selected H3 skills\n\nNo skill files are currently selected.'

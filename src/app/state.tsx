@@ -14,6 +14,7 @@ import { fetchBundledSkills, loadSkills, removeSkill, saveSkill } from '../lib/s
 import { estTokens } from '../lib/tokens'
 import { appendContinuationHistory, authorContinuation, continuationContextOverride, continuationPlateIsFresh, continuationSource, interruptedReasoningText, promptSourceForEntryMode } from '../lib/entry'
 import type { EntryModeId } from '../lib/entry'
+import { isSingleRequestStage, type StudioRunPhase } from '../lib/studio-workflow'
 import type {
   Breakdown, ChatTurn, Clip, ComfyEndpoint, FilmContext, Finding, Plate, ProbeResult, Provider,
   Recipe, Selection, Settings, Skill, StageId, Version,
@@ -24,7 +25,7 @@ const SETTINGS_SCHEMA = 4
 const DEFAULT_FILM: FilmContext = { role: 'standalone', spine: '', precedes: '', follows: '' }
 
 /** Stages whose output is a prompt, as opposed to a direction sheet or notes. */
-const PROMPT_STAGES = new Set<StageId>(['draft', 'revise', 'freeform'])
+const PROMPT_STAGES = new Set<StageId>(['draft', 'revise', 'rebuild', 'freeform'])
 
 const DEFAULT_SETTINGS: Settings = {
   schema: SETTINGS_SCHEMA,
@@ -172,7 +173,7 @@ export interface Api {
     startedAt: number
     continuations: number
     /** Set once a continuation round is actually underway. */
-    phase?: 'thinking-recovery' | 'continuing'
+    phase?: StudioRunPhase
   } | null
   chat: ChatTurn[]
   film: FilmContext
@@ -198,7 +199,7 @@ export interface Api {
   setProviders: (p: Provider[]) => Promise<void>
   refreshProbe: (id: string) => Promise<void>
   run: (stage: StageId, note?: string, override?: RunContextOverride) => Promise<Version | null>
-  /** Direct then Draft — a full re-synthesis rather than an edit. */
+  /** Bounded generation for Scene/Clip; Prompt Rebuild is one LLM request. */
   rebuild: (studioMode?: EntryModeId) => Promise<void>
 
   // ── the render loop ─────────────────────────────────────────────────
@@ -274,7 +275,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     reasoning: string
     startedAt: number
     continuations: number
-    phase?: 'thinking-recovery' | 'continuing'
+    phase?: StudioRunPhase
   } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [context, setContext] = useState<BuiltContext | null>(null)
@@ -591,7 +592,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         // Prefer a direction sheet — the one you are reading, else the latest.
         working = (cur?.stage === 'direct' ? cur.text : lastOf('direct')?.text) ?? snap.story
       } else {
-        // Critique, Revise and a freeform note all operate on the prompt.
+        // Critique, Revise, Rebuild and a freeform note all operate on the prompt.
         const authoredPrompt = (cur && PROMPT_STAGES.has(cur.stage) ? cur.text : lastPrompt()?.text) ?? ''
         working = promptSourceForEntryMode(
           override?.studioMode ?? studioMode,
@@ -636,7 +637,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       abortRef.current = ac
       setFailedReasoning(null)
       setInterruptedReasoning(null)
-      setStreaming({ stage, text: '', reasoning: '', startedAt: Date.now(), continuations: 0 })
+      setStreaming({ stage, text: '', reasoning: '', startedAt: Date.now(), continuations: 0, phase: 'thinking' })
       setError(null)
 
       try {
@@ -662,14 +663,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 ]
               : []),
           ],
-          onDelta: (chunk) => setStreaming((s) => (s ? { ...s, text: s.text + chunk } : s)),
-          onReasoning: (chunk) => setStreaming((s) => (s ? { ...s, reasoning: s.reasoning + chunk } : s)),
+          onDelta: (chunk) => setStreaming((s) => (s ? { ...s, text: s.text + chunk, phase: s.phase === 'thinking' ? 'writing' : s.phase } : s)),
+          onReasoning: (chunk) => setStreaming((s) => (s ? { ...s, reasoning: s.reasoning + chunk, phase: s.text ? s.phase : 'thinking' } : s)),
           onContinuation: (round, kind) =>
             setStreaming((s) => (s ? { ...s, continuations: round, phase: kind === 'thinking' ? 'thinking-recovery' : 'continuing' } : s)),
           // A continuation resumes from the last complete line, so the partial
           // one already on the page has to come back off it.
           onRewind: (chars) => setStreaming((s) => (s ? { ...s, text: s.text.slice(0, Math.max(0, s.text.length - chars)) } : s)),
           maxContinuations: continuationBudgetFor(stage),
+          retryOnLimit: !isSingleRequestStage(stage),
         })
 
         if (!result.text.trim()) {
@@ -752,7 +754,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         // Draft, Revise and freeform are asked for a prompt plus an
         // explanation (and, for Revise/freeform, a changelog); Direct and
         // Critique return one undivided document.
-        const wantsSplit = stage === 'draft' || stage === 'revise' || stage === 'freeform'
+        const wantsSplit = stage === 'draft' || stage === 'revise' || stage === 'rebuild' || stage === 'freeform'
         const { prompt: bodyText, explanation, changelog } = wantsSplit
           ? splitReply(result.text)
           : { prompt: result.text.trim(), explanation: '', changelog: [] as string[] }
@@ -809,6 +811,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const rebuild = useCallback(async (mode?: EntryModeId) => {
     const studioModeOverride = mode ?? studioMode
+    if (studioModeOverride === 'prompt') {
+      // Prompt Rebuild is its own finite operation. It deliberately does not
+      // route through the Scene/Clip Direct → Draft quality sequence.
+      await run('rebuild', undefined, { studioMode: 'prompt' })
+      return
+    }
     const sheet = await run('direct', undefined, { studioMode: studioModeOverride })
     if (sheet) await run('draft', undefined, { studioMode: studioModeOverride })
   }, [run, studioMode])

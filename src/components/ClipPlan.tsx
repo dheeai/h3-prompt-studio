@@ -3,7 +3,7 @@ import { useApp } from '../app/state'
 import type { Version } from '../lib/types'
 
 /** Stages whose output is a prompt — the only ones that count as "ready" for a clip. */
-const PROMPT_STAGES = new Set(['draft', 'revise', 'freeform'])
+const PROMPT_STAGES = new Set(['draft', 'revise', 'rebuild', 'freeform'])
 
 /** The clip plan a Break down pass produced, and one way in per clip. */
 export function ClipPlan() {
@@ -51,10 +51,10 @@ export function ClipPlan() {
                     title: c.title,
                     clipIndex: c.index,
                   })
-                  void app.run('direct', undefined, { studioMode: 'story' })
+                  void app.rebuild('story')
                 }}
               >
-                Direct this clip
+                Generate prompt
               </button>
             </div>
             {c.covers && (

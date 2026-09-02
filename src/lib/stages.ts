@@ -3,7 +3,7 @@ import type { Breakdown, BreakdownClip, ClipRole, FilmContext, StageId } from '.
 export const STAGE_ORDER: StageId[] = ['direct', 'draft', 'critique', 'revise']
 
 /** Stages that are actions rather than steps in the chain. */
-export const OFF_CHAIN: StageId[] = ['freeform', 'handoff', 'breakdown']
+export const OFF_CHAIN: StageId[] = ['rebuild', 'freeform', 'handoff', 'breakdown']
 
 /**
  * What each pass consumes and produces.
@@ -32,7 +32,12 @@ export const STAGE_INFO: Record<StageId, { produces: string; needs: 'story' | 'a
   revise: {
     produces: 'a corrected prompt',
     needs: 'prompt',
-    blurb: 'Surgical: applies the notes and leaves every untouched line exactly as it was. For a rebuild, run Direct then Draft instead.',
+    blurb: 'One finite replacement: applies the loaded-skill findings, preserves the fixed brief, and explains the material corrections.',
+  },
+  rebuild: {
+    produces: 'a rebuilt prompt',
+    needs: 'prompt',
+    blurb: 'One finite replacement: preserves the fixed brief while rethinking open performance, beats, shot design, camera, lighting, sound, and structure.',
   },
   freeform: {
     produces: 'a corrected prompt',
@@ -57,6 +62,7 @@ export const STAGE_LABEL: Record<StageId, string> = {
   draft: 'Draft',
   critique: 'Critique',
   revise: 'Revise',
+  rebuild: 'Rebuild',
   freeform: 'Note',
   handoff: 'Hand-off',
   breakdown: 'Break down',
@@ -236,38 +242,66 @@ mention it. Write no revised prompt — that is the next stage.
 PROMPT
 {{current}}`,
 
-  revise: `Apply the review to the prompt and output the corrected prompt only.
+  revise: `Revise the existing prompt in one finite pass.
 
-The review below is the judgement of the loaded craft documents — it is the
-substance of this pass, and every point in it must be addressed. The
-deterministic check that follows is a small set of mechanical rules; honour it
-too, but it is not a substitute for the review.
+The deterministic findings below and the selected skill documents are the
+review. Diagnose the material problems in the current prompt, then apply every
+necessary correction. Preserve the requested subject, action, outcome, named
+objects, dialogue, and explicit constraints. Keep the replacement complete and
+submission-ready; do not return a patch, fragment, critique-only response, or
+an endless retry.
 
-Where a fix requires rewriting the direction rather than editing a field, do
-that. Otherwise change what the review identifies and leave everything else
-exactly as it is: no restructuring, no "improving" untouched lines.
+Critique is explanatory output in this pass, not a separate user stage. Keep
+the explanation concise and name the governing skill documents. Do not put
+explanation, findings, or markdown fences inside the prompt.
 
-Output exactly three blocks, in this order, and nothing outside them:
+Output exactly two blocks, in this order, and nothing outside them:
 
 <<<PROMPT>>>
-the complete corrected prompt
+the complete canonical replacement prompt — and nothing else
+
 <<<EXPLANATION>>>
-2-6 lines: why these edits were made, in terms of the loaded documents
-<<<CHANGES>>>
-- one line per edit: what you changed, and which loaded document required it
+2-6 concise lines: what the source got wrong, what was fixed, and which loaded
+skill document governed the decisions
 
-If a review point needed no edit, say so on its own line and why. Do not
-describe edits you did not make.
-
-REVIEW AGAINST THE LOADED DOCUMENTS
-{{critique}}
-
-DETERMINISTIC CHECK
+DETERMINISTIC FINDINGS
 {{findings}}
 
+OPERATOR NOTE
 {{notes}}
 
-PROMPT
+CURRENT PROMPT
+{{current}}`,
+
+  rebuild: `Rebuild the existing prompt from first principles in one finite pass.
+
+This is an operation-specific creative re-synthesis, not a request for a
+critique, a patch, or a second stage. Preserve these fixed elements exactly:
+the subject, requested action, outcome, setting, named objects, wardrobe,
+animals, vehicles, dialogue verbatim, and explicit duration/aspect/language/
+format constraints. Do not change what happens on screen.
+
+Rethink the open craft decisions: observable performance, blocking, temporal
+beats and beat durations, shot design, framing, lens feel, camera behaviour,
+lighting, texture, sound sources, field ordering, and prompt structure. Use the
+selected skill documents as the authority, make the action fit the duration,
+and return one complete submission-ready H3 prompt. Critique is explanatory
+output in this pass, never a separate user stage. Do not put explanation,
+findings, or markdown fences inside the prompt.
+
+Output exactly two blocks, in this order, and nothing outside them:
+
+<<<PROMPT>>>
+the complete canonical replacement prompt — and nothing else
+
+<<<EXPLANATION>>>
+2-6 concise lines: the fixed elements preserved, the open craft decisions
+rethought, and which loaded skill documents governed them
+
+DETERMINISTIC FINDINGS
+{{findings}}
+
+CURRENT PROMPT TO REBUILD
 {{current}}`,
 
   handoff: `The clip below has been generated and watched. Your job is to state

@@ -12,7 +12,7 @@ const MODES: { id: H3Mode; note: string }[] = [
   { id: 'MoGr', note: 'motion graphics' },
 ]
 
-const EDITABLE: StageId[] = ['direct', 'draft', 'critique', 'revise', 'freeform']
+const EDITABLE: StageId[] = ['direct', 'draft', 'critique', 'revise', 'rebuild', 'freeform']
 
 export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const { settings, patchSettings, reset, versions } = useApp()
@@ -118,8 +118,8 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                 {settings.maxTokens === 0
                   ? 'No ceiling is sent, so the model may write until it reaches the end of its own context. This is the default because any fixed number is a guess that eventually truncates something — and a ceiling costs nothing when the answer is short anyway.'
                   : 'A cap is only worth setting to bound cost on a metered provider. Reasoning models spend tokens thinking before they write, so a cap that lands mid-thought returns a truncated or empty answer rather than a shorter one.'}{' '}
-                Whichever a server disagrees with — a value larger than its context, or a missing one it requires — the request is retried
-                the other way automatically. A cap can also come from the SERVER's own side rather than anything sent from here — that one
+                Ordinary authoring requests retry the other way automatically when a server disagrees with the limit shape. Prompt Revise and Rebuild
+                are deliberately single-request operations, so they never retry or continue behind the scenes. A cap can also come from the SERVER's own side rather than anything sent from here — that one
                 cannot be raised from this app — so a reply that gets cut off mid-answer is continued automatically in follow-up requests and
                 stitched back together; one that gets cut off mid-thought, before any answer, gets one recovery request built from its own
                 notes.

@@ -60,7 +60,7 @@ export interface ProbeResult {
   at: number
 }
 
-export type StageId = 'direct' | 'draft' | 'critique' | 'revise' | 'freeform' | 'handoff' | 'breakdown'
+export type StageId = 'direct' | 'draft' | 'critique' | 'revise' | 'rebuild' | 'freeform' | 'handoff' | 'breakdown'
 
 export interface Version {
   id: string

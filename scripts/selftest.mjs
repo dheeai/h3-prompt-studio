@@ -7,11 +7,12 @@
 // (used only inside the OpenRouter branch of streamChat) never gets evaluated
 // for a non-OpenRouter provider — if it did, importing this file would throw.
 
-import { fillTemplate, splitReply, parseBreakdown } from '../src/lib/stages.ts'
+import { readFileSync } from 'node:fs'
+import { DEFAULT_TEMPLATES, fillTemplate, splitReply, parseBreakdown } from '../src/lib/stages.ts'
 import { classifyInput } from '../src/lib/lint.ts'
 // stitch lives in llm.ts alongside streamChatComplete; importing it here also
 // proves llm.ts loads cleanly under node — see the note above.
-import { stitch, toLineBoundary, appendedFor, continuationBudgetFor } from '../src/lib/llm.ts'
+import { stitch, toLineBoundary, appendedFor, continuationBudgetFor, streamChatComplete } from '../src/lib/llm.ts'
 import { buildMulticlipGraph, multiclipIssues, padForOverlap, snapUp } from '../src/lib/multiclip.ts'
 import {
   ENTRY_MODES,
@@ -41,7 +42,7 @@ const entryModesAreComplete = (() => {
   const modes = ENTRY_MODES.map((m) => m.id)
   return JSON.stringify(modes) === JSON.stringify(['story', 'idea', 'prompt']) &&
     entryLabel('story') === 'Scene (Multi-shot)' && entryLabel('prompt') === 'Prompt' && entryLabel('idea') === 'Clip' &&
-    entryAction('story') === 'Generate multi-shot plan' && entryAction('prompt') === 'Refine prompt' && entryAction('idea') === 'Generate clip prompt'
+    entryAction('story') === 'Create clip plan' && entryAction('prompt') === 'Revise prompt' && entryAction('idea') === 'Generate prompt'
 })()
 check('entry modes: Story/Prompt/Idea have explicit copy and actions', entryModesAreComplete)
 check('entry modes: approved user-facing names are Scene (Multi-shot), Prompt, and Clip',
@@ -54,6 +55,8 @@ check('entry modes: empty-state copy follows the approved visible order',
   entryStartCopy() === 'Start with a Scene (Multi-shot), Clip, or Prompt.')
 check('entry dispatch: click and keyboard share the same workflow',
   entryWorkflow('story') === 'story-plan' && entryWorkflow('prompt') === 'prompt-revise' && entryWorkflow('idea') === 'idea-prompt')
+check('entry actions: Scene stops at a clip plan, Clip generates a prompt, Prompt exposes Revise',
+  entryAction('story') === 'Create clip plan' && entryAction('idea') === 'Generate prompt' && entryAction('prompt') === 'Revise prompt')
 check('story loop: only a completed pass advances to the next clip',
   shouldContinueStoryLoop({ status: 'ok' }) && !shouldContinueStoryLoop({ status: 'null' }) && !shouldContinueStoryLoop({ status: 'cancelled' }) && !shouldContinueStoryLoop({ status: 'error' }))
 check('prompt mode: rough source is a working prompt even without canonical fields',
@@ -129,8 +132,64 @@ check('cancelled thinking: partial reasoning is retained, empty reasoning is not
   check('agent status: an error agent_end is not reported as Ready', agentEventStatus(failedEvent).kind === 'error' && agentEventStatus(failedEvent).message.includes('Provider returned an empty response'))
 }
 
-check('studio refinement budget: revise and freeform do not retry the generic continuation loop', continuationBudgetFor('revise') === 0 && continuationBudgetFor('freeform') === 0)
+check('studio refinement budget: revise, rebuild, and freeform do not retry the generic continuation loop', continuationBudgetFor('revise') === 0 && continuationBudgetFor('rebuild') === 0 && continuationBudgetFor('freeform') === 0)
 check('studio stage budgets: other stages remain explicitly finite', continuationBudgetFor('direct') > 0 && continuationBudgetFor('direct') < 8 && continuationBudgetFor('draft') > 0 && continuationBudgetFor('draft') < 8)
+
+{
+  const originalFetch = globalThis.fetch
+  let requests = 0
+  globalThis.fetch = async () => {
+    requests++
+    return new Response('{"error":"max_tokens exceeds context"}', { status: 400, statusText: 'Bad Request' })
+  }
+  try {
+    await streamChatComplete({
+      provider: { id: 'test', baseUrl: 'http://test.local/v1' },
+      model: 'test-model',
+      messages: [{ role: 'user', content: 'prompt' }],
+      temperature: 0.2,
+      maxTokens: 0,
+      retryOnLimit: false,
+      maxContinuations: 0,
+      onDelta() {},
+    })
+  } catch {
+    // The response is intentionally an output-limit error; the assertion is
+    // about the number of endpoint attempts, not the error text.
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+  check('prompt replacement limit errors make one endpoint attempt', requests === 1, `requests=${requests}`)
+}
+
+check('prompt replacement contracts: Revise and Rebuild return only prompt plus explanation',
+  !DEFAULT_TEMPLATES.revise.includes('<<<CHANGES>>>') &&
+  !DEFAULT_TEMPLATES.rebuild?.includes('<<<CHANGES>>>') &&
+  DEFAULT_TEMPLATES.revise.includes('<<<PROMPT>>>') && DEFAULT_TEMPLATES.revise.includes('<<<EXPLANATION>>>') &&
+  DEFAULT_TEMPLATES.rebuild?.includes('<<<PROMPT>>>') && DEFAULT_TEMPLATES.rebuild?.includes('<<<EXPLANATION>>>'))
+
+const workflowModule = await import('../src/lib/studio-workflow.ts').catch(() => null)
+check('workflow helper: visible actions are entry-specific and bounded', (() => {
+  if (!workflowModule) return false
+  const { studioActions } = workflowModule
+  const labels = (mode, hasPlan) => studioActions(mode, hasPlan).map((a) => a.label)
+  return JSON.stringify(labels('story', false)) === JSON.stringify(['Create clip plan']) &&
+    JSON.stringify(labels('story', true)) === JSON.stringify(['Generate selected prompt', 'Generate all prompts']) &&
+    JSON.stringify(labels('idea', false)) === JSON.stringify(['Generate prompt']) &&
+    JSON.stringify(labels('prompt', false)) === JSON.stringify(['Revise prompt', 'Rebuild prompt'])
+})())
+check('workflow helper: long thinking has an explicit one-request status', (() => {
+  if (!workflowModule) return false
+  const { runStatusText } = workflowModule
+  return runStatusText('revise', 'thinking', 0).includes('Thinking') &&
+    runStatusText('rebuild', 'writing', 0).includes('one request') &&
+    runStatusText('direct', 'continuing', 1).toLowerCase().includes('continuing') &&
+    runStatusText('direct', 'thinking', 0).includes('one run')
+})())
+check('studio surface: internal stage rail is not rendered', (() => {
+  const appSource = readFileSync(new URL('../src/app/App.tsx', import.meta.url), 'utf8')
+  return appSource.includes('studioActions') && !appSource.includes('studio-stage-tools')
+})())
 
 {
   const built = {

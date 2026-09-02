@@ -18,6 +18,8 @@ export interface StreamOptions {
   onDelta: (chunk: string) => void
   /** Thinking tokens, streamed separately from the answer. */
   onReasoning?: (chunk: string) => void
+  /** Prompt replacement operations must make one endpoint attempt only. */
+  retryOnLimit?: boolean
 }
 
 export interface StreamResult {
@@ -136,7 +138,7 @@ export async function streamChat(opts: StreamOptions): Promise<StreamResult> {
   // larger than their context with a 400 rather than clamping it, and a few
   // reject a request that omits it. One retry covers whichever complaint came
   // back, so neither case needs the user to know anything about the model.
-  if (!res.ok && res.status === 400) {
+  if (opts.retryOnLimit !== false && !res.ok && res.status === 400) {
     const detail = await res.clone().text().catch(() => '')
     const mentionsLimit = /max_tokens|max_completion_tokens|max_output_tokens|context length|context_length|n_predict/i.test(detail)
 
@@ -380,11 +382,11 @@ export function joinRound(base: string, incoming: string, fromLineBoundary: bool
 /**
  * The provider-output recovery loop is useful for long direction sheets, but
  * an interactive prompt edit must be one bounded request. In particular, a
- * server that reports `length` for every request used to make Revise/freeform
- * issue the generic eight follow-ups and concatenate eight prompt replies.
+ * server that reports `length` for every request used to make Revise/Rebuild/
+ * freeform issue the generic eight follow-ups and concatenate prompt replies.
  */
 export function continuationBudgetFor(stage: StageId): number {
-  if (stage === 'revise' || stage === 'freeform') return 0
+  if (stage === 'revise' || stage === 'rebuild' || stage === 'freeform') return 0
   return 2
 }
 

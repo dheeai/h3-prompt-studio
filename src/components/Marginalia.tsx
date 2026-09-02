@@ -33,7 +33,7 @@ export function Marginalia() {
           <div className="note" style={{ borderBottom: 'none' }}>
             <div className="note-body" style={{ color: 'var(--ink3)' }}>
               {current?.stage === 'direct'
-                ? 'A direction sheet isn’t checked — the rules apply to a prompt. Run Draft next.'
+                ? 'A direction sheet isn’t checked — the rules apply to a prompt. Author a prompt to continue.'
                 : 'Nothing to check yet. The rules run on every prompt as it arrives.'}
             </div>
           </div>

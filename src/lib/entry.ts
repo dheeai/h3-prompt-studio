@@ -21,7 +21,7 @@ export const ENTRY_MODES: readonly EntryMode[] = [
     title: 'Scene (Multi-shot)',
     description: 'Plan several connected shots',
     placeholder: 'Paste a scene, beat sheet, or script…',
-    action: 'Generate multi-shot plan',
+    action: 'Create clip plan',
   },
   {
     id: 'idea',
@@ -29,7 +29,7 @@ export const ENTRY_MODES: readonly EntryMode[] = [
     title: 'Clip',
     description: 'Turn an idea into one H3 clip',
     placeholder: 'Describe the clip you want…',
-    action: 'Generate clip prompt',
+    action: 'Generate prompt',
   },
   {
     id: 'prompt',
@@ -37,7 +37,7 @@ export const ENTRY_MODES: readonly EntryMode[] = [
     title: 'Prompt',
     description: 'Improve an existing prompt',
     placeholder: 'Paste a rough or finished H3 prompt…',
-    action: 'Refine prompt',
+    action: 'Revise prompt',
   },
 ]
 

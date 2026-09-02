@@ -12,7 +12,7 @@ import { DEFAULT_TEMPLATES, fillTemplate, splitReply, parseBreakdown } from '../
 import { classifyInput, standingToText } from '../src/lib/lint.ts'
 // stitch lives in llm.ts alongside streamChatComplete; importing it here also
 // proves llm.ts loads cleanly under node — see the note above.
-import { stitch, toLineBoundary, appendedFor, continuationBudgetFor, streamChatComplete } from '../src/lib/llm.ts'
+import { stitch, toLineBoundary, appendedFor, continuationBudgetFor, streamChat, streamChatComplete } from '../src/lib/llm.ts'
 import { buildMulticlipGraph, multiclipIssues, padForOverlap, snapUp } from '../src/lib/multiclip.ts'
 import {
   ENTRY_MODES,
@@ -270,6 +270,33 @@ check('prompt replacement parser: accepts fenced markers and strict JSON from lo
   return fenced?.prompt === 'canonical' && fenced?.explanation === 'fixed timing' &&
     json?.prompt === 'canonical' && json?.explanation === 'fixed timing' && incomplete === null
 })())
+
+// llama.cpp can close an SSE response immediately after its final data frame,
+// without writing the optional blank-line separator. The final explanation
+// then used to disappear from `streamChat`, leaving Revise with only the
+// prompt block and causing the strict replacement parser to reject it.
+{
+  const originalFetch = globalThis.fetch
+  const promptDelta = JSON.stringify({ choices: [{ delta: { content: '<<<PROMPT>>>\ncanonical\n' } }] })
+  const finalDelta = JSON.stringify({ choices: [{ delta: { content: '<<<EXPLANATION>>>\nfixed timing' }, finish_reason: 'stop' }] })
+  globalThis.fetch = async () => new Response(`data: ${promptDelta}\n\ndata: ${finalDelta}`)
+  try {
+    const streamed = await streamChat({
+      provider: { id: 'test', baseUrl: 'http://test.local/v1' },
+      model: 'test-model',
+      messages: [{ role: 'user', content: 'prompt' }],
+      temperature: 0.2,
+      maxTokens: 0,
+      onDelta() {},
+    })
+    const parsed = workflowModule?.splitPromptReplacement(streamed.text)
+    check('stream parser: keeps a final llama SSE frame without a blank-line terminator',
+      parsed?.prompt === 'canonical' && parsed?.explanation === 'fixed timing' && streamed.finishReason === 'stop',
+      JSON.stringify({ text: streamed.text, finishReason: streamed.finishReason }))
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+}
 
 check('standing: source description does not reference the retired stage regime', (() => {
   const standing = classifyInput('integrated_multimodal_description: a complete prompt\noverall_soundscape: rain on glass\nnon_diegetic_music: N/A')

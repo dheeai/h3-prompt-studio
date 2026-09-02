@@ -182,6 +182,42 @@ export async function streamChat(opts: StreamOptions): Promise<StreamResult> {
   const decoder = new TextDecoder()
   let buffer = ''
 
+  const consumeFrame = (frame: string) => {
+    for (const line of frame.split(/\r?\n/)) {
+      const trimmed = line.trim()
+      if (!trimmed.startsWith('data:')) continue
+      const payload = trimmed.slice(5).trim()
+      if (!payload || payload === '[DONE]') continue
+      try {
+        const json = JSON.parse(payload) as {
+          choices?: {
+            delta?: { content?: string; reasoning?: string; reasoning_content?: string }
+            text?: string
+            finish_reason?: string | null
+          }[]
+          usage?: { prompt_tokens?: number; completion_tokens?: number }
+        }
+        if (json.usage) {
+          usage = { prompt: json.usage.prompt_tokens, completion: json.usage.completion_tokens }
+        }
+        const choice = json.choices?.[0]
+        if (choice?.finish_reason) finishReason = choice.finish_reason
+
+        // Servers disagree on the key; both mean the same thing.
+        const think = choice?.delta?.reasoning ?? choice?.delta?.reasoning_content
+        if (think) {
+          reasoning += think
+          onReasoning?.(think)
+        }
+
+        const piece = choice?.delta?.content ?? choice?.text ?? ''
+        if (piece) splitter.push(piece)
+      } catch {
+        // A partial frame that slipped through — ignore and keep reading.
+      }
+    }
+  }
+
   for (;;) {
     const { done, value } = await reader.read()
     if (done) break
@@ -189,45 +225,20 @@ export async function streamChat(opts: StreamOptions): Promise<StreamResult> {
 
     // SSE frames are separated by a blank line; a frame may carry several
     // `data:` lines. Keep the tail in the buffer until it completes.
-    let idx: number
-    while ((idx = buffer.indexOf('\n\n')) !== -1) {
-      const frame = buffer.slice(0, idx)
-      buffer = buffer.slice(idx + 2)
-      for (const line of frame.split('\n')) {
-        const trimmed = line.trim()
-        if (!trimmed.startsWith('data:')) continue
-        const payload = trimmed.slice(5).trim()
-        if (!payload || payload === '[DONE]') continue
-        try {
-          const json = JSON.parse(payload) as {
-            choices?: {
-              delta?: { content?: string; reasoning?: string; reasoning_content?: string }
-              text?: string
-              finish_reason?: string | null
-            }[]
-            usage?: { prompt_tokens?: number; completion_tokens?: number }
-          }
-          if (json.usage) {
-            usage = { prompt: json.usage.prompt_tokens, completion: json.usage.completion_tokens }
-          }
-          const choice = json.choices?.[0]
-          if (choice?.finish_reason) finishReason = choice.finish_reason
-
-          // Servers disagree on the key; both mean the same thing.
-          const think = choice?.delta?.reasoning ?? choice?.delta?.reasoning_content
-          if (think) {
-            reasoning += think
-            onReasoning?.(think)
-          }
-
-          const piece = choice?.delta?.content ?? choice?.text ?? ''
-          if (piece) splitter.push(piece)
-        } catch {
-          // A partial frame that slipped through — ignore and keep reading.
-        }
-      }
+    let separator: RegExpMatchArray | null
+    while ((separator = buffer.match(/\r?\n\r?\n/))) {
+      const idx = separator.index ?? -1
+      if (idx < 0) break
+      consumeFrame(buffer.slice(0, idx))
+      buffer = buffer.slice(idx + separator[0].length)
     }
   }
+  // The SSE blank line is a framing convention, not a requirement of the
+  // transport. llama.cpp may close immediately after its last `data:` line;
+  // consume that final frame so a trailing EXPLANATION block is not silently
+  // dropped from a strict Prompt replacement.
+  buffer += decoder.decode()
+  if (buffer.trim()) consumeFrame(buffer)
   const unterminatedThink = splitter.unterminated
   splitter.end()
 

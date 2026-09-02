@@ -5,7 +5,7 @@ import { buildContext, buildH3SystemPrompt, type BuiltContext } from '../lib/con
 import { classifyInput, findingsToText, lint, looksLikePrompt, standingToText } from '../lib/lint'
 import { continuationBudgetFor, streamChatComplete } from '../lib/llm'
 import { DEFAULT_PROVIDERS, loadProviders, probe, saveProviders } from '../lib/providers'
-import { STAGE_LABEL, fillTemplate, filmBlock, hasPromptBlock, nextRole, parseBreakdown, splitHandoff, splitReply, templateFor } from '../lib/stages'
+import { STAGE_LABEL, fillTemplate, filmBlock, hasPromptBlock, nextRole, parseBreakdown, splitHandoff, splitPromptReplacement, splitReply, templateFor } from '../lib/stages'
 import { DEFAULT_ENDPOINTS, lastFrameOf, poll, probeComfy, submit, uploadImage, viewUrl } from '../lib/comfy'
 import { applyRecipe, framesForSeconds, oomRisk, recipeIssues } from '../lib/recipe'
 import { buildMulticlipGraph, multiclipIssues, multiclipWarnings, overlapFramesOf, padForOverlap, schedulerStepsOf } from '../lib/multiclip'
@@ -702,8 +702,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
               : `The model returned nothing at all${result.finishReason ? ` (finish reason: ${result.finishReason})` : ''}.`,
           )
         }
-        setFailedReasoning(null)
-
         // Break down is off-chain and returns JSON, not a prompt — parse it
         // and record it as its own kind of version rather than falling into
         // the prompt/changelog handling below.
@@ -755,9 +753,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
         // explanation (and, for Revise/freeform, a changelog); Direct and
         // Critique return one undivided document.
         const wantsSplit = stage === 'draft' || stage === 'revise' || stage === 'rebuild' || stage === 'freeform'
-        const { prompt: bodyText, explanation, changelog } = wantsSplit
-          ? splitReply(result.text)
+        const strictReplacement = stage === 'revise' || stage === 'rebuild'
+        const splitResult = wantsSplit
+          ? strictReplacement
+            ? splitPromptReplacement(result.text)
+            : splitReply(result.text)
           : { prompt: result.text.trim(), explanation: '', changelog: [] as string[] }
+        if (strictReplacement && !splitResult) {
+          // A malformed replacement must never become the new canonical
+          // prompt. Keep the prior version untouched and surface the failed
+          // contract alongside any model thinking for diagnosis.
+          setFailedReasoning(result.reasoning.trim() || null)
+          throw new Error('Prompt replacement must include non-empty <<<PROMPT>>> and <<<EXPLANATION>>> blocks.')
+        }
+        setFailedReasoning(null)
+        const { prompt: bodyText, explanation, changelog } = splitResult ?? { prompt: '', explanation: '', changelog: [] as string[] }
 
         const version: Version = {
           id: `v${Date.now().toString(36)}`,
@@ -818,7 +828,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return
     }
     const sheet = await run('direct', undefined, { studioMode: studioModeOverride })
-    if (sheet) await run('draft', undefined, { studioMode: studioModeOverride })
+    if (sheet) await run('draft', undefined, { studioMode: studioModeOverride, current: sheet.text })
   }, [run, studioMode])
 
   const reset = useCallback(async () => {
@@ -1436,11 +1446,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       let failedStage: 'direct' | 'draft' = 'direct'
       let authored: 'ready' | 'aborted'
       try {
-        authored = await authorContinuation(async (stage) => {
+        authored = await authorContinuation(async (stage, previous) => {
           if (isCancelled()) return null
           failedStage = stage
           setContinuation({ clipId, phase: stage, state: 'running', source: nextSource })
-          return run(stage, undefined, { studioMode: 'story' })
+          const previousText = previous && typeof previous === 'object' && 'text' in previous && typeof previous.text === 'string'
+            ? previous.text
+            : undefined
+          return run(stage, undefined, {
+            studioMode: 'story',
+            ...(stage === 'draft' && previousText ? { current: previousText } : {}),
+          })
         }, isCancelled)
       } catch (e) {
         // `run()` normally turns provider failures into null, but preserve an

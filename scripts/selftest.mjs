@@ -82,6 +82,12 @@ check('non-prompt modes: source fallback still requires the existing prompt heur
   const calls = []
   const ready = await authorContinuation(async (stage) => { calls.push(stage); return { stage } })
   check('continuation authoring: Direct then Draft reaches ready', ready === 'ready' && JSON.stringify(calls) === JSON.stringify(['direct', 'draft']), JSON.stringify({ ready, calls }))
+  const inputs = []
+  const propagated = await authorContinuation(async (stage, previous) => {
+    inputs.push([stage, previous?.text ?? null])
+    return stage === 'direct' ? { text: 'exact returned direction sheet' } : { text: 'canonical prompt' }
+  })
+  check('continuation authoring: immediate Draft receives the returned Direct text', propagated === 'ready' && JSON.stringify(inputs) === JSON.stringify([['direct', null], ['draft', 'exact returned direction sheet']]), JSON.stringify({ propagated, inputs }))
   const directFails = []
   const abortedAtDirect = await authorContinuation(async (stage) => { directFails.push(stage); return null })
   check('continuation authoring: Direct failure aborts before Draft', abortedAtDirect === 'aborted' && JSON.stringify(directFails) === JSON.stringify(['direct']), JSON.stringify({ abortedAtDirect, directFails }))
@@ -186,9 +192,28 @@ check('workflow helper: long thinking has an explicit one-request status', (() =
     runStatusText('direct', 'continuing', 1).toLowerCase().includes('continuing') &&
     runStatusText('direct', 'thinking', 0).includes('one run')
 })())
+check('workflow helper: an empty active stream does not borrow the prior document', (() => {
+  if (!workflowModule) return false
+  const shown = workflowModule.displayedStudioPass(
+    { stage: 'direct', text: '' },
+    { stage: 'breakdown', text: '{"clips":[]}' },
+    'direct',
+  )
+  return shown.text === '' && shown.stage === 'breakdown'
+})())
+check('workflow helper: Rebuild is a canonical prompt stage for Agent state', () =>
+  !!workflowModule && workflowModule.isCanonicalPromptStage('rebuild') && !workflowModule.isCanonicalPromptStage('direct'))
 check('studio surface: internal stage rail is not rendered', (() => {
   const appSource = readFileSync(new URL('../src/app/App.tsx', import.meta.url), 'utf8')
-  return appSource.includes('studioActions') && !appSource.includes('studio-stage-tools')
+  const shortcut = appSource.match(/if \(\(e\.metaKey \|\| e\.ctrlKey\) && e\.key === 'Enter'[\s\S]{0,300}/)?.[0] ?? ''
+  return appSource.includes('studioActions') && !appSource.includes('studio-stage-tools') && shortcut.includes('runVisibleAction(primaryAction.id)')
+})())
+check('prompt replacement parser: malformed two-block output is rejected', (() => {
+  if (!workflowModule) return false
+  const good = workflowModule.splitPromptReplacement('<<<PROMPT>>>\ncanonical\n<<<EXPLANATION>>>\nfixed timing')
+  const missingExplanation = workflowModule.splitPromptReplacement('<<<PROMPT>>>\ncanonical')
+  const unmarked = workflowModule.splitPromptReplacement('canonical with commentary')
+  return good?.prompt === 'canonical' && good?.explanation === 'fixed timing' && missingExplanation === null && unmarked === null
 })())
 
 {

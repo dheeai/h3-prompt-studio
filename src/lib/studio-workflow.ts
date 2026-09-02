@@ -1,6 +1,11 @@
 import type { EntryModeId } from './entry'
 import type { StageId } from './types'
 
+// The parser lives with the stage templates, but re-exporting the strict
+// replacement contract here keeps the Studio workflow helpers as one small
+// public surface for callers and tests.
+export { splitPromptReplacement } from './stages'
+
 /** The actions a Studio entry surface may put in front of the operator. */
 export type StudioActionId = 'plan' | 'generate-selected' | 'generate-all' | 'generate-clip' | 'revise' | 'rebuild'
 
@@ -38,6 +43,31 @@ export function promptOperationStage(operation: 'revise' | 'rebuild'): 'revise' 
 
 export function isSingleRequestStage(stage: StageId): boolean {
   return stage === 'revise' || stage === 'rebuild'
+}
+
+/** Prompt-producing passes whose output is the canonical render payload. */
+export function isCanonicalPromptStage(stage: StageId): boolean {
+  return stage === 'draft' || stage === 'revise' || stage === 'rebuild' || stage === 'freeform'
+}
+
+interface DisplayedStudioPass {
+  stage: StageId
+  text: string
+}
+
+/**
+ * Keep the document label and document body in lockstep while a new pass is
+ * still thinking. A stream starts empty, so showing the saved body under the
+ * new stage label briefly misrepresents which pass produced it.
+ */
+export function displayedStudioPass(
+  streaming: DisplayedStudioPass | null | undefined,
+  current: DisplayedStudioPass | null | undefined,
+  fallbackStage: StageId,
+): DisplayedStudioPass {
+  if (streaming?.text.trim()) return { stage: streaming.stage, text: streaming.text }
+  if (streaming) return { stage: current?.stage ?? fallbackStage, text: '' }
+  return { stage: current?.stage ?? fallbackStage, text: current?.text ?? '' }
 }
 
 export type StudioRunPhase = 'thinking' | 'writing' | 'continuing' | 'thinking-recovery'

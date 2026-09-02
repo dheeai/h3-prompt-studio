@@ -469,6 +469,20 @@ export function splitReply(raw: string): { prompt: string; explanation: string; 
   return parseJsonReply(text) ?? splitMarkers(text)
 }
 
+/**
+ * Strict parser for the finite Revise/Rebuild replacement contract. Unlike
+ * splitReply, malformed output is not a usable prompt: accepting the raw
+ * answer would make explanations or contract markers part of the render
+ * payload.
+ */
+export function splitPromptReplacement(raw: string): { prompt: string; explanation: string; changelog: string[] } | null {
+  const text = raw.trim()
+  if (!text.includes(PROMPT_MARK) || !text.includes(EXPLANATION_MARK)) return null
+  const parsed = splitMarkers(text)
+  if (!parsed.prompt.trim() || !parsed.explanation.trim()) return null
+  return parsed
+}
+
 /** Did the model choose to rewrite, or just answer? */
 export function hasPromptBlock(raw: string): boolean {
   const text = raw.trim()

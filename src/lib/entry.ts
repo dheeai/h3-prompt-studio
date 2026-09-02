@@ -116,14 +116,14 @@ export function continuationSource(note: string | undefined, handoff: Continuati
 }
 
 /** Direct then Draft, stopping at the first cancelled or failed pass. */
-export async function authorContinuation(
-  run: (stage: 'direct' | 'draft') => Promise<unknown | null>,
+export async function authorContinuation<T>(
+  run: (stage: 'direct' | 'draft', previous?: T) => Promise<T | null>,
   isCancelled: () => boolean = () => false,
 ): Promise<'ready' | 'aborted'> {
   if (isCancelled()) return 'aborted'
   const directed = await run('direct')
   if (isCancelled() || !directed) return 'aborted'
-  const drafted = await run('draft')
+  const drafted = await run('draft', directed)
   return isCancelled() || !drafted ? 'aborted' : 'ready'
 }
 

@@ -20,7 +20,7 @@ import { estTokens, fmtTokens } from '../lib/tokens'
 import { wasSent } from '../lib/context'
 import { classifyInput, looksLikePrompt } from '../lib/lint'
 import { ENTRY_MODES, entryMode, entryStartCopy, entryWorkflow, shouldContinueStoryLoop, type EntryModeId } from '../lib/entry'
-import { runStatusText, studioActions, type StudioActionId } from '../lib/studio-workflow'
+import { displayedStudioPass, runStatusText, studioActions, type StudioActionId } from '../lib/studio-workflow'
 import type { StageId } from '../lib/types'
 
 /** Stages whose output is a prompt — the only things worth diffing together. */
@@ -169,9 +169,9 @@ export function App() {
         })
         setPromptLoop({ index: i + 1, total: plan.clips.length, stage: 'direct' })
         const sheet = await app.run('direct', undefined, { studioMode: 'story' })
-        if (promptLoopStopRef.current || !shouldContinueStoryLoop({ status: sheet ? 'ok' : 'null' })) break
+        if (promptLoopStopRef.current || !sheet || !shouldContinueStoryLoop({ status: 'ok' })) break
         setPromptLoop({ index: i + 1, total: plan.clips.length, stage: 'draft' })
-        const prompt = await app.run('draft', undefined, { studioMode: 'story' })
+        const prompt = await app.run('draft', undefined, { studioMode: 'story', current: sheet.text })
         if (promptLoopStopRef.current || !shouldContinueStoryLoop({ status: prompt ? 'ok' : 'null' })) break
       }
     } finally {
@@ -226,21 +226,26 @@ export function App() {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         e.preventDefault()
-        void startFromEntry()
+        if (primaryAction) void runVisibleAction(primaryAction.id)
       }
       if (e.key === 'Escape' && promptLoop) stopPromptLoop()
       else if (e.key === 'Escape' && busy) app.cancel()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [app, busy, promptLoop, startFromEntry, stopPromptLoop])
+  }, [app, busy, primaryAction, promptLoop, runVisibleAction, stopPromptLoop])
 
   // When a finished prompt is pasted it IS the document — show it typeset
   // rather than leaving the page looking empty below a wall of source text.
   // `||` rather than `??` on purpose: at the instant a run starts the stream
   // holds an empty string, which `??` would happily show — blanking the page
   // until the first token lands. Keep the previous pass up until then.
-  const shown = streaming?.text || current?.text || (pastedPrompt ? story : '')
+  const displayedPass = displayedStudioPass(
+    streaming ? { stage: streaming.stage, text: streaming.text } : null,
+    current ? { stage: current.stage, text: current.text } : null,
+    pastedPrompt ? 'draft' : 'direct',
+  )
+  const shown = displayedPass.text || (!streaming && pastedPrompt ? story : '')
   const reasoningInterrupted = !streaming && !!interruptedReasoning
   const reasoning = streaming ? streaming.reasoning : (interruptedReasoning ?? failedReasoning ?? current?.reasoning ?? '')
   const reasoningStreaming = !!streaming && !streaming.text
@@ -277,7 +282,7 @@ export function App() {
 
   // Direct and Critique return prose. Rendering markdown as one monospace
   // block made a structured critique read as an undifferentiated wall.
-  const shownStage: StageId = streaming?.stage ?? current?.stage ?? (pastedPrompt ? 'draft' : 'direct')
+  const shownStage: StageId = displayedPass.stage
   const shownIsProse = shownStage !== 'draft' && shownStage !== 'revise' && shownStage !== 'rebuild' && shownStage !== 'freeform'
   const longSource = story.length > 600
   const collapseSource = (pastedPrompt || longSource) && !editingSource
@@ -289,7 +294,7 @@ export function App() {
   // prompt section filling in first and the explanation arriving separately,
   // rather than showing the reader the markers themselves.
   const isSplitStage = shownStage === 'draft' || shownStage === 'revise' || shownStage === 'rebuild' || shownStage === 'freeform'
-  const liveSplit = useMemo(() => (isSplitStage && streaming ? splitReply(streaming.text) : null), [isSplitStage, streaming])
+  const liveSplit = useMemo(() => (isSplitStage && streaming?.text ? splitReply(streaming.text) : null), [isSplitStage, streaming])
   const canonicalVersion = useMemo(() => {
     if (current && PROMPT_STAGES_UI.has(current.stage)) return current
     return [...versions].reverse().find((v) => PROMPT_STAGES_UI.has(v.stage)) ?? null

@@ -4,6 +4,7 @@ import type { AgentEvent, AgentTool, AgentToolResult } from '@mariozechner/pi-ag
 import type { Api } from '../app/state'
 import { H3_AGENT_SYSTEM_RULES } from './context'
 import { needsKey } from './providers'
+import { isCanonicalPromptStage } from './studio-workflow'
 import type { Breakdown, BreakdownClip, Provider } from './types'
 
 export type AgentConfirmation = 'render_current' | 'render_multiclip'
@@ -172,7 +173,7 @@ type Bridge = Pick<
 >
 
 function stateText(app: Bridge): string {
-  const promptVersion = [...app.versions].reverse().find((version) => ['draft', 'revise', 'freeform'].includes(version.stage))
+  const promptVersion = [...app.versions].reverse().find((version) => isCanonicalPromptStage(version.stage))
   return JSON.stringify({
     story: app.story,
     currentPrompt: promptVersion?.text ?? null,

@@ -170,6 +170,14 @@ function handoffBlocks(text: string): DeterministicFinding {
   return finding('handoff-blocks', passed, passed ? 'PRECEDES, FOLLOWS, and OPEN are present and non-empty' : 'handoff requires exactly three non-empty PRECEDES, FOLLOWS, and OPEN blocks')
 }
 
+function directionSheetContract(text: string): DeterministicFinding {
+  const fields = canonicalFields(text)
+  const lower = normalized(text)
+  const hasSections = lower.includes('where the source stands') && lower.includes('what the brief fixes') && lower.includes('direction sheet')
+  const passed = hasSections && fields.length === 0
+  return finding('direction-sheet-contract', passed, passed ? 'direct output is a direction sheet without H3 prompt fields' : fields.length ? `direct output improperly emitted H3 prompt fields: ${fields.join(', ')}` : 'direct output must include the direction-sheet contract sections')
+}
+
 function expectedDuration(testCase: ThinkingEvalCase): number | null {
   const source = `${testCase.story}\n${testCase.current}`
   const match = source.match(/\b(?:of |for )?(\d+(?:\.\d+)?)\s*(?:-second|seconds?|secs?|sec)\b/i)
@@ -342,7 +350,14 @@ function stageFindings(testCase: ThinkingEvalCase, record: RawEvalRecord): Deter
   } else if (testCase.id === 'continuation-planning') {
     findings.push(handoffBlocks(content))
   } else if (testCase.id === 'prompt-revise' || testCase.id === 'prompt-rebuild') {
-    findings.push(replacementBlocks(content))
+    const replacement = splitPromptReplacement(content)
+    findings.push(replacementBlocks(content), requiredH3Fields(replacement?.prompt ?? '', testCase), h3FieldOrder(replacement?.prompt ?? '', testCase))
+  } else if (testCase.stage === 'direct') {
+    // Direct produces a direction sheet. It is deliberately not a prompt
+    // authoring pass, so applying the H3 field validators here would mark a
+    // correct sheet as broken and hide the stage-contract violation we care
+    // about when a model jumps ahead into a submission payload.
+    findings.push(directionSheetContract(content))
   } else {
     findings.push(requiredH3Fields(content, testCase), h3FieldOrder(content, testCase))
   }

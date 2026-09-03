@@ -344,6 +344,13 @@ const validBreakdown = JSON.stringify({
 })
 const validPromptReplacement = `<<<PROMPT>>>\nsubject_definitions:\n<Subject 1> is the woman at the greenhouse door.\n<Subject 2> is the glass greenhouse door and latch.\n<Subject 3> is the pale moth.\n\nsummary: At night, a woman opens the greenhouse door, a moth lands on her wrist, and her hand turns the latch.\n\nretention_analysis:\n<Subject 1>: fully_preserved\n<Subject 2>: fully_preserved\n<Subject 3>: fully_preserved\n\ndetailed_description:\n[Shot 1 — 0.0–2.5 seconds] The woman opens the greenhouse door at night.\n[Shot 2 — 2.5–5.0 seconds] The moth lands on her wrist and she stops to watch it.\n[Shot 3 — 5.0–7.0 seconds] Her hand turns the latch; end on the latch.\n\noverall_soundscape: night insects, hinge creak, breath catch, latch click.\nnon_diegetic_music: N/A\n<<<EXPLANATION>>>\nThe reaction is observable and the requested ending and named objects remain fixed.`
 const validHandoff = `<<<PRECEDES>>>\nThe red lantern is already lit beside the child’s drawing.\n<<<FOLLOWS>>>\nMaya walks away while the flame remains visible and the train stays absent.\n<<<OPEN>>>\nThe flame bends in the wind; the absent train remains unresolved.`
+const validDirectionSheet = `WHERE THE SOURCE STANDS
+The platform and child’s drawing are already established; this middle clip listens for the absent train.
+WHAT THE BRIEF FIXES
+Maya, the red lantern, the drawing, the empty railway platform, and the absent train remain fixed.
+DIRECTION SHEET
+The shot opens on Maya holding the unlit lantern beside the drawing. She listens for the absent train, unfolds the drawing, and carries the lantern toward the end of the platform. The next clip can open on the lantern lit at the platform end.
+Sound anchors: wind against the platform, Maya’s breath, paper unfolding, and a distant rail hum; no score.`
 
 check('thinking eval scorer: valid breakdown passes exact three clips and handoffs', (() => {
   const result = scoreRecord(EVAL_CASES.find((c) => c.id === 'scene-breakdown'), syntheticRecord(EVAL_CASES[0], validBreakdown))
@@ -369,17 +376,38 @@ check('thinking eval scorer: canonical T2VA fields pass in the required order', 
   const result = scoreRecord(testCase, syntheticRecord(testCase, prompt))
   return result.findings.some((f) => f.id === 'required-h3-fields' && f.passed) && result.findings.some((f) => f.id === 'h3-field-order' && f.passed)
 })())
+check('thinking eval scorer: direct Direction Sheet passes without H3 prompt fields', (() => {
+  const testCase = EVAL_CASES.find((c) => c.id === 'scene-middle-closing-direction')
+  const result = scoreRecord(testCase, syntheticRecord(testCase, validDirectionSheet))
+  return result.passed && !result.findings.some((f) => f.id === 'required-h3-fields' && !f.passed) && !result.findings.some((f) => f.id === 'h3-field-order' && !f.passed)
+})())
+check('thinking eval scorer: direct output that emits H3 fields fails its direction-sheet contract', (() => {
+  const testCase = EVAL_CASES.find((c) => c.id === 'scene-middle-closing-direction')
+  const result = scoreRecord(testCase, syntheticRecord(testCase, `${validDirectionSheet}\nintegrated_multimodal_description: an improper prompt payload`))
+  return !result.passed && result.findings.some((f) => f.id === 'direction-sheet-contract' && !f.passed)
+})())
 check('thinking eval scorer: reordered H3 fields fail the field-order contract', (() => {
   const testCase = EVAL_CASES.find((c) => c.id === 'clip-t2va-draft-from-direction-sheet')
   const prompt = 'overall_soundscape: coin click, fabric movement, quiet breath.\nintegrated_multimodal_description: A magician hides a coin from a skeptical child and holds the closed fist.\nnon_diegetic_music: N/A'
   const result = scoreRecord(testCase, syntheticRecord(testCase, prompt))
   return result.findings.some((f) => f.id === 'h3-field-order' && !f.passed)
 })())
+check('thinking eval scorer: replacement prompt fields are validated inside PROMPT, not EXPLANATION', (() => {
+  const testCase = EVAL_CASES.find((c) => c.id === 'prompt-revise')
+  const invalid = `<<<PROMPT>>>\nsummary: only a partial greenhouse prompt\n<<<EXPLANATION>>>\nsubject_definitions: fake\noverall_soundscape: fake\nnon_diegetic_music: N/A\ndetailed_description: fake\nretention_analysis: fake`
+  const result = scoreRecord(testCase, syntheticRecord(testCase, invalid))
+  return result.findings.some((f) => f.id === 'prompt-replacement-blocks' && f.passed) &&
+    result.findings.some((f) => f.id === 'required-h3-fields' && !f.passed) &&
+    result.findings.some((f) => f.id === 'h3-field-order' && !f.passed)
+})())
 check('thinking eval scorer: prompt replacement requires exactly PROMPT then EXPLANATION', (() => {
   const testCase = EVAL_CASES.find((c) => c.id === 'prompt-revise')
   const valid = scoreRecord(testCase, syntheticRecord(testCase, validPromptReplacement))
   const invalid = scoreRecord(testCase, syntheticRecord(testCase, `${validPromptReplacement}\n<<<CHANGES>>>\n- endless patch`))
-  return valid.findings.some((f) => f.id === 'prompt-replacement-blocks' && f.passed) && invalid.findings.some((f) => f.id === 'prompt-replacement-blocks' && !f.passed)
+  return valid.findings.some((f) => f.id === 'prompt-replacement-blocks' && f.passed) &&
+    valid.findings.some((f) => f.id === 'required-h3-fields' && f.passed) &&
+    valid.findings.some((f) => f.id === 'h3-field-order' && f.passed) &&
+    invalid.findings.some((f) => f.id === 'prompt-replacement-blocks' && !f.passed)
 })())
 check('thinking eval scorer: handoff requires three non-empty fields', (() => {
   const testCase = EVAL_CASES.find((c) => c.id === 'continuation-planning')

@@ -7,6 +7,7 @@ import { useApp } from '../app/state'
 import { agentApiKey, agentEventStatus, agentRequestPayload, buildAgentModel, buildAgentTools, reduceAgentEvent, type AgentConfirmation, type AgentTranscriptItem } from '../lib/agent'
 import { buildH3SystemPrompt } from '../lib/context'
 import { isCanonicalPromptStage } from '../lib/studio-workflow'
+import { resolveThinkingBudget } from '../lib/thinking'
 import { ProseDoc } from './ProseDoc'
 
 interface AgentPanelProps {
@@ -60,7 +61,9 @@ export function AgentPanel({ onOpenStudio }: AgentPanelProps) {
           const customized = await options?.onPayload?.(payload, payloadModel)
           const base = customized === undefined ? payload : customized
           const selectedProvider = providerRef.current
-          return selectedProvider ? agentRequestPayload(selectedProvider, payloadModel.id, base) : base
+          return selectedProvider
+            ? agentRequestPayload(selectedProvider, payloadModel.id, base, resolveThinkingBudget(selectedProvider.id, payloadModel.id, settingsRef.current.thinkingBudgets))
+            : base
         },
       }),
     })

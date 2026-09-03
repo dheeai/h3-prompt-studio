@@ -50,14 +50,54 @@ const thinkingControl = await import('../src/lib/thinking.ts').catch(() => null)
 let pass = 0
 let fail = 0
 
-check('Qwen thinking control: local llama aliases receive the paired zero budget', (() => {
+check('Qwen thinking control: local llama aliases receive the paired default budget', (() => {
   if (!thinkingControl) return false
   const body = thinkingControl.withQwenReasoningBudget(
     { id: 'llamacpp', baseUrl: 'http://localhost:8080/v1', sendCachePrompt: true },
     'default',
     { model: 'default', messages: [] },
   )
-  return body.reasoning_budget_tokens === 0 &&
+  return body.reasoning_budget_tokens === 8192 &&
+    body.reasoning_budget_message === 'Time to stop thinking. Give the final answer.'
+})())
+
+check('Qwen thinking control: budget defaults, clamps, and keys are deterministic', (() => {
+  if (!thinkingControl) return false
+  const key = thinkingControl.thinkingBudgetKey('llamacpp', 'qwen38-heretic-27b-fast')
+  const otherKey = thinkingControl.thinkingBudgetKey('llamacpp', 'thinkingcap-27b')
+  return key !== otherKey &&
+    thinkingControl.resolveThinkingBudget('llamacpp', 'qwen38-heretic-27b-fast', {}) === 8192 &&
+    thinkingControl.normalizeThinkingBudget(-1) === 0 &&
+    thinkingControl.normalizeThinkingBudget(40000) === 32768 &&
+    thinkingControl.normalizeThinkingBudget(2048.6) === 2049
+})())
+
+check('Qwen thinking control: budgets stay independent per provider and model', (() => {
+  if (!thinkingControl) return false
+  const first = thinkingControl.thinkingBudgetKey('llamacpp', 'qwen-a')
+  const second = thinkingControl.thinkingBudgetKey('llamacpp', 'qwen-b')
+  const budgets = { [first]: 0, [second]: 16384 }
+  return thinkingControl.resolveThinkingBudget('llamacpp', 'qwen-a', budgets) === 0 &&
+    thinkingControl.resolveThinkingBudget('llamacpp', 'qwen-b', budgets) === 16384 &&
+    thinkingControl.resolveThinkingBudget('other-provider', 'qwen-a', budgets) === 8192
+})())
+
+check('Qwen thinking control: persisted budget maps normalize without dropping valid entries', (() => {
+  if (!thinkingControl) return false
+  const key = thinkingControl.thinkingBudgetKey('llamacpp', 'qwen-a')
+  const normalized = thinkingControl.normalizeThinkingBudgets({ [key]: 1234.4, bad: 'nope', tooHigh: 99999 })
+  return normalized[key] === 1234 && normalized.tooHigh === 32768 && normalized.bad === undefined
+})())
+
+check('Qwen thinking control: an explicit per-model budget replaces the default', (() => {
+  if (!thinkingControl) return false
+  const body = thinkingControl.withQwenReasoningBudget(
+    { id: 'llamacpp', baseUrl: 'http://localhost:8080/v1', sendCachePrompt: true },
+    'default',
+    { model: 'default', messages: [] },
+    16384,
+  )
+  return body.reasoning_budget_tokens === 16384 &&
     body.reasoning_budget_message === 'Time to stop thinking. Give the final answer.'
 })())
 
@@ -849,9 +889,12 @@ check('cancelled thinking: partial reasoning is retained, empty reasoning is not
   const agentQwen = agentRequestPayload({ id: 'llamacpp', baseUrl: 'https://5090.tail3cca41.ts.net:9000/llama/v1' }, 'thinkingcap-27b', { model: 'thinkingcap-27b', stream: true })
   const agentHosted = agentRequestPayload({ id: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1' }, 'qwen/qwen3-30b', { model: 'qwen/qwen3-30b', stream: true })
   const agentRepointed = agentRequestPayload({ id: 'llamacpp', baseUrl: 'https://openrouter.ai/api/v1', sendCachePrompt: true }, 'qwen/qwen3-30b', { model: 'qwen/qwen3-30b', stream: true })
-  check('agent request adapter: Pi payload gets the same paired Qwen budget while hosted payload stays unchanged',
-    agentQwen.reasoning_budget_tokens === 0 && agentQwen.reasoning_budget_message === 'Time to stop thinking. Give the final answer.' &&
+check('agent request adapter: Pi payload gets the same paired Qwen budget while hosted payload stays unchanged',
+    agentQwen.reasoning_budget_tokens === 8192 && agentQwen.reasoning_budget_message === 'Time to stop thinking. Give the final answer.' &&
     agentHosted.reasoning_budget_tokens === undefined && agentRepointed.reasoning_budget_tokens === undefined)
+
+  const agentCustom = agentRequestPayload({ id: 'llamacpp', baseUrl: 'https://5090.tail3cca41.ts.net:9000/llama/v1' }, 'thinkingcap-27b', { model: 'thinkingcap-27b', stream: true }, 0)
+  check('agent request adapter: Pi payload sends an explicitly selected zero budget', agentCustom.reasoning_budget_tokens === 0 && agentCustom.reasoning_budget_message === 'Time to stop thinking. Give the final answer.')
 }
 
 // Pi can finish a run without a text_delta (for example a provider error, or
@@ -907,6 +950,25 @@ check('prompt replacement contracts: Revise and Rebuild return only prompt plus 
   !DEFAULT_TEMPLATES.rebuild?.includes('<<<CHANGES>>>') &&
   DEFAULT_TEMPLATES.revise.includes('<<<PROMPT>>>') && DEFAULT_TEMPLATES.revise.includes('<<<EXPLANATION>>>') &&
   DEFAULT_TEMPLATES.rebuild?.includes('<<<PROMPT>>>') && DEFAULT_TEMPLATES.rebuild?.includes('<<<EXPLANATION>>>'))
+
+check('prompt rebuild contract: preserves only identity, location, action, and dialogue language', (() => {
+  const rebuild = DEFAULT_TEMPLATES.rebuild ?? ''
+  return rebuild.includes('characters: identity, count, and relationships') &&
+    rebuild.includes('physical location') &&
+    rebuild.includes('core filmed action') &&
+    rebuild.includes('dialogue language') &&
+    rebuild.includes('dialogue wording') &&
+    rebuild.includes('Everything else is open') &&
+    !rebuild.includes('dialogue verbatim') &&
+    !rebuild.includes('wardrobe,\n')
+})())
+
+check('prompt rebuild contract: shared Studio rules defer fixedness to operation stage', (() => {
+  const prompt = buildH3SystemPrompt(null, 'studio', 'prompt')
+  return prompt.includes('current stage contract') &&
+    prompt.includes('Rebuild explicitly') && prompt.includes('preserves only') &&
+    prompt.includes('Revise remains conservative')
+})())
 
 const workflowModule = await import('../src/lib/studio-workflow.ts').catch(() => null)
 check('workflow helper: visible actions are entry-specific and bounded', (() => {
@@ -1036,12 +1098,20 @@ check('prompt replacement parser: accepts a complete bare H3 payload from local 
     })
     const [localQwen, localOther] = bodies
     check('Studio request body: Qwen budget is top-level and non-Qwen/hosted bodies are unchanged',
-      localQwen?.reasoning_budget_tokens === 0 &&
+      localQwen?.reasoning_budget_tokens === 8192 &&
       localQwen?.reasoning_budget_message === 'Time to stop thinking. Give the final answer.' &&
       localQwen?.chat_template_kwargs === undefined &&
       localOther?.reasoning_budget_tokens === undefined &&
       thinkingControl?.withQwenReasoningBudget({ id: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1' }, 'qwen/qwen3-30b', { model: 'qwen/qwen3-30b' }).reasoning_budget_tokens === undefined,
       JSON.stringify(bodies))
+
+    await streamChat({
+      provider: { id: 'llamacpp', baseUrl: 'http://localhost:8080/v1', sendCachePrompt: true },
+      model: 'default', messages: [{ role: 'user', content: 'prompt' }], temperature: 0.2, maxTokens: 0, thinkingBudget: 0, onDelta() {},
+    })
+    check('Studio request body: selected zero thinking budget reaches the top-level payload',
+      bodies[2]?.reasoning_budget_tokens === 0 && bodies[2]?.reasoning_budget_message === 'Time to stop thinking. Give the final answer.',
+      JSON.stringify(bodies[2]))
   } finally {
     globalThis.fetch = originalFetch
   }
@@ -1062,10 +1132,10 @@ check('prompt replacement parser: accepts a complete bare H3 payload from local 
   try {
     await streamChat({
       provider: { id: 'llamacpp', baseUrl: 'http://localhost:8080/v1', sendCachePrompt: true },
-      model: 'qwen/qwen3-30b', messages: [{ role: 'user', content: 'prompt' }], temperature: 0.2, maxTokens: 4096, onDelta() {},
+      model: 'qwen/qwen3-30b', messages: [{ role: 'user', content: 'prompt' }], temperature: 0.2, maxTokens: 4096, thinkingBudget: 16384, onDelta() {},
     })
     check('Studio Qwen limit retry: both requests retain the paired budget fields',
-      bodies.length === 2 && bodies.every((body) => body.reasoning_budget_tokens === 0 && body.reasoning_budget_message === 'Time to stop thinking. Give the final answer.') &&
+      bodies.length === 2 && bodies.every((body) => body.reasoning_budget_tokens === 16384 && body.reasoning_budget_message === 'Time to stop thinking. Give the final answer.') &&
       bodies[1].max_tokens === undefined,
       JSON.stringify(bodies))
   } finally {

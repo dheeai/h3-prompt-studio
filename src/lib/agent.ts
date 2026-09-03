@@ -156,8 +156,8 @@ export function agentApiKey(provider: Pick<Provider, 'baseUrl' | 'apiKey'>): str
 }
 
 /** Apply Studio's Qwen request contract to a Pi-generated payload. */
-export function agentRequestPayload<T>(provider: Pick<Provider, 'id' | 'baseUrl' | 'sendCachePrompt'>, model: string, payload: T): T {
-  return withQwenReasoningBudget(provider, model, payload)
+export function agentRequestPayload<T>(provider: Pick<Provider, 'id' | 'baseUrl' | 'sendCachePrompt'>, model: string, payload: T, thinkingBudget?: number): T {
+  return withQwenReasoningBudget(provider, model, payload, thinkingBudget)
 }
 
 function contentText(result: unknown): string {

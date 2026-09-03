@@ -37,7 +37,7 @@ export const STAGE_INFO: Record<StageId, { produces: string; needs: 'story' | 'a
   rebuild: {
     produces: 'a rebuilt prompt',
     needs: 'prompt',
-    blurb: 'One finite replacement: preserves the fixed brief while rethinking open performance, beats, shot design, camera, lighting, sound, and structure.',
+    blurb: 'One finite re-direction: extracts the characters, location and core action first, then freely rebuilds how that action is performed and shot while preserving its dialogue language.',
   },
   freeform: {
     produces: 'a corrected prompt',
@@ -276,18 +276,31 @@ CURRENT PROMPT
   rebuild: `Rebuild the existing prompt from first principles in one finite pass.
 
 This is an operation-specific creative re-synthesis, not a request for a
-critique, a patch, or a second stage. Preserve these fixed elements exactly:
-the subject, requested action, outcome, setting, named objects, wardrobe,
-animals, vehicles, dialogue verbatim, and explicit duration/aspect/language/
-format constraints. Do not change what happens on screen.
+critique, a patch, or a second stage. Before writing, first extract the
+invariants from the source: the characters (identity, count, and
+relationships), the physical location, the core filmed action (who does what
+to whom), and the language of any dialogue. The core action is the only action
+to preserve; keep an object or outcome only when it is essential to that
+action. Do not preserve incidental named objects, wardrobe, animals, vehicles,
+or dialogue wording.
 
-Rethink the open craft decisions: observable performance, blocking, temporal
-beats and beat durations, shot design, framing, lens feel, camera behaviour,
-lighting, texture, sound sources, field ordering, and prompt structure. Use the
-selected skill documents as the authority, make the action fit the duration,
-and return one complete submission-ready H3 prompt. Critique is explanatory
-output in this pass, never a separate user stage. Do not put explanation,
-findings, or markdown fences inside the prompt.
+PRESERVE ONLY:
+- characters: identity, count, and relationships
+- physical location
+- core filmed action: who does what to whom, including only essential
+  action-defining objects or outcomes
+- dialogue language, if dialogue exists (not its wording or content)
+
+Everything else is open to a complete directorial re-think: dialogue wording,
+wardrobe, nonessential props, performance, blocking, shot count and order,
+timing within the configured duration, framing, lens feel, camera behaviour,
+lighting and time treatment, texture, sound, music, tone, visual structure,
+field wording, and prompt organization. Make a genuinely different treatment
+of the same action, not a synonym edit or a lightly rearranged copy. Retain
+only the H3 field format required by the selected mode so the result remains
+submission-ready. Critique is explanatory output in this pass, never a separate
+user stage. Do not put explanation, findings, or markdown fences inside the
+prompt.
 
 Output exactly two blocks, in this order, and nothing outside them:
 
@@ -295,8 +308,11 @@ Output exactly two blocks, in this order, and nothing outside them:
 the complete canonical replacement prompt — and nothing else
 
 <<<EXPLANATION>>>
-2-6 concise lines: the fixed elements preserved, the open craft decisions
-rethought, and which loaded skill documents governed them
+2-6 concise lines. First name the extracted invariants (characters, physical
+location, core filmed action, and dialogue language). Then name the major
+redirection choices that make this a genuinely different treatment. State that
+dialogue wording may change while its language stays fixed, and name the
+loaded skill documents that governed the decisions.
 
 DETERMINISTIC FINDINGS
 {{findings}}

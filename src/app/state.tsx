@@ -15,12 +15,13 @@ import { estTokens } from '../lib/tokens'
 import { appendContinuationHistory, authorContinuation, clearDraftContext, continuationContextOverride, continuationPlateIsFresh, continuationSource, interruptedReasoningText, previousPromptForClip, promptSourceForEntryMode } from '../lib/entry'
 import type { EntryModeId } from '../lib/entry'
 import { isSingleRequestStage, type StudioRunPhase } from '../lib/studio-workflow'
+import { normalizeThinkingBudgets, resolveThinkingBudget } from '../lib/thinking'
 import type {
   Breakdown, ChatTurn, Clip, ComfyEndpoint, FilmContext, Finding, Plate, ProbeResult, Provider,
   Recipe, Selection, Settings, Skill, StageId, Version,
 } from '../lib/types'
 
-const SETTINGS_SCHEMA = 4
+const SETTINGS_SCHEMA = 5
 
 const DEFAULT_FILM: FilmContext = { role: 'standalone', spine: '', precedes: '', follows: '' }
 
@@ -37,6 +38,7 @@ const DEFAULT_SETTINGS: Settings = {
   // guess that eventually truncates someone. Sending nothing lets the server
   // apply the real limit, which is its context minus the prompt.
   maxTokens: 0,
+  thinkingBudgets: {},
   mode: 'Ref2VA',
   selection: {},
   stageTemplates: {},
@@ -340,6 +342,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ...DEFAULT_SETTINGS,
         ...savedSettings,
         stageTemplates: { ...(savedSettings?.stageTemplates || {}) },
+        thinkingBudgets: normalizeThinkingBudgets(savedSettings?.thinkingBudgets),
         seenBundled: [...new Set([...(savedSettings?.seenBundled ?? []), ...bundledIds])],
       }
 
@@ -652,6 +655,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           model: settings.model,
           temperature: settings.temperature,
           maxTokens: settings.maxTokens,
+          thinkingBudget: resolveThinkingBudget(provider.id, settings.model, settings.thinkingBudgets),
           contextHash: ctx.hash,
           signal: ac.signal,
           // The cached block is always first and byte-identical between calls;

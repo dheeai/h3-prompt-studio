@@ -8,7 +8,8 @@ import { localEndpoint, localNetworkTarget } from './providers'
  * is reserved for the template's `enable_thinking` switch.
  */
 
-export const QWEN_REASONING_BUDGET_TOKENS = 0
+export const QWEN_REASONING_BUDGET_DEFAULT = 8192
+export const QWEN_REASONING_BUDGET_MAX = 32768
 export const QWEN_REASONING_BUDGET_MESSAGE = 'Time to stop thinking. Give the final answer.'
 
 type LlamaEndpoint = {
@@ -33,6 +34,36 @@ const KNOWN_HOSTED_HOSTS = [
   'api.x.ai',
   'api.mistral.ai',
 ]
+
+/** A stable, collision-safe key for a provider/model pair in Settings. */
+export function thinkingBudgetKey(providerId: string, model: string): string {
+  return JSON.stringify([providerId.trim(), model.trim()])
+}
+
+/** Normalize user or persisted input to the supported integer token range. */
+export function normalizeThinkingBudget(value: unknown, fallback = QWEN_REASONING_BUDGET_DEFAULT): number {
+  const number = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : NaN
+  if (!Number.isFinite(number)) return fallback
+  return Math.min(QWEN_REASONING_BUDGET_MAX, Math.max(0, Math.round(number)))
+}
+
+/** Normalize a persisted map while ignoring malformed entries. */
+export function normalizeThinkingBudgets(value: unknown): Record<string, number> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const result: Record<string, number> = {}
+  for (const [key, budget] of Object.entries(value)) {
+    if (typeof budget !== 'number' && typeof budget !== 'string') continue
+    const parsed = normalizeThinkingBudget(budget, Number.NaN)
+    if (Number.isFinite(parsed)) result[key] = parsed
+  }
+  return result
+}
+
+/** Resolve a provider/model-specific budget, defaulting new pairs to 8k. */
+export function resolveThinkingBudget(providerId: string, model: string, budgets: Record<string, number> | undefined): number {
+  const key = thinkingBudgetKey(providerId, model)
+  return normalizeThinkingBudget(budgets?.[key])
+}
 
 function isKnownHostedHost(hostname: string): boolean {
   return KNOWN_HOSTED_HOSTS.some((host) => hostname === host || hostname.endsWith(`.${host}`))
@@ -71,15 +102,15 @@ export function isQwenFamilyModel(provider: LlamaEndpoint, model: string): boole
 }
 
 /**
- * Add the paired zero reasoning-budget fields to a request body when the
- * selected model is a local Qwen-family model. Non-Qwen and hosted payloads
- * are returned by identity so callers cannot accidentally alter their body.
+ * Add the paired reasoning-budget fields to a request body when the selected
+ * model is a local Qwen-family model. Non-Qwen and hosted payloads are
+ * returned by identity so callers cannot accidentally alter their body.
  */
-export function withQwenReasoningBudget<T>(provider: LlamaEndpoint, model: string, payload: T): T {
+export function withQwenReasoningBudget<T>(provider: LlamaEndpoint, model: string, payload: T, budget = QWEN_REASONING_BUDGET_DEFAULT): T {
   if (!isQwenFamilyModel(provider, model) || !payload || typeof payload !== 'object' || Array.isArray(payload)) return payload
   return {
     ...(payload as Record<string, unknown>),
-    reasoning_budget_tokens: QWEN_REASONING_BUDGET_TOKENS,
+    reasoning_budget_tokens: normalizeThinkingBudget(budget),
     reasoning_budget_message: QWEN_REASONING_BUDGET_MESSAGE,
   } as T
 }

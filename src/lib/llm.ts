@@ -15,6 +15,8 @@ export interface StreamOptions {
   maxTokens: number
   /** Hash of the cached prefix, so we can report whether it was reused. */
   contextHash?: string
+  /** Resolved per-provider/model reasoning budget for local Qwen models. */
+  thinkingBudget?: number
   signal?: AbortSignal
   onDelta: (chunk: string) => void
   /** Thinking tokens, streamed separately from the answer. */
@@ -105,7 +107,7 @@ function makeThinkSplitter(onText: (s: string) => void, onThink: (s: string) => 
  * unknown field — so it is opt-in per provider rather than always sent.
  */
 export async function streamChat(opts: StreamOptions): Promise<StreamResult> {
-  const { provider, model, messages, temperature, maxTokens, signal, onDelta, onReasoning } = opts
+  const { provider, model, messages, temperature, maxTokens, thinkingBudget, signal, onDelta, onReasoning } = opts
   const started = performance.now()
   const cacheReused = !!opts.contextHash && wasSent(opts.contextHash)
 
@@ -120,7 +122,7 @@ export async function streamChat(opts: StreamOptions): Promise<StreamResult> {
   // no fixed number here could ever guess correctly across every model.
   if (maxTokens > 0) body.max_tokens = maxTokens
   if (provider.sendCachePrompt) body.cache_prompt = true
-  const requestBody = withQwenReasoningBudget(provider, model, body)
+  const requestBody = withQwenReasoningBudget(provider, model, body, thinkingBudget)
 
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (provider.apiKey) headers.Authorization = `Bearer ${provider.apiKey}`

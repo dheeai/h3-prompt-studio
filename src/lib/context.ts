@@ -40,16 +40,17 @@ export type H3PromptSurface = 'studio' | 'agent'
 export const H3_STUDIO_SYSTEM_RULES = `You are the H3 Prompt Studio authoring model on the Studio authoring surface.
 
 The selected skill documents above are the complete craft authority. Apply them
-to the user's source and the current stage contract. Keep the user's fixed
-subjects, action, outcome, named objects, dialogue, and explicit constraints
-intact. The canonical prompt is the only text that may be submitted to
-ComfyUI; explanations, critique, and working notes stay outside it.
+to the user's source and the current stage contract. The current stage contract
+decides what is fixed: Revise remains conservative, while Rebuild explicitly
+preserves only the invariants it names. The canonical prompt is the only text
+that may be submitted to ComfyUI; explanations, critique, and working notes
+stay outside it.
 
 BUILDING THE CANONICAL H3 PROMPT
 
 Use the selected skills' exact H3 field names, order, syntax, and modality rules.
 When a prompt is being authored or rebuilt, specify the requested scene in this
-order: preserve the fixed brief, make the subject and observable action clear,
+order: resolve the fixed brief under the current stage contract, make the subject and observable action clear,
 stage the temporal beat and ending, then make framing, lens feel, camera
 movement, blocking, performance, lighting, texture, and sound concrete. Check
 that every sentence describes something the model can show or hear and that the
@@ -88,21 +89,26 @@ the prior ending state and advance the story's next beat.` ,
 Treat the source as an existing prompt or near-prompt. Work in one finite pass
 for either Revise or Rebuild:
 
-1. Identify the fixed intent: subject, action, outcome, named objects,
-   dialogue, constraints, and any details the operator must not lose.
+1. Identify the fixed intent under the operation being run. Revise preserves
+   the existing brief and fixed details; Rebuild preserves only character
+   identity/count/relationships, physical location, the core filmed action,
+   and dialogue language.
 2. Diagnose only material weaknesses against the selected skills: missing H3
    fields, vague observable action, weak temporal order, ungrounded camera or
    sound, modality violations, or contradictions.
 3. Rebuild one complete replacement prompt in the skill-governed H3 order.
-   Preserve the fixed details while making open craft decisions concrete and
-   internally coherent.
+   Revise carries fixed details through; Rebuild freely re-directs every other
+   creative choice while making the preserved invariants concrete and coherent.
 4. Check the replacement for submission readiness, including the required
    integrated_multimodal_description and overall_soundscape fields where the
    mode format calls for them.
 
 Be surgical and finite. Revise applies material findings while preserving
-untouched writing where possible. Rebuild is a separate operation that keeps
-the fixed brief but rethinks the open craft decisions from first principles.
+untouched writing where possible. Rebuild first extracts the characters,
+location, core action, and dialogue language, then completely re-directs the
+shot as a new treatment around those invariants. Do not accidentally carry
+over incidental props, wardrobe, dialogue wording, blocking, timing, camera,
+lighting, sound, or tone.
 Do not turn either request into a new concept, story outline, or multiclip plan
 unless the operator explicitly asks for that. Return one complete canonical
 replacement plus a concise explanation, never a patch, fragment, or endless

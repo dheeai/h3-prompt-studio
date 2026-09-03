@@ -151,6 +151,8 @@ export interface Settings {
   temperature: number
   /** 0 = send no ceiling at all and let the server use its own maximum. */
   maxTokens: number
+  /** Per-provider/model reasoning budget for compatible local Qwen models. */
+  thinkingBudgets?: Record<string, number>
   mode: H3Mode
   selection: Selection
   /**

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useApp } from '../app/state'
 import { DEFAULT_TEMPLATES, STAGE_LABEL, templateFor } from '../lib/stages'
+import { isQwenFamilyModel, normalizeThinkingBudget, resolveThinkingBudget, thinkingBudgetKey } from '../lib/thinking'
 import type { H3Mode, StageId } from '../lib/types'
 
 const MODES: { id: H3Mode; note: string }[] = [
@@ -15,12 +16,27 @@ const MODES: { id: H3Mode; note: string }[] = [
 const EDITABLE: StageId[] = ['direct', 'draft', 'critique', 'revise', 'rebuild', 'freeform']
 
 export function SettingsPanel({ onClose }: { onClose: () => void }) {
-  const { settings, patchSettings, reset, versions } = useApp()
+  const { settings, providers, patchSettings, reset, versions } = useApp()
   const [tab, setTab] = useState<'output' | 'stages'>('output')
   const [editing, setEditing] = useState<StageId>('direct')
 
   const template = templateFor(settings.stageTemplates, editing)
   const modified = settings.stageTemplates[editing] !== undefined
+  const selectedProvider = providers.find((provider) => provider.id === settings.providerId)
+  const hasThinkingBudget = !!selectedProvider && !!settings.model && isQwenFamilyModel(selectedProvider, settings.model)
+  const selectedBudget = hasThinkingBudget
+    ? resolveThinkingBudget(selectedProvider!.id, settings.model, settings.thinkingBudgets)
+    : 8192
+  const setThinkingBudget = (value: unknown) => {
+    if (!selectedProvider || !settings.model) return
+    const key = thinkingBudgetKey(selectedProvider.id, settings.model)
+    patchSettings({
+      thinkingBudgets: {
+        ...(settings.thinkingBudgets ?? {}),
+        [key]: normalizeThinkingBudget(value),
+      },
+    })
+  }
 
   const clearOverride = (stage: StageId) => {
     const next = { ...settings.stageTemplates }
@@ -124,6 +140,50 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                 stitched back together; one that gets cut off mid-thought, before any answer, gets one recovery request built from its own
                 notes.
               </div>
+
+              {hasThinkingBudget && (
+                <div style={{ marginTop: 22 }}>
+                  <div className="lbl" style={{ marginBottom: 9 }}>Thinking budget · {settings.model}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <span style={{ fontSize: 11.5, width: 96 }}>reasoning tokens</span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={32768}
+                      step={1}
+                      value={selectedBudget}
+                      onChange={(e) => setThinkingBudget(e.target.value)}
+                      style={{ flexGrow: 1 }}
+                      aria-label="Thinking budget slider"
+                    />
+                    <input
+                      type="number"
+                      min={0}
+                      max={32768}
+                      step={1}
+                      value={selectedBudget}
+                      onChange={(e) => setThinkingBudget(e.target.value)}
+                      style={{ width: 82, fontFamily: 'var(--mono)', fontSize: 11 }}
+                      aria-label="Thinking budget tokens"
+                    />
+                  </div>
+                  <div style={{ display: 'flex', gap: 5, marginTop: 9, marginLeft: 108, flexWrap: 'wrap' }}>
+                    {[0, 2048, 4096, 8192, 16384, 32768].map((budget) => (
+                      <button
+                        key={budget}
+                        className={`chip${selectedBudget === budget ? ' on' : ''}`}
+                        onClick={() => setThinkingBudget(budget)}
+                      >
+                        {budget === 0 ? '0' : `${budget / 1024}k`}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="tok" style={{ marginTop: 8, lineHeight: 1.55 }}>
+                    Local Qwen-family models only. The budget is saved independently for this provider and model and is separate from
+                    completion/output length. <code>0</code> is an immediate budget cutoff; it does not guarantee that the server emits no reasoning.
+                  </div>
+                </div>
+              )}
 
               <div className="lbl" style={{ margin: '22px 0 9px' }}>This draft</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

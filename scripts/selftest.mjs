@@ -966,6 +966,18 @@ check('prompt replacement parser: accepts fenced markers and strict JSON from lo
   return fenced?.prompt === 'canonical' && fenced?.explanation === 'fixed timing' &&
     json?.prompt === 'canonical' && json?.explanation === 'fixed timing' && incomplete === null
 })())
+check('prompt replacement parser: accepts a complete bare H3 payload from local models', (() => {
+  if (!workflowModule) return false
+  const bare = [
+    'integrated_multimodal_description: A woman opens the greenhouse door as a pale moth lands on her wrist; end on her hand turning the latch.',
+    'overall_soundscape: night insects, hinge creak, breath catch, and one latch click.',
+    'non_diegetic_music: N/A',
+  ].join('\n')
+  const parsed = workflowModule.splitPromptReplacement(bare)
+  const partial = workflowModule.splitPromptReplacement(bare.replace(/\noverall_soundscape:[\s\S]*/, ''))
+  const prose = workflowModule.splitPromptReplacement('I made the prompt more cinematic and improved the pacing.')
+  return parsed?.prompt === bare && parsed?.explanation === '' && parsed?.changelog.length === 0 && partial === null && prose === null
+})())
 
 // Studio's direct client must put the paired budget fields at the request
 // top-level. This fetch capture never leaves the process.

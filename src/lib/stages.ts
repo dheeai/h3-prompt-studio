@@ -428,6 +428,38 @@ function parseJsonReply(text: string): { prompt: string; explanation: string; ch
   }
 }
 
+const BASE_H3_FIELDS = ['integrated_multimodal_description', 'overall_soundscape', 'non_diegetic_music'] as const
+const REF_H3_FIELDS = ['subject_definitions', 'summary', 'retention_analysis', 'detailed_description', 'overall_soundscape', 'non_diegetic_music'] as const
+
+/**
+ * Some local instruction-tuned models return the canonical H3 payload but
+ * drop the outer replacement envelope. Accept that one safe fallback only
+ * when the whole response is a complete, ordered H3 document; ordinary prose
+ * and partial field output must remain invalid replacements.
+ */
+function parseBareH3Prompt(text: string): { prompt: string; explanation: string; changelog: string[] } | null {
+  const lines = text.replace(/\r\n?/g, '\n').split('\n')
+  const sections: { name: string; body: string[] }[] = []
+
+  for (const line of lines) {
+    const header = line.match(/^([a-z][a-z0-9_]{3,})[ \t]*:[ \t]*(.*)$/)
+    if (header) {
+      sections.push({ name: header[1], body: header[2] ? [header[2]] : [] })
+    } else if (sections.length) {
+      sections[sections.length - 1].body.push(line)
+    } else if (line.trim()) {
+      return null
+    }
+  }
+
+  if (!sections.length) return null
+  const expected = sections[0].name === 'integrated_multimodal_description' ? BASE_H3_FIELDS : sections[0].name === 'subject_definitions' ? REF_H3_FIELDS : null
+  if (!expected || sections.length !== expected.length) return null
+  if (sections.some((section, i) => section.name !== expected[i] || !section.body.join('\n').trim())) return null
+
+  return { prompt: lines.join('\n').trim(), explanation: '', changelog: [] }
+}
+
 /**
  * Split a marked reply into its blocks, in ANY order — the model is asked for
  * a fixed order but not enforced on it, and getting the order right matters
@@ -485,6 +517,7 @@ export function splitPromptReplacement(raw: string): { prompt: string; explanati
   // fields so a partial object can never replace the canonical prompt.
   const json = parseJsonReply(text)
   if (json?.prompt && json.explanation) return { prompt: json.prompt, explanation: json.explanation, changelog: [] }
+  if (!text.includes(PROMPT_MARK) && !text.includes(EXPLANATION_MARK)) return parseBareH3Prompt(text)
   const promptIndex = text.indexOf(PROMPT_MARK)
   const explanationIndex = text.indexOf(EXPLANATION_MARK)
   if (promptIndex !== 0 || explanationIndex === -1 || explanationIndex <= promptIndex) return null

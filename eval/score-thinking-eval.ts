@@ -116,6 +116,36 @@ function h3FieldOrder(text: string, testCase: ThinkingEvalCase): DeterministicFi
   return finding('h3-field-order', passed, passed ? required.join(' → ') : `expected ${required.join(' → ')}, got ${actual.join(' → ') || '(none)'}`)
 }
 
+function strictBreakdown(text: string): ReturnType<typeof parseBreakdown> {
+  const parsed = parseBreakdown(text)
+  if (!parsed) return null
+  const start = text.indexOf('{')
+  const end = text.lastIndexOf('}')
+  if (start < 0 || end <= start) return null
+  let raw: unknown
+  try {
+    raw = JSON.parse(text.slice(start, end + 1))
+  } catch {
+    return null
+  }
+  if (!raw || typeof raw !== 'object' || !Array.isArray((raw as { clips?: unknown }).clips)) return null
+  const clips = (raw as { clips: unknown[] }).clips
+  const validRoles = new Set(['opening', 'rising', 'turn', 'falling', 'closing', 'standalone'])
+  const valid = typeof (raw as { spine?: unknown }).spine === 'string' && !!(raw as { spine: string }).spine.trim() &&
+    clips.every((item) => {
+      if (!item || typeof item !== 'object') return false
+      const clip = item as Record<string, unknown>
+      return Number.isFinite(Number(clip.index)) &&
+        typeof clip.title === 'string' && !!clip.title.trim() &&
+        typeof clip.role === 'string' && validRoles.has(clip.role) &&
+        Number.isFinite(Number(clip.seconds)) && Number(clip.seconds) > 0 &&
+        typeof clip.covers === 'string' && !!clip.covers.trim() &&
+        typeof clip.precedes === 'string' &&
+        typeof clip.follows === 'string'
+    })
+  return valid ? parsed : null
+}
+
 function replacementBlocks(text: string): DeterministicFinding {
   const markers = [...text.matchAll(/<<<[^>\n]+>>>/g)].map((match) => match[0])
   const parsed = splitPromptReplacement(text)
@@ -307,7 +337,8 @@ function stageFindings(testCase: ThinkingEvalCase, record: RawEvalRecord): Deter
   const findings = protocolFindings(testCase, record)
 
   if (testCase.id === 'scene-breakdown') {
-    findings.push(finding('breakdown-json', !!parseBreakdown(content), parseBreakdown(content) ? 'breakdown JSON parses into clips' : 'response is not a valid breakdown JSON object'))
+    const breakdown = strictBreakdown(content)
+    findings.push(finding('breakdown-json', !!breakdown, breakdown ? 'breakdown JSON has the required clip fields' : 'response is not valid breakdown JSON with non-empty clip fields'))
   } else if (testCase.id === 'continuation-planning') {
     findings.push(handoffBlocks(content))
   } else if (testCase.id === 'prompt-revise' || testCase.id === 'prompt-rebuild') {

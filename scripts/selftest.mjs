@@ -358,6 +358,11 @@ check('thinking eval scorer: malformed breakdown JSON fails the breakdown contra
   const result = scoreRecord(EVAL_CASES[0], syntheticRecord(EVAL_CASES[0], '{"spine":"unfinished"'))
   return result.findings.some((f) => f.id === 'breakdown-json' && !f.passed)
 })())
+check('thinking eval scorer: breakdown with empty clip fields is not valid JSON contract data', (() => {
+  const invalid = JSON.stringify({ spine: 'Maya leaves a light.', clips: [{ index: 1, seconds: 3 }, { index: 2, seconds: 3 }, { index: 3, seconds: 3 }] })
+  const result = scoreRecord(EVAL_CASES[0], syntheticRecord(EVAL_CASES[0], invalid))
+  return result.findings.some((f) => f.id === 'breakdown-json' && !f.passed)
+})())
 check('thinking eval scorer: canonical T2VA fields pass in the required order', (() => {
   const testCase = EVAL_CASES.find((c) => c.id === 'clip-t2va-draft-from-direction-sheet')
   const prompt = 'integrated_multimodal_description: A magician hides a coin from a skeptical child and holds the closed fist.\noverall_soundscape: coin click, fabric movement, quiet breath.\nnon_diegetic_music: N/A'

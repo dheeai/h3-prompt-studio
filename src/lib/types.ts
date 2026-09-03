@@ -35,6 +35,8 @@ export interface Provider {
   builtIn: boolean
   /** llama.cpp understands cache_prompt; others reject unknown fields. */
   sendCachePrompt?: boolean
+  /** The provider accepts the llama.cpp chat-template thinking toggle. */
+  supportsThinkingToggle?: boolean
   /** Set-up hint shown when a probe fails with a CORS-shaped error. */
   corsHint?: string
 }
@@ -146,6 +148,7 @@ export type H3Mode = 'T2VA' | 'I2VA' | 'FL2VA' | 'L2VA' | 'Ref2VA' | 'MoGr'
 export interface Settings {
   /** Bumped when a default changes in a way that must reach existing users. */
   schema?: number
+  thinkingEnabled: boolean
   providerId: string
   model: string
   temperature: number

@@ -13,6 +13,7 @@ import { classifyInput, standingToText } from '../src/lib/lint.ts'
 // stitch lives in llm.ts alongside streamChatComplete; importing it here also
 // proves llm.ts loads cleanly under node — see the note above.
 import { stitch, toLineBoundary, appendedFor, continuationBudgetFor, streamChat, streamChatComplete } from '../src/lib/llm.ts'
+import { thinkingEnabledFromSaved } from '../src/lib/settings.ts'
 import { buildMulticlipGraph, multiclipIssues, padForOverlap, snapUp } from '../src/lib/multiclip.ts'
 import {
   ENTRY_MODES,
@@ -270,6 +271,59 @@ check('prompt replacement parser: accepts fenced markers and strict JSON from lo
   return fenced?.prompt === 'canonical' && fenced?.explanation === 'fixed timing' &&
     json?.prompt === 'canonical' && json?.explanation === 'fixed timing' && incomplete === null
 })())
+
+// The thinking toggle is an opt-in transport capability: only a provider that
+// advertises it receives chat_template_kwargs, and malformed/absent persisted
+// values must fall back to thinking enabled.
+{
+  const originalFetch = globalThis.fetch
+  const bodies = []
+  const contentFrame = JSON.stringify({ choices: [{ delta: { content: 'answer' } }] })
+  const finishFrame = JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] })
+  globalThis.fetch = async (_input, init) => {
+    bodies.push(JSON.parse(init?.body ?? '{}'))
+    return new Response(`data: ${contentFrame}\n\ndata: ${finishFrame}\n`, {
+      headers: { 'Content-Type': 'text/event-stream' },
+    })
+  }
+  try {
+    await streamChat({
+      provider: { id: 'llamacpp', label: 'llama.cpp', baseUrl: 'http://test.local/v1', kind: 'openai', builtIn: true, supportsThinkingToggle: true },
+      model: 'test-model',
+      messages: [{ role: 'user', content: 'prompt' }],
+      temperature: 0.2,
+      maxTokens: 0,
+      thinkingEnabled: false,
+      onDelta() {},
+    })
+    await streamChat({
+      provider: { id: 'ollama', label: 'Ollama', baseUrl: 'http://test.local/v1', kind: 'openai', builtIn: true, supportsThinkingToggle: false },
+      model: 'test-model',
+      messages: [{ role: 'user', content: 'prompt' }],
+      temperature: 0.2,
+      maxTokens: 0,
+      thinkingEnabled: true,
+      onDelta() {},
+    })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+  check(
+    'thinking transport: enabled provider receives explicit disable flag',
+    bodies[0]?.chat_template_kwargs?.enable_thinking === false,
+    JSON.stringify(bodies[0]),
+  )
+  check(
+    'thinking transport: unsupported provider receives no chat-template kwargs',
+    !Object.prototype.hasOwnProperty.call(bodies[1] ?? {}, 'chat_template_kwargs'),
+    JSON.stringify(bodies[1]),
+  )
+}
+
+check('thinking settings: missing and malformed values default enabled',
+  thinkingEnabledFromSaved({}) === true &&
+  thinkingEnabledFromSaved({ thinkingEnabled: false }) === false &&
+  thinkingEnabledFromSaved({ thinkingEnabled: 'false' }) === true)
 
 // llama.cpp can close an SSE response immediately after its final data frame,
 // without writing the optional blank-line separator. The final explanation

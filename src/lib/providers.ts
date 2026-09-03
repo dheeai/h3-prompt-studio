@@ -25,6 +25,7 @@ export const DEFAULT_PROVIDERS: Provider[] = [
     kind: 'openai',
     builtIn: true,
     sendCachePrompt: true,
+    supportsThinkingToggle: true,
     corsHint: 'Run llama-server with --host 0.0.0.0; it sends permissive CORS headers by default.',
   },
   {

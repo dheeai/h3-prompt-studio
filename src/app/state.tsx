@@ -12,6 +12,7 @@ import { buildMulticlipGraph, multiclipIssues, multiclipWarnings, overlapFramesO
 import type { MulticlipClip, PaddedClip } from '../lib/multiclip'
 import { fetchBundledSkills, loadSkills, removeSkill, saveSkill } from '../lib/skills'
 import { estTokens } from '../lib/tokens'
+import { DEFAULT_THINKING_ENABLED, SETTINGS_SCHEMA, thinkingEnabledFromSaved } from '../lib/settings'
 import { appendContinuationHistory, authorContinuation, clearDraftContext, continuationContextOverride, continuationPlateIsFresh, continuationSource, interruptedReasoningText, previousPromptForClip, promptSourceForEntryMode } from '../lib/entry'
 import type { EntryModeId } from '../lib/entry'
 import { isSingleRequestStage, type StudioRunPhase } from '../lib/studio-workflow'
@@ -20,8 +21,6 @@ import type {
   Recipe, Selection, Settings, Skill, StageId, Version,
 } from '../lib/types'
 
-const SETTINGS_SCHEMA = 4
-
 const DEFAULT_FILM: FilmContext = { role: 'standalone', spine: '', precedes: '', follows: '' }
 
 /** Stages whose output is a prompt, as opposed to a direction sheet or notes. */
@@ -29,6 +28,7 @@ const PROMPT_STAGES = new Set<StageId>(['draft', 'revise', 'rebuild', 'freeform'
 
 const DEFAULT_SETTINGS: Settings = {
   schema: SETTINGS_SCHEMA,
+  thinkingEnabled: DEFAULT_THINKING_ENABLED,
   providerId: 'ollama',
   model: '',
   temperature: 0.35,
@@ -339,6 +339,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const merged: Settings = {
         ...DEFAULT_SETTINGS,
         ...savedSettings,
+        thinkingEnabled: thinkingEnabledFromSaved(savedSettings),
         stageTemplates: { ...(savedSettings?.stageTemplates || {}) },
         seenBundled: [...new Set([...(savedSettings?.seenBundled ?? []), ...bundledIds])],
       }
@@ -652,6 +653,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           model: settings.model,
           temperature: settings.temperature,
           maxTokens: settings.maxTokens,
+          thinkingEnabled: settings.thinkingEnabled,
           contextHash: ctx.hash,
           signal: ac.signal,
           // The cached block is always first and byte-identical between calls;

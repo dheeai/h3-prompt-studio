@@ -438,13 +438,32 @@ const REF_H3_FIELDS = ['subject_definitions', 'summary', 'retention_analysis', '
  * and partial field output must remain invalid replacements.
  */
 function parseBareH3Prompt(text: string): { prompt: string; explanation: string; changelog: string[] } | null {
+  // Once the wrapper is absent, none of its markers may be allowed to hide in
+  // a field body. The marker is always a protocol boundary, never prompt
+  // content.
+  if (text.includes('<<<')) return null
+
   const lines = text.replace(/\r\n?/g, '\n').split('\n')
   const sections: { name: string; body: string[] }[] = []
 
   for (const line of lines) {
-    const header = line.match(/^([a-z][a-z0-9_]{3,})[ \t]*:[ \t]*(.*)$/)
+    const header = line.match(/^([A-Za-z][A-Za-z0-9_]{3,})[ \t]*:[ \t]*(.*)$/)
     if (header) {
-      sections.push({ name: header[1], body: header[2] ? [header[2]] : [] })
+      const name = header[1]
+      // Canonical H3 field names are exact lowercase snake_case. Treat a
+      // case-variant or an unknown snake_case/lowercase header as a malformed
+      // extra field instead of silently appending it to the prior section.
+      // Uppercase prose such as "At 00:02, she says:" is still ordinary body
+      // text because it is not field-shaped.
+      const fieldLike = name.includes('_') || name === name.toLowerCase()
+      if (fieldLike) {
+        if (name !== name.toLowerCase()) return null
+        sections.push({ name, body: header[2] ? [header[2]] : [] })
+      } else if (sections.length) {
+        sections[sections.length - 1].body.push(line)
+      } else {
+        return null
+      }
     } else if (sections.length) {
       sections[sections.length - 1].body.push(line)
     } else if (line.trim()) {
@@ -456,6 +475,11 @@ function parseBareH3Prompt(text: string): { prompt: string; explanation: string;
   const expected = sections[0].name === 'integrated_multimodal_description' ? BASE_H3_FIELDS : sections[0].name === 'subject_definitions' ? REF_H3_FIELDS : null
   if (!expected || sections.length !== expected.length) return null
   if (sections.some((section, i) => section.name !== expected[i] || !section.body.join('\n').trim())) return null
+  // The final field is a single H3 value. Requiring one logical line prevents
+  // an unmarked prose postscript from being absorbed into
+  // non_diegetic_music, while all earlier fields remain free to contain
+  // multiline shot/action descriptions.
+  if (sections.at(-1)!.body.filter((line) => line.trim()).length !== 1) return null
 
   return { prompt: lines.join('\n').trim(), explanation: '', changelog: [] }
 }

@@ -973,10 +973,41 @@ check('prompt replacement parser: accepts a complete bare H3 payload from local 
     'overall_soundscape: night insects, hinge creak, breath catch, and one latch click.',
     'non_diegetic_music: N/A',
   ].join('\n')
+  const refBare = [
+    'subject_definitions: <Subject 1> is a woman; <Subject 2> is the greenhouse door; <Subject 3> is a pale moth.',
+    'summary: The woman opens the greenhouse door as the moth lands on her wrist.',
+    'retention_analysis: Preserve the woman, door, moth, and latch ending.',
+    'detailed_description: She turns the latch in a quiet final beat.',
+    'overall_soundscape: night insects, hinge creak, breath catch, and one latch click.',
+    'non_diegetic_music: N/A',
+  ].join('\n')
+  const colonInBody = bare.replace(
+    'integrated_multimodal_description: A woman opens the greenhouse door as a pale moth lands on her wrist; end on her hand turning the latch.',
+    'integrated_multimodal_description: At 00:02, she says: "Wait." Then she turns the latch; end on her hand.',
+  )
+  const multilineColonInBody = bare.replace(
+    'integrated_multimodal_description: A woman opens the greenhouse door as a pale moth lands on her wrist; end on her hand turning the latch.',
+    'integrated_multimodal_description:\nAt 00:02, she says: "Wait."\nThen she turns the latch; end on her hand.',
+  )
+  const invalid = [
+    bare.replace(/\noverall_soundscape:[\s\S]*/, ''),
+    `Here is the revised prompt:\n${bare}`,
+    `${bare}\nDone — this is the improved version.`,
+    `${bare}\n<<<CHANGES>>>\n- improved pacing`,
+    `${bare}\n<<<POSTSCRIPT>>>\nLet me know if you want another pass.`,
+    bare.replace('overall_soundscape:', 'camera_direction: slow push-in\noverall_soundscape:'),
+    bare.replace('overall_soundscape:', 'overall_soundscape: duplicate\noverall_soundscape:'),
+    bare.replace('overall_soundscape:', 'Overall_soundscape:'),
+    bare.replace('overall_soundscape:', 'Camera_direction: slow push-in\noverall_soundscape:'),
+    `${bare}\nOverall_soundscape: duplicate`,
+  ]
   const parsed = workflowModule.splitPromptReplacement(bare)
-  const partial = workflowModule.splitPromptReplacement(bare.replace(/\noverall_soundscape:[\s\S]*/, ''))
-  const prose = workflowModule.splitPromptReplacement('I made the prompt more cinematic and improved the pacing.')
-  return parsed?.prompt === bare && parsed?.explanation === '' && parsed?.changelog.length === 0 && partial === null && prose === null
+  const parsedRef = workflowModule.splitPromptReplacement(refBare)
+  return parsed?.prompt === bare && parsed?.explanation === '' && parsed?.changelog.length === 0 &&
+    parsedRef?.prompt === refBare && parsedRef?.explanation === '' && parsedRef?.changelog.length === 0 &&
+    workflowModule.splitPromptReplacement(colonInBody)?.prompt === colonInBody &&
+    workflowModule.splitPromptReplacement(multilineColonInBody)?.prompt === multilineColonInBody &&
+    invalid.every((candidate) => workflowModule.splitPromptReplacement(candidate) === null)
 })())
 
 // Studio's direct client must put the paired budget fields at the request

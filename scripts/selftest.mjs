@@ -425,6 +425,45 @@ check('thinking eval scorer: T2VA ending keeps the coin concealed in the magicia
   const result = scoreRecord(testCase, syntheticRecord(testCase, visible))
   return result.findings.some((f) => f.id === 't2va-source-contract' && !f.passed)
 })())
+check('thinking eval scorer: T2VA detects real references without flagging a generic source action', (() => {
+  const testCase = EVAL_CASES.find((c) => c.id === 'clip-t2va-draft-from-direction-sheet')
+  const dependency = validT2vaPrompt.replace('The street magician displays', 'Using the source image, the street magician displays')
+  const genericSource = validT2vaPrompt.replace('The street magician displays', 'The magician follows the source action and displays')
+  const dependencyResult = scoreRecord(testCase, syntheticRecord(testCase, dependency))
+  const genericSourceResult = scoreRecord(testCase, syntheticRecord(testCase, genericSource))
+  return dependencyResult.findings.some((f) => f.id === 't2va-source-contract' && !f.passed) && genericSourceResult.findings.some((f) => f.id === 't2va-source-contract' && f.passed)
+})())
+check('thinking eval scorer: T2VA accepts coin remains in the closed fist as concealed', (() => {
+  const testCase = EVAL_CASES.find((c) => c.id === 'clip-t2va-draft-from-direction-sheet')
+  const compliant = validT2vaPrompt.replace('the coin remains hidden and the child remains skeptical', 'the coin remains in the closed fist and the child remains skeptical')
+  const result = scoreRecord(testCase, syntheticRecord(testCase, compliant))
+  return result.findings.some((f) => f.id === 't2va-source-contract' && f.passed)
+})())
+check('thinking eval scorer: T2VA accepts retained, contained, and held coin variants', (() => {
+  const testCase = EVAL_CASES.find((c) => c.id === 'clip-t2va-draft-from-direction-sheet')
+  const endings = [
+    'the coin remains in the closed fist and the child remains skeptical',
+    'the closed fist retains the coin and the child remains skeptical',
+    'the closed fist contains the coin and the child remains skeptical',
+    'the closed fist holds the coin and the child remains skeptical',
+  ]
+  return endings.every((ending) => {
+    const result = scoreRecord(testCase, syntheticRecord(testCase, validT2vaPrompt.replace('the coin remains hidden and the child remains skeptical', ending)))
+    return result.findings.some((f) => f.id === 't2va-source-contract' && f.passed)
+  })
+})())
+check('thinking eval scorer: T2VA keeps the skeptical child state through the final fist beat', (() => {
+  const testCase = EVAL_CASES.find((c) => c.id === 'clip-t2va-draft-from-direction-sheet')
+  const convinced = validT2vaPrompt.replace('the coin remains hidden and the child remains skeptical', 'the coin remains hidden; the child becomes convinced, then looks skeptical again')
+  const result = scoreRecord(testCase, syntheticRecord(testCase, convinced))
+  return result.findings.some((f) => f.id === 't2va-source-contract' && !f.passed)
+})())
+check('thinking eval scorer: T2VA continuity validator reflects its source and final-state contract', (() => {
+  const testCase = EVAL_CASES.find((c) => c.id === 'clip-t2va-draft-from-direction-sheet')
+  const valid = scoreRecord(testCase, syntheticRecord(testCase, validT2vaPrompt))
+  const broken = scoreRecord(testCase, syntheticRecord(testCase, validT2vaPrompt.replace('the coin remains hidden and the child remains skeptical', 'the magician reveals the coin and the child sees it')))
+  return valid.findings.some((f) => f.id === 'continuity' && f.passed) && broken.findings.some((f) => f.id === 'continuity' && !f.passed)
+})())
 check('thinking eval scorer: direct Direction Sheet passes without H3 prompt fields', (() => {
   const testCase = EVAL_CASES.find((c) => c.id === 'scene-middle-closing-direction')
   const result = scoreRecord(testCase, syntheticRecord(testCase, validDirectionSheet))
@@ -434,6 +473,12 @@ check('thinking eval scorer: direct output that emits H3 fields fails its direct
   const testCase = EVAL_CASES.find((c) => c.id === 'scene-middle-closing-direction')
   const result = scoreRecord(testCase, syntheticRecord(testCase, `${validDirectionSheet}\nintegrated_multimodal_description: an improper prompt payload`))
   return !result.passed && result.findings.some((f) => f.id === 'direction-sheet-contract' && !f.passed)
+})())
+check('thinking eval scorer: direct sound anchors require a concrete source, not a bare heading', (() => {
+  const testCase = EVAL_CASES.find((c) => c.id === 'scene-middle-closing-direction')
+  const invalid = validDirectionSheet.replace('Sound anchors: wind against the platform, Maya’s breath, paper unfolding, and a distant rail hum; no score.', 'Sound anchors:')
+  const result = scoreRecord(testCase, syntheticRecord(testCase, invalid))
+  return result.findings.some((f) => f.id === 'sound-music' && !f.passed)
 })())
 check('thinking eval scorer: two-hander direct requires one continuous 7-second shot', (() => {
   const testCase = EVAL_CASES.find((c) => c.id === 'clip-direction-acting-heavy-two-hander')
@@ -481,6 +526,24 @@ check('thinking eval scorer: rebuild rejects a trivial adjective change without 
   const result = scoreRecord(testCase, syntheticRecord(testCase, trivial))
   return result.findings.some((f) => f.id === 'material-rebuild' && !f.passed)
 })())
+check('thinking eval scorer: rebuild rejects a synonym-only fingers-to-hands edit', (() => {
+  const testCase = EVAL_CASES.find((c) => c.id === 'prompt-rebuild')
+  const trivial = `<<<PROMPT>>>\n${testCase.current.replace('her fingers stop', 'her hands stop')}\n<<<EXPLANATION>>>\nThe hand wording is more natural.`
+  const result = scoreRecord(testCase, syntheticRecord(testCase, trivial))
+  return result.findings.some((f) => f.id === 'material-rebuild' && !f.passed)
+})())
+check('thinking eval scorer: rebuild rejects a cross-category breath synonym without a structural rethink', (() => {
+  const testCase = EVAL_CASES.find((c) => c.id === 'prompt-rebuild')
+  const trivial = `<<<PROMPT>>>\n${testCase.current.replaceAll('breath', 'exhalation')}\n<<<EXPLANATION>>>\nBreath was replaced with a synonym.`
+  const result = scoreRecord(testCase, syntheticRecord(testCase, trivial))
+  return result.findings.some((f) => f.id === 'material-rebuild' && !f.passed)
+})())
+check('thinking eval scorer: prompt replacement rejects dialogue anywhere in the parsed prompt', (() => {
+  const testCase = EVAL_CASES.find((c) => c.id === 'prompt-revise')
+  const spoken = validPromptReplacement.replace('The moth lands on her wrist and she stops to watch it.', 'The moth lands on her wrist while she whispers a warning and stops to watch it.')
+  const result = scoreRecord(testCase, syntheticRecord(testCase, spoken))
+  return result.findings.some((f) => f.id === 'no-dialogue' && !f.passed)
+})())
 check('thinking eval scorer: silent prompt cases do not treat voices as ambient sound', (() => {
   const testCase = EVAL_CASES.find((c) => c.id === 'clip-t2va-draft-from-direction-sheet')
   const voiceOnly = validT2vaPrompt.replace('coin click against the palm, fabric movement, and the child’s quiet breath.', 'voices only.').replace('non_diegetic_music: N/A', 'non_diegetic_music: N/A')
@@ -518,6 +581,12 @@ check('thinking eval scorer: scene middle rejects replaying the drawing discover
   const replay = `${validDirectionSheet}\nMaya discovers the child’s drawing again before carrying the lantern onward.`
   const result = scoreRecord(testCase, syntheticRecord(testCase, replay))
   return result.findings.some((f) => f.id === 'continuity-reestablishment' && !f.passed)
+})())
+check('thinking eval scorer: scene middle accepts explicit negations of replaying drawing discovery', (() => {
+  const testCase = EVAL_CASES.find((c) => c.id === 'scene-middle-closing-direction')
+  const compliant = `${validDirectionSheet}\nMaya proceeds without rediscovering the drawing and does not find the drawing again.`
+  const result = scoreRecord(testCase, syntheticRecord(testCase, compliant))
+  return result.findings.some((f) => f.id === 'continuity-reestablishment' && f.passed)
 })())
 check('thinking eval scorer: continuation cannot re-establish the prior placement', (() => {
   const testCase = EVAL_CASES.find((c) => c.id === 'continuation-planning')

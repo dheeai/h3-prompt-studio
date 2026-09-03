@@ -77,6 +77,17 @@ function hasEvery(text: string, patterns: readonly RegExp[]): boolean {
   return patterns.every((pattern) => pattern.test(text))
 }
 
+function hasUnnegatedMatch(text: string, pattern: RegExp): boolean {
+  const flags = pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`
+  const globalPattern = new RegExp(pattern.source, flags)
+  for (const match of text.matchAll(globalPattern)) {
+    const index = match.index ?? 0
+    const prefix = text.slice(Math.max(0, index - 72), index)
+    if (!/\b(?:without|not|no|never|does\s+not|do\s+not|did\s+not|doesn't|don't|didn't|avoid(?:s|ed|ing)?)\s+(?:\w+[\s,'’-]*){0,3}$/i.test(prefix)) return true
+  }
+  return false
+}
+
 function fieldValue(text: string, field: string): string {
   const start = new RegExp(`^[ \\t]*${field}[ \\t]*:?[ \\t]*`, 'im').exec(text)
   if (!start) return ''
@@ -238,9 +249,9 @@ function clipDuration(text: string, testCase: ThinkingEvalCase): DeterministicFi
 function t2vaSourceContract(text: string, testCase: ThinkingEvalCase): DeterministicFinding {
   if (testCase.id !== 'clip-t2va-draft-from-direction-sheet') return finding('t2va-source-contract', true, 'not applicable to this fixture')
   const lower = normalized(text)
-  const hasReferencePlaceholder = /<\s*(?:subject|reference|ref|image|object|character)\b[^>]*>|\{\{\s*(?:subject|reference|ref|image|object|character)\b[^}]*\}\}/i.test(text)
-  const hasReferenceDependency = /\b(?:reference[- ]image|reference frame|source image|input image|image[- ]to[- ]video|img2img|i2v|provided image|input frame)\b/i.test(lower) ||
-    /\b(?:use|uses|using|from|match|matches|preserve|preserves|follow|follows|depend(?:s|ing)?|require(?:s|d)?)\s+(?:the\s+)?(?:reference|source|input)\b/i.test(lower)
+  const hasReferencePlaceholder = /<\s*(?:subject|reference|ref|image|object|character)\b[^>]*>|\{\{\s*(?:subject|reference|ref|image|object|character)\b[^}]*\}\}|\[\s*(?:subject|reference|ref|image|object|character)[ _-]?\d*\s*\]|\b(?:subject|reference|ref|image)[_-]\d+\b/i.test(text)
+  const hasReferenceDependency = hasUnnegatedMatch(lower, /\b(?:reference[- ]image|reference frame|source image|input image|image[- ]to[- ]video|img2img|i2v|provided image|input frame|reference asset|source plate|input plate)\b/i) ||
+    hasUnnegatedMatch(lower, /\b(?:use|uses|using|from|match|matches|preserve|preserves|follow|follows|depend(?:s|ing)?|require(?:s|d)?)\s+(?:the\s+)?(?:provided\s+)?(?:reference|source|input)\s+(?:image|frame|asset|plate|video)\b/i)
 
   const beatMarkers = [...text.matchAll(/(?:\[\s*)?\d+(?:\.\d+)?\s*[–—-]\s*\d+(?:\.\d+)?\s*seconds?\s*(?:\]\s*|:\s*)/gi)]
   const lastBeat = beatMarkers.length
@@ -249,12 +260,16 @@ function t2vaSourceContract(text: string, testCase: ThinkingEvalCase): Determini
   const finalHasCoin = /\bcoin\b/i.test(lastBeat)
   const finalHasClosedFist = /\b(?:closed|clenched)\s+fist\b/i.test(lastBeat)
   const finalConcealsCoin = /\b(?:coin|it)\b[^.\n]{0,100}\b(?:hidden|concealed|invisible|unseen|remains?\s+(?:inside|concealed|hidden)|stays?\s+(?:inside|hidden)|not\s+visible)\b/i.test(lastBeat) ||
+    /\b(?:coin|it)\b[^.\n]{0,100}\b(?:remains?|stays?)\s+(?:inside|in)\s+(?:the\s+)?(?:(?:magician['’]s)\s+)?(?:closed|clenched)\s+fist\b/i.test(lastBeat) ||
+    /\b(?:closed|clenched)\s+fist\b[^.\n]{0,100}\b(?:retain(?:s|ed)?|contain(?:s|ed)?|hold(?:s|ing)?)\s+(?:the\s+)?coin\b/i.test(lastBeat) ||
     /\b(?:hidden|concealed|invisible|unseen)\b[^.\n]{0,100}\b(?:coin|closed\s+fist)\b/i.test(lastBeat)
   const finalRevealsCoin = /\b(?:coin|it)\b[^.\n]{0,100}\b(?:visible|revealed|shown|exposed|disclosed|appears?)\b|\b(?:reveal(?:s|ed|ing)?|show(?:s|ed|ing)?|expos(?:es|ed|ing)?)\s+(?:the\s+)?coin\b/i.test(lastBeat)
-  const passed = !hasReferencePlaceholder && !hasReferenceDependency && finalHasCoin && finalHasClosedFist && finalConcealsCoin && !finalRevealsCoin
+  const childConvinced = hasUnnegatedMatch(lower, /\b(?:convinced|assured|satisfied|accepts?|trusts?|no longer skeptical)\b/i)
+  const finalKeepsSkeptical = /\b(?:child|skeptic(?:al)?)\b[^.\n]{0,100}\b(?:remains?|stays?|keeps?)\s+(?:skeptic(?:al)?|doubtful|unconvinced)\b/i.test(lastBeat)
+  const passed = !hasReferencePlaceholder && !hasReferenceDependency && finalHasCoin && finalHasClosedFist && finalConcealsCoin && !finalRevealsCoin && !childConvinced && finalKeepsSkeptical
   return finding('t2va-source-contract', passed, passed
-    ? 'T2VA uses no reference dependency and ends with the coin concealed in the closed fist'
-    : 'T2VA must stay text-only and end with the coin concealed, not visible or revealed, in the magician’s closed fist')
+    ? 'T2VA uses no reference dependency, preserves the skeptical child state, and ends with the coin concealed in the closed fist'
+    : 'T2VA must stay text-only, keep the child skeptical through the final beat, and end with the coin concealed—not visible or revealed—in the closed fist')
 }
 
 function orderedBreakdownActions(text: string): DeterministicFinding {
@@ -329,13 +344,13 @@ function reestablishesPriorAction(text: string, testCase: ThinkingEvalCase): Det
     return finding('continuity-reestablishment', true, 'not applicable to this fixture')
   }
   const lower = normalized(text)
-  const repeatedPlacement = /(?:place|places|placed|placing|set|sets|setting|leave|leaves|leaving)\s+(?:the\s+)?(?:red\s+)?(?:paper\s+)?lantern\s+(?:beside|next to|by|on)/i.test(lower)
-  const newPlatformEstablishment = /(?:establish|establishes|establishing|introduce|introduces|enter|enters|entering)\b[^.\n]{0,80}\b(?:platform|railway)/i.test(lower)
+  const repeatedPlacement = hasUnnegatedMatch(lower, /(?:place|places|placed|placing|set|sets|setting|leave|leaves|leaving)\s+(?:the\s+)?(?:red\s+)?(?:paper\s+)?lantern\s+(?:beside|next to|by|on)/i)
+  const newPlatformEstablishment = hasUnnegatedMatch(lower, /(?:establish|establishes|establishing|introduce|introduces|enter|enters|entering)\b[^.\n]{0,80}\b(?:platform|railway)/i)
   const repeatedDrawingDiscovery = [
     /\b(?:re-?find|re-?discover|re-?see|rediscover(?:s|ed|ing)?)\b[^.\n]{0,80}\bdrawing\b/i,
     /\b(?:find|finds|found|finding|discover|discovers|discovered|discovering|see|sees|saw|seeing|spot|spots|spotted|notice|notices|noticed)\b[^.\n]{0,80}\bdrawing\b[^.\n]{0,24}\b(?:again|anew|once more)\b/i,
     /\b(?:again|anew|once more)\b[^.\n]{0,40}\b(?:find|discover|see|spot|notice)\w*\b[^.\n]{0,80}\bdrawing\b/i,
-  ].some((pattern) => pattern.test(lower))
+  ].some((pattern) => hasUnnegatedMatch(lower, pattern))
   const passed = !repeatedPlacement && !newPlatformEstablishment && !repeatedDrawingDiscovery
   return finding('continuity-reestablishment', passed, passed ? 'prior placement, drawing discovery, and established setting are not replayed' : 'the response re-establishes the prior lantern placement, drawing discovery, or platform')
 }
@@ -424,8 +439,32 @@ function rebuildMaterialChange(text: string, testCase: ThinkingEvalCase): Determ
   const changedCategories = craftCategories.filter((category) => categorySignature(replacement.prompt, category.terms) !== categorySignature(testCase.current, category.terms))
   const actingChanged = changedCategories.some((category) => category.label === 'acting')
   const directingChanged = changedCategories.some((category) => ['camera', 'blocking', 'light', 'sound'].includes(category.label))
-  const passed = changed && changedCategories.length >= 2 && actingChanged && directingChanged
-  return finding('material-rebuild', passed, passed ? `rebuild changed the prompt and rethought ${changedCategories.map((category) => category.label).join(', ')}` : 'rebuild must materially change more than punctuation/whitespace and rethink both directing and observable acting')
+  const words = (value: string) => new Set(value.toLowerCase().match(/[a-z]+(?:-[a-z]+)?/g) ?? [])
+  const replacementWords = words(replacement.prompt)
+  const currentWords = words(testCase.current)
+  const changedWordCount = new Set([...replacementWords, ...currentWords]).size - [...replacementWords].filter((word) => currentWords.has(word)).length
+  // Category signatures alone can mistake a synonym (for example
+  // fingers→hands) for a directing/acting rethink. Require a visible lexical
+  // delta large enough to represent a structural beat or camera rewrite.
+  const substantialRethink = changedWordCount >= 8
+  const passed = changed && changedCategories.length >= 2 && actingChanged && directingChanged && substantialRethink
+  return finding('material-rebuild', passed, passed ? `rebuild changed the prompt and rethought ${changedCategories.map((category) => category.label).join(', ')} (${changedWordCount} changed words)` : 'rebuild must materially change more than punctuation/whitespace or synonyms and rethink both directing and observable acting')
+}
+
+const CONCRETE_SOUND_SOURCE = /\b(?:rain|footsteps?|traffic|door|wind|engine|birds?|breath|clatter|hum|bell|water|thunder|clock|ticking|creak|rustle|scrape|whistle|horn|radio|glass|metal|paper|fabric|foley|coin|hinge|insects?)\b/i
+
+function noDialoguePrompt(text: string, testCase: ThinkingEvalCase): DeterministicFinding {
+  if (testCase.id !== 'prompt-revise' && testCase.id !== 'prompt-rebuild') return finding('no-dialogue', true, 'not applicable to this fixture')
+  const replacement = splitPromptReplacement(text)
+  const prompt = replacement?.prompt ?? ''
+  const forbidden = [
+    /\b(?:dialogue|speech|conversation|verbal)\b/i,
+    /\b(?:voice|voices)\b/i,
+    /\b(?:say|says|said|speak|speaks|spoke|speaking|whisper|whispers|whispered|whispering|talk|talks|talked|talking)\b/i,
+  ]
+  const violations = forbidden.filter((pattern) => hasUnnegatedMatch(prompt, pattern))
+  const passed = !!prompt.trim() && violations.length === 0
+  return finding('no-dialogue', passed, passed ? 'parsed replacement prompt remains silent' : 'parsed replacement prompt must not add dialogue, speech, voices, or spoken action')
 }
 
 function soundAndMusic(text: string, testCase: ThinkingEvalCase): DeterministicFinding {
@@ -433,12 +472,14 @@ function soundAndMusic(text: string, testCase: ThinkingEvalCase): DeterministicF
   const lower = normalized(text)
   const sound = fieldValue(text, 'overall_soundscape')
   const music = fieldValue(text, 'non_diegetic_music')
-  const soundSources = /\b(?:rain|footsteps?|traffic|door|wind|engine|birds?|breath|clatter|hum|bell|water|thunder|clock|ticking|creak|rustle|scrape|whistle|horn|radio|glass|metal|paper|fabric|foley|coin|hinge|insects?)\b/i.test(sound)
-  const voiceCue = /\b(?:voice|voices|dialogue|speech|words|speak|talk|conversation|says?)\b/i.test(sound)
+  const soundSources = CONCRETE_SOUND_SOURCE.test(sound)
+  const directSoundSection = lower.match(/(?:sound anchors?|sound design)\s*:\s*([^\n]*)/i)?.[1] ?? ''
+  const soundText = testCase.stage === 'direct' ? directSoundSection : sound
+  const voiceCue = /\b(?:voice|voices|dialogue|speech|words|speak|talk|conversation|says?)\b/i.test(soundText)
   const silentCase = new Set(['clip-t2va-draft-from-direction-sheet', 'prompt-revise', 'prompt-rebuild', 'continuation-prompt-authoring']).has(testCase.id)
   const musicValid = silentCase ? /^n\/a\.?$/i.test(music) : (!!music || testCase.stage === 'direct')
   const directionSound = testCase.stage === 'direct' && !testCase.id.startsWith('continuation-')
-    ? (!voiceCue && (soundSources || /sound anchors?|sound design|footsteps?|breath|fabric|coin|hinge/i.test(lower)))
+    ? (!voiceCue && CONCRETE_SOUND_SOURCE.test(directSoundSection))
     : true
   const passed = testCase.stage === 'draft' || testCase.stage === 'revise' || testCase.stage === 'rebuild'
     ? !!sound && soundSources && !voiceCue && musicValid
@@ -501,6 +542,7 @@ function stageFindings(testCase: ThinkingEvalCase, record: RawEvalRecord): Deter
     verbatimDialogue(content, testCase),
     actingSpecificity(content, testCase),
     twoHanderContract(content, testCase),
+    noDialoguePrompt(semanticContent, testCase),
     soundAndMusic(semanticContent, testCase),
     prematureResolution(semanticContent, testCase),
     promptInventedEvents(semanticContent, testCase),
@@ -515,9 +557,12 @@ function stageFindings(testCase: ThinkingEvalCase, record: RawEvalRecord): Deter
   // to establish one contract (continuity is the main example).
   for (const validatorId of testCase.validators) {
     if (findings.some((item) => item.id === validatorId)) continue
-    const mapped = validatorId === 'continuity'
-      ? findings.filter((item) => ['neighboring-states', 'continuity-opening', 'continuity-reestablishment', 'no-premature-resolution'].includes(item.id))
-      : []
+    const continuityIds = testCase.id === 'clip-t2va-draft-from-direction-sheet'
+      ? ['t2va-source-contract']
+      : testCase.id === 'scene-middle-closing-direction'
+        ? ['neighboring-states', 'continuity-reestablishment', 'no-premature-resolution']
+        : ['neighboring-states', 'continuity-opening', 'continuity-reestablishment', 'no-premature-resolution']
+    const mapped = validatorId === 'continuity' ? findings.filter((item) => continuityIds.includes(item.id)) : []
     findings.push(finding(validatorId, mapped.length > 0 && mapped.every((item) => item.passed), mapped.length > 0 ? 'all continuity sub-checks passed' : `validator ${validatorId} was not executed`))
   }
 

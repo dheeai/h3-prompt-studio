@@ -430,6 +430,11 @@ function parseJsonReply(text: string): { prompt: string; explanation: string; ch
 
 const BASE_H3_FIELDS = ['integrated_multimodal_description', 'overall_soundscape', 'non_diegetic_music'] as const
 const REF_H3_FIELDS = ['subject_definitions', 'summary', 'retention_analysis', 'detailed_description', 'overall_soundscape', 'non_diegetic_music'] as const
+const ALL_H3_FIELDS = [...new Set([...BASE_H3_FIELDS, ...REF_H3_FIELDS])]
+
+function normalizedH3FieldName(name: string): string {
+  return name.replace(/[\s_-]/g, '').toLowerCase()
+}
 
 /**
  * Some local instruction-tuned models return the canonical H3 payload but
@@ -447,17 +452,29 @@ function parseBareH3Prompt(text: string): { prompt: string; explanation: string;
   const sections: { name: string; body: string[] }[] = []
 
   for (const line of lines) {
-    const header = line.match(/^([A-Za-z][A-Za-z0-9_]{3,})[ \t]*:[ \t]*(.*)$/)
+    const exactHeader = line.match(/^([A-Za-z][A-Za-z0-9_]{3,})[ \t]*:[ \t]*(.*)$/)
+    const spacedHeader = line.match(/^([A-Za-z][A-Za-z0-9_]*(?:[ \t-]+[A-Za-z][A-Za-z0-9_]*)+)[ \t]*:[ \t]*(.*)$/)
+    const header = exactHeader ?? spacedHeader
     if (header) {
       const name = header[1]
-      // A line-leading identifier followed immediately by a colon is a
-      // structural header candidate, not prose. Requiring it to be one of
-      // the exact lowercase H3 fields catches compact/case-variant extras
-      // such as Camera:, CAMERA:, and OverallSoundscape: without rejecting a
-      // normal sentence like "At 00:02, she says: ..." (which has spaces and
-      // punctuation before its colon).
-      if (!BASE_H3_FIELDS.includes(name as (typeof BASE_H3_FIELDS)[number]) && !REF_H3_FIELDS.includes(name as (typeof REF_H3_FIELDS)[number])) return null
-      sections.push({ name, body: header[2] ? [header[2]] : [] })
+      // Canonical names are exact lowercase snake_case. Normalize only for
+      // detection, so spaced/hyphenated/case variants such as
+      // "Overall Soundscape:" and "NonDiegeticMusic:" are rejected rather
+      // than absorbed into the preceding field. A normal sentence like
+      // "She says: ..." is not a canonical variant and remains body text.
+      const canonical = ALL_H3_FIELDS.find((field) => normalizedH3FieldName(field) === normalizedH3FieldName(name))
+      if (canonical) {
+        if (name !== canonical) return null
+        sections.push({ name, body: header[2] ? [header[2]] : [] })
+      } else if (exactHeader) {
+        // Preserve the existing guard for unknown compact identifier fields,
+        // while allowing non-canonical prose containing a short phrase colon.
+        return null
+      } else if (sections.length) {
+        sections[sections.length - 1].body.push(line)
+      } else {
+        return null
+      }
     } else if (sections.length) {
       sections[sections.length - 1].body.push(line)
     } else if (line.trim()) {

@@ -987,9 +987,10 @@ check('prompt replacement parser: accepts a complete bare H3 payload from local 
   )
   const multilineColonInBody = bare.replace(
     'integrated_multimodal_description: A woman opens the greenhouse door as a pale moth lands on her wrist; end on her hand turning the latch.',
-    'integrated_multimodal_description:\nAt 00:02, she says: "Wait."\nThen she turns the latch; end on her hand.',
+    'integrated_multimodal_description:\nAt 00:02, she says: "Wait."\nShe says: "The latch."\nThen she turns the latch; end on her hand.',
   )
   const compactHeaderVariants = ['Camera', 'CAMERA', 'OverallSoundscape', 'Summary', 'NonDiegeticMusic']
+  const spacedHeaderVariants = ['Overall Soundscape', 'overall-soundscape', 'Non Diegetic Music', 'integrated-multimodal-description']
   const invalid = [
     bare.replace(/\noverall_soundscape:[\s\S]*/, ''),
     `Here is the revised prompt:\n${bare}`,
@@ -1002,8 +1003,9 @@ check('prompt replacement parser: accepts a complete bare H3 payload from local 
     bare.replace('overall_soundscape:', 'Camera_direction: slow push-in\noverall_soundscape:'),
     `${bare}\nOverall_soundscape: duplicate`,
     ...compactHeaderVariants.map((header) => bare.replace('overall_soundscape:', `${header}: unexpected field\noverall_soundscape:`)),
+    ...spacedHeaderVariants.map((header) => bare.replace('overall_soundscape:', `${header}: unexpected field\noverall_soundscape:`)),
   ]
-  const invalidRef = compactHeaderVariants.map((header) => refBare.replace('overall_soundscape:', `${header}: unexpected field\noverall_soundscape:`))
+  const invalidRef = [...compactHeaderVariants, ...spacedHeaderVariants].map((header) => refBare.replace('overall_soundscape:', `${header}: unexpected field\noverall_soundscape:`))
   const parsed = workflowModule.splitPromptReplacement(bare)
   const parsedRef = workflowModule.splitPromptReplacement(refBare)
   return parsed?.prompt === bare && parsed?.explanation === '' && parsed?.changelog.length === 0 &&

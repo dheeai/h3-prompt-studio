@@ -12,7 +12,7 @@ import { buildMulticlipGraph, multiclipIssues, multiclipWarnings, overlapFramesO
 import type { MulticlipClip, PaddedClip } from '../lib/multiclip'
 import { fetchBundledSkills, loadSkills, removeSkill, saveSkill } from '../lib/skills'
 import { estTokens } from '../lib/tokens'
-import { DEFAULT_THINKING_ENABLED, migrateSettings, SETTINGS_SCHEMA, thinkingEnabledFromSaved } from '../lib/settings'
+import { DEFAULT_THINKING_ENABLED, SETTINGS_SCHEMA, thinkingEnabledFromSaved } from '../lib/settings'
 import { appendContinuationHistory, authorContinuation, clearDraftContext, continuationContextOverride, continuationPlateIsFresh, continuationSource, interruptedReasoningText, previousPromptForClip, promptSourceForEntryMode } from '../lib/entry'
 import type { EntryModeId } from '../lib/entry'
 import { isSingleRequestStage, type StudioRunPhase } from '../lib/studio-workflow'
@@ -344,7 +344,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
         seenBundled: [...new Set([...(savedSettings?.seenBundled ?? []), ...bundledIds])],
       }
 
-      migrateSettings(savedSettings, merged, DEFAULT_SETTINGS.maxTokens)
+      // Settings persist per browser, so raising a default only reaches people
+      // who have never opened the app. Anyone already carrying the old 4096
+      // ceiling needs it lifted explicitly — once, without stamping on a limit
+      // they set deliberately later.
+      if ((savedSettings?.schema ?? 1) < SETTINGS_SCHEMA) {
+        // Every previous default was a fixed ceiling, and each one truncated
+        // something eventually. Move anyone still carrying one to no limit;
+        // it is a ceiling, so removing it cannot make an answer worse.
+        merged.maxTokens = DEFAULT_SETTINGS.maxTokens
+        // Older versions stored a full copy of every stage template, which
+        // pinned each browser to the prompts shipped on the day it first ran.
+        // Drop them so the current ones apply; overrides made from here on are
+        // stored individually and survive.
+        merged.stageTemplates = {}
+        merged.schema = SETTINGS_SCHEMA
+      }
       // Nothing selected yet — start with each skill's primary document, which
       // is the useful default and keeps the first context small.
       if (!savedSettings && stored.length) {

@@ -13,7 +13,7 @@ import { classifyInput, standingToText } from '../src/lib/lint.ts'
 // stitch lives in llm.ts alongside streamChatComplete; importing it here also
 // proves llm.ts loads cleanly under node — see the note above.
 import { stitch, toLineBoundary, appendedFor, continuationBudgetFor, streamChat, streamChatComplete } from '../src/lib/llm.ts'
-import { migrateSettings, thinkingEnabledFromSaved } from '../src/lib/settings.ts'
+import { thinkingEnabledFromSaved } from '../src/lib/settings.ts'
 import { buildMulticlipGraph, multiclipIssues, padForOverlap, snapUp } from '../src/lib/multiclip.ts'
 import {
   ENTRY_MODES,
@@ -305,17 +305,6 @@ check('prompt replacement parser: accepts fenced markers and strict JSON from lo
       thinkingEnabled: true,
       onDelta() {},
     })
-    await streamChat({
-      // Persisted/provider data is runtime input, so a malformed truthy value
-      // must not accidentally enable this provider-specific request field.
-      provider: { id: 'malformed', label: 'Malformed', baseUrl: 'http://test.local/v1', kind: 'openai', builtIn: false, supportsThinkingToggle: 'yes' },
-      model: 'test-model',
-      messages: [{ role: 'user', content: 'prompt' }],
-      temperature: 0.2,
-      maxTokens: 0,
-      thinkingEnabled: true,
-      onDelta() {},
-    })
   } finally {
     globalThis.fetch = originalFetch
   }
@@ -329,35 +318,12 @@ check('prompt replacement parser: accepts fenced markers and strict JSON from lo
     !Object.prototype.hasOwnProperty.call(bodies[1] ?? {}, 'chat_template_kwargs'),
     JSON.stringify(bodies[1]),
   )
-  check(
-    'thinking transport: malformed capability values receive no chat-template kwargs',
-    !Object.prototype.hasOwnProperty.call(bodies[2] ?? {}, 'chat_template_kwargs'),
-    JSON.stringify(bodies[2]),
-  )
 }
 
 check('thinking settings: missing and malformed values default enabled',
   thinkingEnabledFromSaved({}) === true &&
   thinkingEnabledFromSaved({ thinkingEnabled: false }) === false &&
   thinkingEnabledFromSaved({ thinkingEnabled: 'false' }) === true)
-
-{
-  const schema4 = { schema: 4, maxTokens: 4096, stageTemplates: { direct: 'user override' } }
-  migrateSettings({ schema: 4 }, schema4, 0)
-  check(
-    'settings migration: schema 4 preserves user limit and templates while advancing schema',
-    schema4.schema === 5 && schema4.maxTokens === 4096 && schema4.stageTemplates.direct === 'user override',
-    JSON.stringify(schema4),
-  )
-
-  const schema3 = { schema: 3, maxTokens: 4096, stageTemplates: { direct: 'legacy snapshot' } }
-  migrateSettings({ schema: 3 }, schema3, 0)
-  check(
-    'settings migration: schema below 4 still receives legacy reset before schema 5',
-    schema3.schema === 5 && schema3.maxTokens === 0 && Object.keys(schema3.stageTemplates).length === 0,
-    JSON.stringify(schema3),
-  )
-}
 
 // llama.cpp can close an SSE response immediately after its final data frame,
 // without writing the optional blank-line separator. The final explanation

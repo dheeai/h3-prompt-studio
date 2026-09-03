@@ -121,7 +121,7 @@ export async function streamChat(opts: StreamOptions): Promise<StreamResult> {
   // no fixed number here could ever guess correctly across every model.
   if (maxTokens > 0) body.max_tokens = maxTokens
   if (provider.sendCachePrompt) body.cache_prompt = true
-  if (provider.supportsThinkingToggle === true && typeof opts.thinkingEnabled === 'boolean') {
+  if (provider.supportsThinkingToggle && typeof opts.thinkingEnabled === 'boolean') {
     body.chat_template_kwargs = { enable_thinking: opts.thinkingEnabled }
   }
 

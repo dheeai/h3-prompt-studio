@@ -231,10 +231,28 @@ function expectedDuration(testCase: ThinkingEvalCase): number | null {
   return match ? Number(match[1]) : null
 }
 
+interface TimeSpanMatch {
+  start: number
+  end: number
+  index: number
+  length: number
+}
+
+const TIME_SPAN_PATTERN = /(\d+(?:\.\d+)?)\s*[–—-]\s*(\d+(?:\.\d+)?)\s*(?:s|secs?|seconds?)\b/gi
+
+function timeSpanMatches(text: string): TimeSpanMatch[] {
+  return [...text.matchAll(TIME_SPAN_PATTERN)]
+    .map((match) => ({
+      start: Number(match[1]),
+      end: Number(match[2]),
+      index: match.index ?? 0,
+      length: match[0].length,
+    }))
+    .filter((span) => Number.isFinite(span.start) && Number.isFinite(span.end) && span.end >= span.start)
+}
+
 function timeSpans(text: string): [number, number][] {
-  return [...text.matchAll(/(\d+(?:\.\d+)?)\s*[–—-]\s*(\d+(?:\.\d+)?)\s*s(?:ec(?:onds?)?)?\b/gi)]
-    .map((match) => [Number(match[1]), Number(match[2])] as [number, number])
-    .filter(([start, end]) => Number.isFinite(start) && Number.isFinite(end) && end >= start)
+  return timeSpanMatches(text).map((span) => [span.start, span.end])
 }
 
 function clipDuration(text: string, testCase: ThinkingEvalCase): DeterministicFinding {
@@ -269,9 +287,9 @@ function t2vaSourceContract(text: string, testCase: ThinkingEvalCase): Determini
   const hasReferenceDependency = hasUnnegatedMatch(lower, /\b(?:reference[- ]image|reference frame|source image|input image|image[- ]to[- ]video|img2img|i2v|provided image|input frame|reference asset|source plate|input plate)\b/i) ||
     hasUnnegatedMatch(lower, /\b(?:use|uses|using|from|match|matches|preserve|preserves|follow|follows|depend(?:s|ing)?|require(?:s|d)?)\s+(?:the\s+)?(?:provided\s+)?(?:reference|source|input)\s+(?:image|frame|asset|plate|video)\b/i)
 
-  const beatMarkers = [...text.matchAll(/(?:\[\s*)?\d+(?:\.\d+)?\s*[–—-]\s*\d+(?:\.\d+)?\s*seconds?\s*(?:\]\s*|:\s*)/gi)]
+  const beatMarkers = timeSpanMatches(text)
   const lastBeat = beatMarkers.length
-    ? text.slice((beatMarkers.at(-1)?.index ?? 0) + (beatMarkers.at(-1)?.[0].length ?? 0))
+    ? text.slice((beatMarkers.at(-1)?.index ?? 0) + (beatMarkers.at(-1)?.length ?? 0))
     : text
   const finalHasCoin = /\bcoin\b/i.test(lastBeat)
   const finalHasClosedFist = /\b(?:closed|clenched)\s+fist\b/i.test(lastBeat)

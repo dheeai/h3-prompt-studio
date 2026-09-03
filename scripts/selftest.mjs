@@ -465,6 +465,28 @@ check('thinking eval scorer: T2VA accepts negated visibility and doubtful-expres
   const result = scoreRecord(testCase, syntheticRecord(testCase, compliant))
   return result.findings.some((f) => f.id === 't2va-source-contract' && f.passed)
 })())
+check('thinking eval scorer: T2VA final-beat parsing rejects compact time suffixes with an invalid ending', (() => {
+  const testCase = EVAL_CASES.find((c) => c.id === 'clip-t2va-draft-from-direction-sheet')
+  const suffixes = ['s', 'sec', 'secs', 'second', 'seconds']
+  return suffixes.every((suffix) => {
+    const earlierState = validT2vaPrompt.replace(
+      '[1.5–4.5 seconds] The magician closes the other hand around the coin while the child leans in with a skeptical expression.',
+      '[1.5–4.5 seconds] The magician closes the other hand around the coin; the closed fist holds the hidden coin while the child leans in with a skeptical expression.',
+    )
+    const invalid = earlierState.replace(
+      '[4.5–6.0 seconds] The magician holds the closed fist in frame; the coin remains hidden and the child remains skeptical.',
+      `[4.5–6.0${suffix}] The child remains skeptical as the magician watches.`,
+    )
+    const result = scoreRecord(testCase, syntheticRecord(testCase, invalid))
+    return result.findings.some((f) => f.id === 't2va-source-contract' && !f.passed)
+  })
+})())
+check('thinking eval scorer: T2VA compact final time suffix with a concealed coin remains valid', (() => {
+  const testCase = EVAL_CASES.find((c) => c.id === 'clip-t2va-draft-from-direction-sheet')
+  const compact = validT2vaPrompt.replace('[4.5–6.0 seconds]', '[4.5–6.0s]')
+  const result = scoreRecord(testCase, syntheticRecord(testCase, compact))
+  return result.findings.some((f) => f.id === 't2va-source-contract' && f.passed)
+})())
 check('thinking eval scorer: T2VA continuity validator reflects its source and final-state contract', (() => {
   const testCase = EVAL_CASES.find((c) => c.id === 'clip-t2va-draft-from-direction-sheet')
   const valid = scoreRecord(testCase, syntheticRecord(testCase, validT2vaPrompt))

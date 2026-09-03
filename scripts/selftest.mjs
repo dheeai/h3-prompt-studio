@@ -78,6 +78,18 @@ check('Qwen thinking control: hosted and non-Qwen payloads are unchanged', (() =
     !('reasoning_budget_tokens' in hosted) && !('reasoning_budget_tokens' in nonQwen)
 })())
 
+check('Qwen thinking control: llama markers require a concrete local or llama route', (() => {
+  if (!thinkingControl) return false
+  const qwen = 'Qwen/Qwen3-30B'
+  return !thinkingControl.isQwenFamilyModel({ id: 'llamacpp', baseUrl: 'https://openrouter.ai/api/v1', sendCachePrompt: true }, qwen) &&
+    !thinkingControl.isQwenFamilyModel({ id: 'llamacpp', baseUrl: 'https://models.example/v1', sendCachePrompt: true }, qwen) &&
+    thinkingControl.isQwenFamilyModel({ id: 'llamacpp', baseUrl: 'http://192.168.1.50:8080/v1' }, qwen) &&
+    thinkingControl.isQwenFamilyModel({ id: 'llamacpp', baseUrl: 'https://5090.tail3cca41.ts.net/v1' }, qwen) &&
+    thinkingControl.isQwenFamilyModel({ id: 'llamacpp', baseUrl: 'http://render-box.local/v1' }, qwen) &&
+    thinkingControl.isQwenFamilyModel({ id: 'custom', baseUrl: 'https://models.example/llama/v1' }, qwen) &&
+    !thinkingControl.isQwenFamilyModel({ id: 'llamacpp', baseUrl: 'https://openrouter.ai/llama/v1', sendCachePrompt: true }, qwen)
+})())
+
 check('thinking eval fixtures: use the approved eight-case order',
   JSON.stringify(EVAL_CASES.map((testCase) => testCase.id)) === JSON.stringify([
     'scene-breakdown',
@@ -836,9 +848,10 @@ check('cancelled thinking: partial reasoning is retained, empty reasoning is not
   check('agent model: keyless local/LAN providers receive a non-secret compatibility key', agentApiKey({ baseUrl: 'http://localhost:11434/v1' }) === 'local-browser-runtime' && agentApiKey({ baseUrl: 'http://5090.tail3cca41.ts.net:9000/v1' }) === 'local-browser-runtime' && agentApiKey({ baseUrl: 'https://custom-model.example/v1' }) === 'local-browser-runtime' && agentApiKey({ baseUrl: 'https://openrouter.ai/api/v1' }) === undefined)
   const agentQwen = agentRequestPayload({ id: 'llamacpp', baseUrl: 'https://5090.tail3cca41.ts.net:9000/llama/v1' }, 'thinkingcap-27b', { model: 'thinkingcap-27b', stream: true })
   const agentHosted = agentRequestPayload({ id: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1' }, 'qwen/qwen3-30b', { model: 'qwen/qwen3-30b', stream: true })
+  const agentRepointed = agentRequestPayload({ id: 'llamacpp', baseUrl: 'https://openrouter.ai/api/v1', sendCachePrompt: true }, 'qwen/qwen3-30b', { model: 'qwen/qwen3-30b', stream: true })
   check('agent request adapter: Pi payload gets the same paired Qwen budget while hosted payload stays unchanged',
     agentQwen.reasoning_budget_tokens === 0 && agentQwen.reasoning_budget_message === 'Time to stop thinking. Give the final answer.' &&
-    agentHosted.reasoning_budget_tokens === undefined)
+    agentHosted.reasoning_budget_tokens === undefined && agentRepointed.reasoning_budget_tokens === undefined)
 }
 
 // Pi can finish a run without a text_delta (for example a provider error, or
@@ -979,6 +992,32 @@ check('prompt replacement parser: accepts fenced markers and strict JSON from lo
       localQwen?.chat_template_kwargs === undefined &&
       localOther?.reasoning_budget_tokens === undefined &&
       thinkingControl?.withQwenReasoningBudget({ id: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1' }, 'qwen/qwen3-30b', { model: 'qwen/qwen3-30b' }).reasoning_budget_tokens === undefined,
+      JSON.stringify(bodies))
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+}
+
+// A limit retry must preserve the Qwen budget pair even when max_tokens is
+// dropped from the second request after a server rejects it.
+{
+  const originalFetch = globalThis.fetch
+  const bodies = []
+  let calls = 0
+  globalThis.fetch = async (_url, init) => {
+    bodies.push(JSON.parse(init.body))
+    calls++
+    if (calls === 1) return new Response('{"error":"max_tokens exceeds context"}', { status: 400, statusText: 'Bad Request' })
+    return new Response('data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n')
+  }
+  try {
+    await streamChat({
+      provider: { id: 'llamacpp', baseUrl: 'http://localhost:8080/v1', sendCachePrompt: true },
+      model: 'qwen/qwen3-30b', messages: [{ role: 'user', content: 'prompt' }], temperature: 0.2, maxTokens: 4096, onDelta() {},
+    })
+    check('Studio Qwen limit retry: both requests retain the paired budget fields',
+      bodies.length === 2 && bodies.every((body) => body.reasoning_budget_tokens === 0 && body.reasoning_budget_message === 'Time to stop thinking. Give the final answer.') &&
+      bodies[1].max_tokens === undefined,
       JSON.stringify(bodies))
   } finally {
     globalThis.fetch = originalFetch

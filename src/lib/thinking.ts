@@ -1,3 +1,5 @@
+import { localEndpoint, localNetworkTarget } from './providers'
+
 /**
  * Request-level controls for local Qwen-family models.
  *
@@ -21,21 +23,39 @@ const LOCAL_QWEN_ALIASES = new Set([
   'qwen38-heretic-27b-fast',
 ])
 
+const KNOWN_HOSTED_HOSTS = [
+  'openrouter.ai',
+  'api.openai.com',
+  'anthropic.com',
+  'api.anthropic.com',
+  'api.groq.com',
+  'api.deepseek.com',
+  'api.x.ai',
+  'api.mistral.ai',
+]
+
+function isKnownHostedHost(hostname: string): boolean {
+  return KNOWN_HOSTED_HOSTS.some((host) => hostname === host || hostname.endsWith(`.${host}`))
+}
+
 /**
  * Identify a llama.cpp endpoint without treating every OpenAI-compatible
- * endpoint as local llama.cpp. The explicit provider flag covers the built-in
- * llama.cpp connection; the route check covers the 5090 gateway and similar
- * configured `/llama/v1` endpoints; sendCachePrompt is the persisted marker
- * used by older custom llama.cpp connections.
+ * endpoint as local llama.cpp. Provider markers are only trusted on a
+ * concrete local/private/Tailscale/mDNS host. A `/llama/...` route is an
+ * explicit gateway signal, except on known hosted endpoints.
  */
 export function isLocalLlamaCppEndpoint(provider: LlamaEndpoint): boolean {
   const providerId = provider.id?.trim().toLowerCase() ?? ''
-  if (provider.sendCachePrompt === true) return true
-  if (providerId === 'llamacpp' || providerId === 'llama.cpp' || providerId === 'llama-cpp') return true
-
   try {
-    const pathname = new URL(provider.baseUrl).pathname.toLowerCase()
-    return /(?:^|\/)llama(?:\.cpp)?(?:\/|$)/.test(pathname)
+    const url = new URL(provider.baseUrl)
+    if (isKnownHostedHost(url.hostname.toLowerCase())) return false
+
+    const pathname = url.pathname.toLowerCase()
+    if (/(?:^|\/)llama(?:\.cpp)?(?:\/|$)/.test(pathname)) return true
+
+    const marker = provider.sendCachePrompt === true || providerId === 'llamacpp' || providerId === 'llama.cpp' || providerId === 'llama-cpp'
+    const localHost = localEndpoint(provider.baseUrl) || localNetworkTarget(provider.baseUrl) !== null
+    return marker && localHost
   } catch {
     return false
   }

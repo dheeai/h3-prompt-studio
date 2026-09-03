@@ -8,6 +8,10 @@
 // for a non-OpenRouter provider — if it did, importing this file would throw.
 
 import { readFileSync } from 'node:fs'
+import { cp, mkdtemp, mkdir, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { DEFAULT_TEMPLATES, fillTemplate, splitReply, parseBreakdown } from '../src/lib/stages.ts'
 import { classifyInput, standingToText } from '../src/lib/lint.ts'
 // stitch lives in llm.ts alongside streamChatComplete; importing it here also
@@ -34,7 +38,7 @@ import {
 } from '../src/lib/entry.ts'
 import { agentApiKey, buildAgentModel, buildAgentTools, reduceAgentEvent, agentEventStatus } from '../src/lib/agent.ts'
 import { buildH3SystemPrompt, buildStudioSystemPrompt } from '../src/lib/context.ts'
-import { EVAL_ARMS, EVAL_CASES, EVAL_MODELS, buildEvalMessages, evalVariants } from '../eval/cases.ts'
+import { EVAL_ARMS, EVAL_CASES, EVAL_MODELS, buildEvalMessages, evalSkillRoot, evalVariants } from '../eval/cases.ts'
 
 let pass = 0
 let fail = 0
@@ -69,6 +73,17 @@ check('thinking eval fixtures: preserve the approved stage and entry-mode matrix
 check('thinking eval fixtures: use Ref2VA except for the T2VA draft case',
   EVAL_CASES.filter((testCase) => testCase.h3Mode === 'T2VA').map((testCase) => testCase.id).join(',') === 'clip-t2va-draft-from-direction-sheet' &&
   EVAL_CASES.filter((testCase) => testCase.h3Mode === 'Ref2VA').length === 7)
+const fallbackFixturePath = await mkdtemp(join(tmpdir(), 'h3-prompt-studio-eval-'))
+try {
+  const fallbackFixtureRoot = pathToFileURL(`${fallbackFixturePath}/`)
+  await mkdir(new URL('public/skills/', fallbackFixtureRoot), { recursive: true })
+  await cp(new URL('../public/skills/', import.meta.url), new URL('public/skills/', fallbackFixtureRoot), { recursive: true })
+  const selectedFallbackRoot = await evalSkillRoot(fallbackFixtureRoot)
+  check('thinking eval fixtures: fall back to tracked public skills when dist is absent',
+    selectedFallbackRoot.pathname.endsWith('/public/skills/'))
+} finally {
+  await rm(fallbackFixturePath, { recursive: true, force: true })
+}
 const evalMessages = await buildEvalMessages(EVAL_CASES[0])
 check('thinking eval messages: each case produces exactly a system and user message',
   evalMessages.length === 2 && evalMessages[0].role === 'system' && evalMessages[1].role === 'user')

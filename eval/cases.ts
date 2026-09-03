@@ -1,8 +1,7 @@
 import { readFile } from 'node:fs/promises'
-import { buildContext } from '../src/lib/context'
+import { buildContext, buildStudioSystemPrompt } from '../src/lib/context'
 import { filmBlock, fillTemplate, templateFor } from '../src/lib/stages'
 import { estTokens } from '../src/lib/tokens'
-import { buildStudioSystemPrompt } from '../src/lib/context'
 import type { ChatMessage } from '../src/lib/llm'
 import type { Skill } from '../src/lib/types'
 import type { EvalModel, ThinkingEvalCase } from './types'
@@ -265,6 +264,10 @@ interface SkillIndexEntry {
   files: string[]
 }
 
+interface SkillIndexManifest {
+  skills: SkillIndexEntry[]
+}
+
 function frontmatter(text: string, key: 'name' | 'description', fallback: string): string {
   const header = text.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)?.[1] ?? ''
   const value = header.match(new RegExp(`^${key}\\s*:\\s*(.*?)\\s*$`, 'm'))?.[1]?.trim()
@@ -272,11 +275,34 @@ function frontmatter(text: string, key: 'name' | 'description', fallback: string
   return value.replace(/^("|')(.*)\1$/, '$2')
 }
 
+/**
+ * Resolve the shipped skill asset root without depending on a local build.
+ * `dist/skills` is the production preference, while `public/skills` is the
+ * tracked source tree available on a clean checkout before Vite has run.
+ */
+export async function evalSkillRoot(projectRoot = new URL('../', import.meta.url)): Promise<URL> {
+  for (const relative of ['dist/skills/', 'public/skills/']) {
+    const root = new URL(relative, projectRoot)
+    try {
+      const manifest = JSON.parse(await readFile(new URL('index.json', root), 'utf8')) as SkillIndexManifest
+      for (const id of SELECTED_SKILL_IDS) {
+        const entry = manifest.skills.find((candidate) => candidate.dir === id)
+        if (!entry || !entry.files.includes('SKILL.md')) throw new Error(`Missing bundled skill ${id}/SKILL.md`)
+        await readFile(new URL(`${entry.dir}/SKILL.md`, root), 'utf8')
+      }
+      return root
+    } catch {
+      // Try the tracked source assets when the ignored build output is absent
+      // or incomplete. The actual error is reported only if both roots fail.
+    }
+  }
+  throw new Error('Missing eval skill assets in dist/skills and public/skills')
+}
+
 async function loadEvalContext() {
-  const indexUrl = new URL('../dist/skills/index.json', import.meta.url)
-  const manifest = JSON.parse(await readFile(indexUrl, 'utf8')) as { skills: SkillIndexEntry[] }
+  const skillsRoot = await evalSkillRoot()
+  const manifest = JSON.parse(await readFile(new URL('index.json', skillsRoot), 'utf8')) as SkillIndexManifest
   const skills: Skill[] = []
-  const skillsRoot = new URL('../dist/skills/', import.meta.url)
 
   for (const id of SELECTED_SKILL_IDS) {
     const entry = manifest.skills.find((candidate) => candidate.dir === id)

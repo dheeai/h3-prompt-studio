@@ -4,7 +4,7 @@
 
 **Goal:** Build an eval-only harness that sends the direct llama request with `chat_template_kwargs.enable_thinking` on and off across eight isolated H3 stage-contract cases and three exact local model IDs, producing 48 one-request records and a blinded report.
 
-**Architecture:** Keep the production app untouched. Reuse its existing pure prompt/context assembly functions as read-only imports, define all upstream fixtures in `eval/cases.ts`, capture one streamed response in a side-effect-free parser, and run/scorer code directly against the 5090 llama endpoint. The CLI defaults to both thinking arms while `--thinking on` or `--thinking off` narrows targeted smoke runs.
+**Architecture:** Keep the production app untouched. Reuse its existing pure prompt/context assembly functions as read-only imports, define all upstream fixtures in `eval/cases.ts`, capture one streamed response in a side-effect-free parser, and run/scorer code directly against the 5090 llama endpoint. The CLI defaults to both thinking arms while `--thinking on` or `--thinking off` supports filtered offline checks.
 
 **Tech Stack:** TypeScript executed with `npx tsx`, Node `fetch` and filesystem streams, the existing pure `src/lib/context.ts`, `src/lib/stages.ts`, `src/lib/lint.ts`, and `scripts/selftest.mjs`. No React, browser UI, Pi Agent, ComfyUI, or GPU integration is added.
 
@@ -261,18 +261,14 @@ npx tsx eval/score-thinking-eval.ts eval/out/2026-09-03-thinking-toggle/raw.json
 
 Expected: 48 arm rows and paired on/off deltas in the summary files. Any failed response remains represented with its error.
 
-- [ ] **Step 4: Verify targeted smoke arm behavior without a full matrix.** After the full run, use the CLI filters for one case/model only:
+> The unfiltered command above is the complete live generation run: exactly 48
+> direct llama POSTs. Equivalent `--model`, `--case`, `--thinking on|off`, and
+> no-retry behavior are covered by the offline self-tests; do not add targeted
+> live smoke commands that would exceed the 48-call run.
 
-```bash
-npx tsx eval/run-thinking-eval.ts --case prompt-revise --model thinkingcap-27b --thinking on --out eval/out/2026-09-03-thinking-toggle-smoke-on
-npx tsx eval/run-thinking-eval.ts --case prompt-revise --model thinkingcap-27b --thinking off --out eval/out/2026-09-03-thinking-toggle-smoke-off
-```
+- [ ] **Step 4: Write the dated report.** Include exact endpoint/settings/order, 48 planned and actual counts, per-case deterministic findings, reasoning/content/latency/TTFT summaries, blinded 1–5 rubric instructions/results if reviewed, failures, and limitations. State explicitly that qualitative scores are subjective structured review, not objective quality.
 
-Each command must report `planned=1`, write one record, and show the matching true/false request field in its redacted body. Do not call ComfyUI.
-
-- [ ] **Step 5: Write the dated report.** Include exact endpoint/settings/order, 48 planned and actual counts, per-case deterministic findings, reasoning/content/latency/TTFT summaries, blinded 1–5 rubric instructions/results if reviewed, failures, and limitations. State explicitly that qualitative scores are subjective structured review, not objective quality.
-
-- [ ] **Step 6: Verify artifact completeness.** Run:
+- [ ] **Step 5: Verify artifact completeness.** Run:
 
 ```bash
 node -e "const fs=require('node:fs'); const p='eval/out/2026-09-03-thinking-toggle/raw.jsonl'; const rows=fs.readFileSync(p,'utf8').trim().split(/\\n/).filter(Boolean).map(JSON.parse); if(rows.length!==48) throw new Error('expected 48 records'); if(rows.some(r=>r.response.requestCount!==1||r.response.continuations!==0)) throw new Error('one-request budget violated'); console.log('48 records; one request and zero continuations per record')"

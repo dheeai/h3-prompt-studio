@@ -39,6 +39,8 @@ import {
 import { agentApiKey, buildAgentModel, buildAgentTools, reduceAgentEvent, agentEventStatus } from '../src/lib/agent.ts'
 import { buildH3SystemPrompt, buildStudioSystemPrompt } from '../src/lib/context.ts'
 import { EVAL_ARMS, EVAL_CASES, EVAL_MODELS, buildEvalMessages, evalSkillRoot, evalVariants } from '../eval/cases.ts'
+import { parseEvalSse, streamOneResponse } from '../eval/stream.ts'
+import { parseCli, runOneVariant, runThinkingEval } from '../eval/run-thinking-eval.ts'
 
 let pass = 0
 let fail = 0
@@ -87,6 +89,100 @@ try {
 const evalMessages = await buildEvalMessages(EVAL_CASES[0])
 check('thinking eval messages: each case produces exactly a system and user message',
   evalMessages.length === 2 && evalMessages[0].role === 'system' && evalMessages[1].role === 'user')
+
+// ── thinking-evaluation transport ─────────────────────────────────────
+
+{
+  const first = JSON.stringify({ choices: [{ delta: { reasoning: 'weigh the lens' } }] })
+  const second = JSON.stringify({ choices: [{ delta: { content: '<think>private plan</think>answer' } }] })
+  const terminal = JSON.stringify({ choices: [{ delta: { content: ' tail' }, finish_reason: 'stop' }], usage: { prompt_tokens: 12, completion_tokens: 7 } })
+  // The terminal frame deliberately has no trailing blank-line separator.
+  const sse = `data: ${first}\n\ndata: ${second}\n\ndata: ${terminal}`
+  const parsed = parseEvalSse(sse)
+  let firstTokenCalls = 0
+  const streamed = await streamOneResponse(new Response(sse), () => { firstTokenCalls++ })
+  check('thinking eval stream: terminal SSE frame keeps content, finish reason, reasoning, and usage',
+    parsed.content === 'answer tail' && parsed.finishReason === 'stop' &&
+    parsed.reasoning.includes('weigh the lens') && parsed.reasoning.includes('private plan') &&
+    parsed.usage?.prompt === 12 && parsed.usage?.completion === 7 &&
+    streamed.content === parsed.content && streamed.finishReason === parsed.finishReason && firstTokenCalls === 1,
+    JSON.stringify({ parsed, streamed, firstTokenCalls }))
+}
+
+check('thinking eval CLI: default selects both arms',
+  JSON.stringify(parseCli([]).thinking) === JSON.stringify(undefined) &&
+  JSON.stringify(parseCli([]).arms) === JSON.stringify([true, false]))
+check('thinking eval CLI: --thinking on selects the enabled arm',
+  JSON.stringify(parseCli(['--thinking', 'on']).arms) === JSON.stringify([true]))
+check('thinking eval CLI: --thinking off selects the disabled arm',
+  JSON.stringify(parseCli(['--thinking', 'off']).arms) === JSON.stringify([false]))
+
+{
+  const originalFetch = globalThis.fetch
+  let requests = 0
+  let requestInit
+  const responseBody = 'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'
+  globalThis.fetch = async (_url, init) => {
+    requests++
+    requestInit = init
+    return new Response(responseBody, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
+  }
+  try {
+    const record = await runOneVariant('http://eval.local/llama/v1', EVAL_CASES[0], 'thinkingcap-27b', false)
+    const body = JSON.parse(requestInit.body)
+    check('thinking eval runner: one request uses the direct streaming body and selected arm',
+      requests === 1 && requestInit.method === 'POST' && !requestInit.headers?.Authorization &&
+      body.model === 'thinkingcap-27b' && body.temperature === 0.2 && body.max_tokens === 8192 &&
+      body.stream === true && body.chat_template_kwargs?.enable_thinking === false &&
+      record.response.requestCount === 1 && record.response.continuations === 0,
+      JSON.stringify({ requests, body, record }))
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+}
+
+{
+  const originalFetch = globalThis.fetch
+  let requests = 0
+  globalThis.fetch = async () => {
+    requests++
+    return new Response('{"error":"synthetic failure"}', { status: 503, statusText: 'Unavailable' })
+  }
+  try {
+    const record = await runOneVariant('http://eval.local/llama/v1', EVAL_CASES[0], 'default', true)
+    check('thinking eval runner: HTTP failure is one recorded attempt with no retry',
+      requests === 1 && record.response.requestCount === 1 && record.response.continuations === 0 &&
+      record.errors.length === 1 && record.errors[0].startsWith('503 Unavailable'),
+      JSON.stringify({ requests, record }))
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+}
+
+{
+  const originalFetch = globalThis.fetch
+  const outputPath = await mkdtemp(join(tmpdir(), 'h3-prompt-studio-thinking-runner-'))
+  let requests = 0
+  const responseBody = 'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'
+  globalThis.fetch = async () => {
+    requests++
+    return new Response(responseBody, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
+  }
+  try {
+    const result = await runThinkingEval({
+      baseUrl: 'http://eval.local/llama/v1', outputDir: outputPath,
+      thinking: undefined, model: 'default', caseId: 'scene-breakdown',
+    })
+    const rows = readFileSync(join(outputPath, 'raw.jsonl'), 'utf8').trim().split('\n').map(JSON.parse)
+    check('thinking eval runner: filtered matrix writes true then false and flushes every planned row',
+      result.planned === 2 && result.written === 2 && result.failures === 0 && requests === 2 &&
+      JSON.stringify(rows.map((row) => row.chatTemplateKwargs.enable_thinking)) === JSON.stringify([true, false]),
+      JSON.stringify({ result, requests, rows }))
+  } finally {
+    globalThis.fetch = originalFetch
+    await rm(outputPath, { recursive: true, force: true })
+  }
+}
 
 // ── entry modes ────────────────────────────────────────────────────────
 

@@ -77,13 +77,29 @@ function hasEvery(text: string, patterns: readonly RegExp[]): boolean {
   return patterns.every((pattern) => pattern.test(text))
 }
 
+function isNegatedAt(text: string, index: number): boolean {
+  const prefix = text.slice(Math.max(0, index - 72), index)
+  return /\b(?:without|not|no|never|does\s+not|do\s+not|did\s+not|doesn't|don't|didn't|isn't|wasn't|avoid(?:s|ed|ing)?)\s+(?:\w+[\s,'’-]*){0,3}$/i.test(prefix)
+}
+
 function hasUnnegatedMatch(text: string, pattern: RegExp): boolean {
   const flags = pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`
   const globalPattern = new RegExp(pattern.source, flags)
   for (const match of text.matchAll(globalPattern)) {
     const index = match.index ?? 0
-    const prefix = text.slice(Math.max(0, index - 72), index)
-    if (!/\b(?:without|not|no|never|does\s+not|do\s+not|did\s+not|doesn't|don't|didn't|avoid(?:s|ed|ing)?)\s+(?:\w+[\s,'’-]*){0,3}$/i.test(prefix)) return true
+    if (!isNegatedAt(text, index)) return true
+  }
+  return false
+}
+
+function hasUnnegatedCoinVisibility(text: string): boolean {
+  const pattern = /\b(?:visible|revealed|shown|exposed|disclosed|appears?|reveal(?:s|ed|ing)?|show(?:s|ed|ing)?|expos(?:es|ed|ing)?)\b/gi
+  for (const match of text.matchAll(pattern)) {
+    const index = match.index ?? 0
+    const before = text.slice(Math.max(0, index - 72), index)
+    const after = text.slice(index, Math.min(text.length, index + 72))
+    const coinNearby = /\bcoin\b[^.;\n]{0,60}$/.test(before) || /^[^.;\n]{0,60}\bcoin\b/.test(after)
+    if (coinNearby && !isNegatedAt(text, index)) return true
   }
   return false
 }
@@ -263,9 +279,10 @@ function t2vaSourceContract(text: string, testCase: ThinkingEvalCase): Determini
     /\b(?:coin|it)\b[^.\n]{0,100}\b(?:remains?|stays?)\s+(?:inside|in)\s+(?:the\s+)?(?:(?:magician['’]s)\s+)?(?:closed|clenched)\s+fist\b/i.test(lastBeat) ||
     /\b(?:closed|clenched)\s+fist\b[^.\n]{0,100}\b(?:retain(?:s|ed)?|contain(?:s|ed)?|hold(?:s|ing)?)\s+(?:the\s+)?coin\b/i.test(lastBeat) ||
     /\b(?:hidden|concealed|invisible|unseen)\b[^.\n]{0,100}\b(?:coin|closed\s+fist)\b/i.test(lastBeat)
-  const finalRevealsCoin = /\b(?:coin|it)\b[^.\n]{0,100}\b(?:visible|revealed|shown|exposed|disclosed|appears?)\b|\b(?:reveal(?:s|ed|ing)?|show(?:s|ed|ing)?|expos(?:es|ed|ing)?)\s+(?:the\s+)?coin\b/i.test(lastBeat)
+  const finalRevealsCoin = hasUnnegatedCoinVisibility(lastBeat)
   const childConvinced = hasUnnegatedMatch(lower, /\b(?:convinced|assured|satisfied|accepts?|trusts?|no longer skeptical)\b/i)
-  const finalKeepsSkeptical = /\b(?:child|skeptic(?:al)?)\b[^.\n]{0,100}\b(?:remains?|stays?|keeps?)\s+(?:skeptic(?:al)?|doubtful|unconvinced)\b/i.test(lastBeat)
+  const finalKeepsSkeptical = /\b(?:child|skeptic(?:al)?)\b[^.\n]{0,100}\b(?:remains?|stays?|keeps?|maintains?)\s+(?:skeptic(?:al)?|doubtful|unconvinced|a\s+doubtful\s+expression)\b/i.test(lastBeat) ||
+    /\b(?:child|skeptic(?:al)?)\b[^.\n]{0,100}\b(?:is|seems?)\s+not\s+convinced\b/i.test(lastBeat)
   const passed = !hasReferencePlaceholder && !hasReferenceDependency && finalHasCoin && finalHasClosedFist && finalConcealsCoin && !finalRevealsCoin && !childConvinced && finalKeepsSkeptical
   return finding('t2va-source-contract', passed, passed
     ? 'T2VA uses no reference dependency, preserves the skeptical child state, and ends with the coin concealed in the closed fist'
@@ -453,10 +470,9 @@ function rebuildMaterialChange(text: string, testCase: ThinkingEvalCase): Determ
 
 const CONCRETE_SOUND_SOURCE = /\b(?:rain|footsteps?|traffic|door|wind|engine|birds?|breath|clatter|hum|bell|water|thunder|clock|ticking|creak|rustle|scrape|whistle|horn|radio|glass|metal|paper|fabric|foley|coin|hinge|insects?)\b/i
 
-function noDialoguePrompt(text: string, testCase: ThinkingEvalCase): DeterministicFinding {
+/** Validate the already-extracted canonical prompt, never the replacement envelope. */
+function noDialoguePrompt(prompt: string, testCase: ThinkingEvalCase): DeterministicFinding {
   if (testCase.id !== 'prompt-revise' && testCase.id !== 'prompt-rebuild') return finding('no-dialogue', true, 'not applicable to this fixture')
-  const replacement = splitPromptReplacement(text)
-  const prompt = replacement?.prompt ?? ''
   const forbidden = [
     /\b(?:dialogue|speech|conversation|verbal)\b/i,
     /\b(?:voice|voices)\b/i,
@@ -475,7 +491,7 @@ function soundAndMusic(text: string, testCase: ThinkingEvalCase): DeterministicF
   const soundSources = CONCRETE_SOUND_SOURCE.test(sound)
   const directSoundSection = lower.match(/(?:sound anchors?|sound design)\s*:\s*([^\n]*)/i)?.[1] ?? ''
   const soundText = testCase.stage === 'direct' ? directSoundSection : sound
-  const voiceCue = /\b(?:voice|voices|dialogue|speech|words|speak|talk|conversation|says?)\b/i.test(soundText)
+  const voiceCue = hasUnnegatedMatch(soundText, /\b(?:voice|voices|dialogue|speech|words|speak|talk|conversation|says?)\b/i)
   const silentCase = new Set(['clip-t2va-draft-from-direction-sheet', 'prompt-revise', 'prompt-rebuild', 'continuation-prompt-authoring']).has(testCase.id)
   const musicValid = silentCase ? /^n\/a\.?$/i.test(music) : (!!music || testCase.stage === 'direct')
   const directionSound = testCase.stage === 'direct' && !testCase.id.startsWith('continuation-')

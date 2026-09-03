@@ -343,6 +343,7 @@ const validBreakdown = JSON.stringify({
   ],
 })
 const validPromptReplacement = `<<<PROMPT>>>\nsubject_definitions:\n<Subject 1> is the woman at the greenhouse door.\n<Subject 2> is the glass greenhouse door and latch.\n<Subject 3> is the pale moth.\n\nsummary: At night, a woman opens the greenhouse door, a moth lands on her wrist, and her hand turns the latch.\n\nretention_analysis:\n<Subject 1>: fully_preserved\n<Subject 2>: fully_preserved\n<Subject 3>: fully_preserved\n\ndetailed_description:\n[Shot 1 — 0.0–2.5 seconds] The woman opens the greenhouse door at night.\n[Shot 2 — 2.5–5.0 seconds] The moth lands on her wrist and she stops to watch it.\n[Shot 3 — 5.0–7.0 seconds] Her hand turns the latch; end on the latch.\n\noverall_soundscape: night insects, hinge creak, breath catch, latch click.\nnon_diegetic_music: N/A\n<<<EXPLANATION>>>\nThe reaction is observable and the requested ending and named objects remain fixed.`
+const validRebuildReplacement = `<<<PROMPT>>>\nsubject_definitions:\n<Subject 1> is the woman at the greenhouse door, with her face and posture clearly visible.\n<Subject 2> is the glass greenhouse door and its metal latch.\n<Subject 3> is a pale moth that lands on the woman’s wrist.\n\nsummary: At night, a woman approaches the greenhouse, tracks the moth on her wrist, and turns the latch in a motivated closing beat.\n\nretention_analysis:\n<Subject 1>: fully_preserved\n<Subject 2>: fully_preserved\n<Subject 3>: fully_preserved\n\ndetailed_description:\n[Shot 1 — 0.0–2.0 seconds] Begin in a wide, low-angle frame outside the greenhouse as the woman advances to the door and deliberately pulls the handle open. Keep the cool glass and dark garden in the composition.\n[Shot 2 — 2.0–4.5 seconds] Track inward with a slow dolly to her wrist as the pale moth lands. Hold her gaze, breath catch, and suspended fingers in a readable reaction pause.\n[Shot 3 — 4.5–7.0 seconds] Shift to a tight insert of her hand and the metal latch. Her shoulders settle as her fingers turn it; end on the latch rotating under her hand, with the moth still on her wrist.\n\noverall_soundscape: night insects, hinge creak, a soft fabric rustle, one breath catch, and the latch clicking under her hand.\nnon_diegetic_music: N/A\n<<<EXPLANATION>>>\nThe rebuild changes the framing, movement, blocking, lighting, and observable reaction while preserving the fixed subjects, moth landing, latch ending, and silent soundscape.`
 const validHandoff = `<<<PRECEDES>>>\nThe red lantern is already lit beside the child’s drawing.\n<<<FOLLOWS>>>\nMaya walks away while the flame remains visible and the train stays absent.\n<<<OPEN>>>\nThe flame bends in the wind; the absent train remains unresolved.`
 const validDirectionSheet = `WHERE THE SOURCE STANDS
 The platform and child’s drawing are already established; this middle clip listens for the absent train.
@@ -458,6 +459,12 @@ check('thinking eval scorer: T2VA keeps the skeptical child state through the fi
   const result = scoreRecord(testCase, syntheticRecord(testCase, convinced))
   return result.findings.some((f) => f.id === 't2va-source-contract' && !f.passed)
 })())
+check('thinking eval scorer: T2VA accepts negated visibility and doubtful-expression wording', (() => {
+  const testCase = EVAL_CASES.find((c) => c.id === 'clip-t2va-draft-from-direction-sheet')
+  const compliant = validT2vaPrompt.replace('the coin remains hidden and the child remains skeptical', 'the coin is not visible in the closed fist; the child is not convinced and maintains a doubtful expression')
+  const result = scoreRecord(testCase, syntheticRecord(testCase, compliant))
+  return result.findings.some((f) => f.id === 't2va-source-contract' && f.passed)
+})())
 check('thinking eval scorer: T2VA continuity validator reflects its source and final-state contract', (() => {
   const testCase = EVAL_CASES.find((c) => c.id === 'clip-t2va-draft-from-direction-sheet')
   const valid = scoreRecord(testCase, syntheticRecord(testCase, validT2vaPrompt))
@@ -543,6 +550,19 @@ check('thinking eval scorer: prompt replacement rejects dialogue anywhere in the
   const spoken = validPromptReplacement.replace('The moth lands on her wrist and she stops to watch it.', 'The moth lands on her wrist while she whispers a warning and stops to watch it.')
   const result = scoreRecord(testCase, syntheticRecord(testCase, spoken))
   return result.findings.some((f) => f.id === 'no-dialogue' && !f.passed)
+})())
+check('thinking eval scorer: valid prompt revise and rebuild pass no-dialogue and overall contract checks', (() => {
+  const reviseCase = EVAL_CASES.find((c) => c.id === 'prompt-revise')
+  const rebuildCase = EVAL_CASES.find((c) => c.id === 'prompt-rebuild')
+  const revise = scoreRecord(reviseCase, syntheticRecord(reviseCase, validPromptReplacement))
+  const rebuild = scoreRecord(rebuildCase, syntheticRecord(rebuildCase, validRebuildReplacement))
+  return [revise, rebuild].every((result) => result.passed && result.findings.some((f) => f.id === 'no-dialogue' && f.passed))
+})())
+check('thinking eval scorer: explicit no-voices wording remains compliant in prompt soundscape', (() => {
+  const testCase = EVAL_CASES.find((c) => c.id === 'prompt-revise')
+  const silent = validPromptReplacement.replace('overall_soundscape: night insects, hinge creak, breath catch, latch click.', 'overall_soundscape: night insects, hinge creak, breath catch, latch click; no voices.')
+  const result = scoreRecord(testCase, syntheticRecord(testCase, silent))
+  return result.passed && result.findings.some((f) => f.id === 'sound-music' && f.passed) && result.findings.some((f) => f.id === 'no-dialogue' && f.passed)
 })())
 check('thinking eval scorer: silent prompt cases do not treat voices as ambient sound', (() => {
   const testCase = EVAL_CASES.find((c) => c.id === 'clip-t2va-draft-from-direction-sheet')

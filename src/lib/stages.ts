@@ -450,20 +450,14 @@ function parseBareH3Prompt(text: string): { prompt: string; explanation: string;
     const header = line.match(/^([A-Za-z][A-Za-z0-9_]{3,})[ \t]*:[ \t]*(.*)$/)
     if (header) {
       const name = header[1]
-      // Canonical H3 field names are exact lowercase snake_case. Treat a
-      // case-variant or an unknown snake_case/lowercase header as a malformed
-      // extra field instead of silently appending it to the prior section.
-      // Uppercase prose such as "At 00:02, she says:" is still ordinary body
-      // text because it is not field-shaped.
-      const fieldLike = name.includes('_') || name === name.toLowerCase()
-      if (fieldLike) {
-        if (name !== name.toLowerCase()) return null
-        sections.push({ name, body: header[2] ? [header[2]] : [] })
-      } else if (sections.length) {
-        sections[sections.length - 1].body.push(line)
-      } else {
-        return null
-      }
+      // A line-leading identifier followed immediately by a colon is a
+      // structural header candidate, not prose. Requiring it to be one of
+      // the exact lowercase H3 fields catches compact/case-variant extras
+      // such as Camera:, CAMERA:, and OverallSoundscape: without rejecting a
+      // normal sentence like "At 00:02, she says: ..." (which has spaces and
+      // punctuation before its colon).
+      if (!BASE_H3_FIELDS.includes(name as (typeof BASE_H3_FIELDS)[number]) && !REF_H3_FIELDS.includes(name as (typeof REF_H3_FIELDS)[number])) return null
+      sections.push({ name, body: header[2] ? [header[2]] : [] })
     } else if (sections.length) {
       sections[sections.length - 1].body.push(line)
     } else if (line.trim()) {

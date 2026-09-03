@@ -413,6 +413,18 @@ check('thinking eval scorer: T2VA 6-second draft requires explicit contiguous be
   const valid = scoreRecord(testCase, syntheticRecord(testCase, validT2vaPrompt))
   return missing.findings.some((f) => f.id === 'clip-duration' && !f.passed) && valid.findings.some((f) => f.id === 'clip-duration' && f.passed)
 })())
+check('thinking eval scorer: T2VA rejects reference placeholders and dependencies', (() => {
+  const testCase = EVAL_CASES.find((c) => c.id === 'clip-t2va-draft-from-direction-sheet')
+  const invalid = validT2vaPrompt.replace('The street magician displays', '<Subject 1> is the reference image; the street magician displays')
+  const result = scoreRecord(testCase, syntheticRecord(testCase, invalid))
+  return result.findings.some((f) => f.id === 't2va-source-contract' && !f.passed)
+})())
+check('thinking eval scorer: T2VA ending keeps the coin concealed in the magician’s closed fist', (() => {
+  const testCase = EVAL_CASES.find((c) => c.id === 'clip-t2va-draft-from-direction-sheet')
+  const visible = validT2vaPrompt.replace('the coin remains hidden and the child remains skeptical', 'the magician reveals the coin and the child sees it')
+  const result = scoreRecord(testCase, syntheticRecord(testCase, visible))
+  return result.findings.some((f) => f.id === 't2va-source-contract' && !f.passed)
+})())
 check('thinking eval scorer: direct Direction Sheet passes without H3 prompt fields', (() => {
   const testCase = EVAL_CASES.find((c) => c.id === 'scene-middle-closing-direction')
   const result = scoreRecord(testCase, syntheticRecord(testCase, validDirectionSheet))
@@ -434,6 +446,17 @@ check('thinking eval scorer: reordered H3 fields fail the field-order contract',
   const prompt = 'overall_soundscape: coin click, fabric movement, quiet breath.\nintegrated_multimodal_description: A magician hides a coin from a skeptical child and holds the closed fist.\nnon_diegetic_music: N/A'
   const result = scoreRecord(testCase, syntheticRecord(testCase, prompt))
   return result.findings.some((f) => f.id === 'h3-field-order' && !f.passed)
+})())
+check('thinking eval scorer: duplicate canonical H3 fields fail required and order contracts', (() => {
+  const draftCase = EVAL_CASES.find((c) => c.id === 'clip-t2va-draft-from-direction-sheet')
+  const replacementCase = EVAL_CASES.find((c) => c.id === 'prompt-revise')
+  const duplicateDraft = validT2vaPrompt.replace('\noverall_soundscape:', '\noverall_soundscape: duplicate source.\noverall_soundscape:')
+  const duplicateReplacement = validPromptReplacement.replace('<<<EXPLANATION>>>', 'overall_soundscape: duplicate source.\n<<<EXPLANATION>>>')
+  const draft = scoreRecord(draftCase, syntheticRecord(draftCase, duplicateDraft))
+  const replacement = scoreRecord(replacementCase, syntheticRecord(replacementCase, duplicateReplacement))
+  return [draft, replacement].every((result) =>
+    result.findings.some((f) => f.id === 'required-h3-fields' && !f.passed) &&
+    result.findings.some((f) => f.id === 'h3-field-order' && !f.passed))
 })())
 check('thinking eval scorer: replacement prompt fields are validated inside PROMPT, not EXPLANATION', (() => {
   const testCase = EVAL_CASES.find((c) => c.id === 'prompt-revise')
@@ -489,6 +512,12 @@ check('thinking eval scorer: missing neighboring state fails continuity', (() =>
   const testCase = EVAL_CASES.find((c) => c.id === 'scene-middle-closing-direction')
   const result = scoreRecord(testCase, syntheticRecord(testCase, 'WHERE THE SOURCE STANDS\nThe platform is established.\nWHAT THE BRIEF FIXES\nMaya unfolds the drawing.\nDIRECTION SHEET\nThe shot begins and ends.'))
   return result.findings.some((f) => f.id === 'neighboring-states' && !f.passed)
+})())
+check('thinking eval scorer: scene middle rejects replaying the drawing discovery', (() => {
+  const testCase = EVAL_CASES.find((c) => c.id === 'scene-middle-closing-direction')
+  const replay = `${validDirectionSheet}\nMaya discovers the child’s drawing again before carrying the lantern onward.`
+  const result = scoreRecord(testCase, syntheticRecord(testCase, replay))
+  return result.findings.some((f) => f.id === 'continuity-reestablishment' && !f.passed)
 })())
 check('thinking eval scorer: continuation cannot re-establish the prior placement', (() => {
   const testCase = EVAL_CASES.find((c) => c.id === 'continuation-planning')

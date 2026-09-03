@@ -89,7 +89,9 @@ function canonicalFields(text: string): string[] {
   const fields: string[] = []
   for (const match of text.matchAll(/^\s*([a-z][a-z0-9_]*)\s*:/gim)) {
     const name = match[1]
-    if ([...REF_FIELDS, ...BASE_FIELDS].includes(name as never) && !fields.includes(name)) fields.push(name)
+    // Preserve every occurrence. A duplicate canonical field is ambiguous to
+    // the downstream H3 parser and must not be normalized away by the scorer.
+    if ([...REF_FIELDS, ...BASE_FIELDS].includes(name as never)) fields.push(name)
   }
   return fields
 }
@@ -101,12 +103,14 @@ function expectedFields(testCase: ThinkingEvalCase): readonly string[] {
 function requiredH3Fields(text: string, testCase: ThinkingEvalCase): DeterministicFinding {
   const required = expectedFields(testCase)
   const missing = required.filter((field) => !fieldValue(text, field))
+  const actual = canonicalFields(text)
+  const duplicates = required.filter((field) => actual.filter((candidate) => candidate === field).length > 1)
   const lintRequired = lint(text, testCase.h3Mode).find((item) => item.id === 'mode/fields')
-  const passed = missing.length === 0 && lintRequired?.severity !== 'error'
+  const passed = missing.length === 0 && duplicates.length === 0 && lintRequired?.severity !== 'error'
   return finding(
     'required-h3-fields',
     passed,
-    passed ? `${required.length} required ${testCase.h3Mode} fields are non-empty` : `missing or empty fields: ${missing.join(', ') || lintRequired?.detail || 'unknown'}`,
+    passed ? `${required.length} required ${testCase.h3Mode} fields are non-empty and unique` : `missing, empty, or duplicate fields: ${[...missing, ...duplicates.map((field) => `${field} (duplicate)`)].join(', ') || lintRequired?.detail || 'unknown'}`,
   )
 }
 
@@ -231,6 +235,28 @@ function clipDuration(text: string, testCase: ThinkingEvalCase): DeterministicFi
   return finding('clip-duration', passed, passed ? `timing fits the fixture's ${target}-second constraint` : `expected ${target} seconds, got declared ${declaredSeconds ?? 'none'} and timeline end ${end ?? 'none'}`)
 }
 
+function t2vaSourceContract(text: string, testCase: ThinkingEvalCase): DeterministicFinding {
+  if (testCase.id !== 'clip-t2va-draft-from-direction-sheet') return finding('t2va-source-contract', true, 'not applicable to this fixture')
+  const lower = normalized(text)
+  const hasReferencePlaceholder = /<\s*(?:subject|reference|ref|image|object|character)\b[^>]*>|\{\{\s*(?:subject|reference|ref|image|object|character)\b[^}]*\}\}/i.test(text)
+  const hasReferenceDependency = /\b(?:reference[- ]image|reference frame|source image|input image|image[- ]to[- ]video|img2img|i2v|provided image|input frame)\b/i.test(lower) ||
+    /\b(?:use|uses|using|from|match|matches|preserve|preserves|follow|follows|depend(?:s|ing)?|require(?:s|d)?)\s+(?:the\s+)?(?:reference|source|input)\b/i.test(lower)
+
+  const beatMarkers = [...text.matchAll(/(?:\[\s*)?\d+(?:\.\d+)?\s*[–—-]\s*\d+(?:\.\d+)?\s*seconds?\s*(?:\]\s*|:\s*)/gi)]
+  const lastBeat = beatMarkers.length
+    ? text.slice((beatMarkers.at(-1)?.index ?? 0) + (beatMarkers.at(-1)?.[0].length ?? 0))
+    : text
+  const finalHasCoin = /\bcoin\b/i.test(lastBeat)
+  const finalHasClosedFist = /\b(?:closed|clenched)\s+fist\b/i.test(lastBeat)
+  const finalConcealsCoin = /\b(?:coin|it)\b[^.\n]{0,100}\b(?:hidden|concealed|invisible|unseen|remains?\s+(?:inside|concealed|hidden)|stays?\s+(?:inside|hidden)|not\s+visible)\b/i.test(lastBeat) ||
+    /\b(?:hidden|concealed|invisible|unseen)\b[^.\n]{0,100}\b(?:coin|closed\s+fist)\b/i.test(lastBeat)
+  const finalRevealsCoin = /\b(?:coin|it)\b[^.\n]{0,100}\b(?:visible|revealed|shown|exposed|disclosed|appears?)\b|\b(?:reveal(?:s|ed|ing)?|show(?:s|ed|ing)?|expos(?:es|ed|ing)?)\s+(?:the\s+)?coin\b/i.test(lastBeat)
+  const passed = !hasReferencePlaceholder && !hasReferenceDependency && finalHasCoin && finalHasClosedFist && finalConcealsCoin && !finalRevealsCoin
+  return finding('t2va-source-contract', passed, passed
+    ? 'T2VA uses no reference dependency and ends with the coin concealed in the closed fist'
+    : 'T2VA must stay text-only and end with the coin concealed, not visible or revealed, in the magician’s closed fist')
+}
+
 function orderedBreakdownActions(text: string): DeterministicFinding {
   const breakdown = strictBreakdown(text)
   if (!breakdown || breakdown.clips.length !== 3) return finding('ordered-actions', false, 'cannot verify action order without a strict three-clip breakdown')
@@ -305,8 +331,13 @@ function reestablishesPriorAction(text: string, testCase: ThinkingEvalCase): Det
   const lower = normalized(text)
   const repeatedPlacement = /(?:place|places|placed|placing|set|sets|setting|leave|leaves|leaving)\s+(?:the\s+)?(?:red\s+)?(?:paper\s+)?lantern\s+(?:beside|next to|by|on)/i.test(lower)
   const newPlatformEstablishment = /(?:establish|establishes|establishing|introduce|introduces|enter|enters|entering)\b[^.\n]{0,80}\b(?:platform|railway)/i.test(lower)
-  const passed = !repeatedPlacement && !newPlatformEstablishment
-  return finding('continuity-reestablishment', passed, passed ? 'prior placement and established setting are not replayed' : 'the response re-establishes the prior lantern placement or platform')
+  const repeatedDrawingDiscovery = [
+    /\b(?:re-?find|re-?discover|re-?see|rediscover(?:s|ed|ing)?)\b[^.\n]{0,80}\bdrawing\b/i,
+    /\b(?:find|finds|found|finding|discover|discovers|discovered|discovering|see|sees|saw|seeing|spot|spots|spotted|notice|notices|noticed)\b[^.\n]{0,80}\bdrawing\b[^.\n]{0,24}\b(?:again|anew|once more)\b/i,
+    /\b(?:again|anew|once more)\b[^.\n]{0,40}\b(?:find|discover|see|spot|notice)\w*\b[^.\n]{0,80}\bdrawing\b/i,
+  ].some((pattern) => pattern.test(lower))
+  const passed = !repeatedPlacement && !newPlatformEstablishment && !repeatedDrawingDiscovery
+  return finding('continuity-reestablishment', passed, passed ? 'prior placement, drawing discovery, and established setting are not replayed' : 'the response re-establishes the prior lantern placement, drawing discovery, or platform')
 }
 
 function prematureResolution(text: string, testCase: ThinkingEvalCase): DeterministicFinding {
@@ -462,6 +493,7 @@ function stageFindings(testCase: ThinkingEvalCase, record: RawEvalRecord): Deter
 
   findings.push(
     clipDuration(semanticContent, testCase),
+    t2vaSourceContract(semanticContent, testCase),
     neighboringStates(content, testCase),
     continuityOpening(content, testCase),
     reestablishesPriorAction(content, testCase),

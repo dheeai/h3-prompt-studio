@@ -34,9 +34,44 @@ import {
 } from '../src/lib/entry.ts'
 import { agentApiKey, buildAgentModel, buildAgentTools, reduceAgentEvent, agentEventStatus } from '../src/lib/agent.ts'
 import { buildH3SystemPrompt, buildStudioSystemPrompt } from '../src/lib/context.ts'
+import { EVAL_ARMS, EVAL_CASES, EVAL_MODELS, buildEvalMessages, evalVariants } from '../eval/cases.ts'
 
 let pass = 0
 let fail = 0
+
+check('thinking eval fixtures: use the approved eight-case order',
+  JSON.stringify(EVAL_CASES.map((testCase) => testCase.id)) === JSON.stringify([
+    'scene-breakdown',
+    'scene-middle-closing-direction',
+    'clip-direction-acting-heavy-two-hander',
+    'clip-t2va-draft-from-direction-sheet',
+    'prompt-revise',
+    'prompt-rebuild',
+    'continuation-planning',
+    'continuation-prompt-authoring',
+  ]))
+check('thinking eval fixtures: use the approved model order',
+  JSON.stringify(EVAL_MODELS) === JSON.stringify(['default', 'thinkingcap-27b', 'qwen38-heretic-27b-fast']))
+check('thinking eval fixtures: expose enabled and disabled arms',
+  JSON.stringify(EVAL_ARMS) === JSON.stringify([true, false]))
+check('thinking eval fixtures: expand to exactly 48 isolated variants', evalVariants().length === 48)
+check('thinking eval fixtures: preserve the approved stage and entry-mode matrix',
+  JSON.stringify(EVAL_CASES.map((testCase) => [testCase.stage, testCase.studioMode])) === JSON.stringify([
+    ['breakdown', 'story'],
+    ['direct', 'story'],
+    ['direct', 'idea'],
+    ['draft', 'idea'],
+    ['revise', 'prompt'],
+    ['rebuild', 'prompt'],
+    ['handoff', 'story'],
+    ['draft', 'story'],
+  ]))
+check('thinking eval fixtures: use Ref2VA except for the T2VA draft case',
+  EVAL_CASES.filter((testCase) => testCase.h3Mode === 'T2VA').map((testCase) => testCase.id).join(',') === 'clip-t2va-draft-from-direction-sheet' &&
+  EVAL_CASES.filter((testCase) => testCase.h3Mode === 'Ref2VA').length === 7)
+const evalMessages = await buildEvalMessages(EVAL_CASES[0])
+check('thinking eval messages: each case produces exactly a system and user message',
+  evalMessages.length === 2 && evalMessages[0].role === 'system' && evalMessages[1].role === 'user')
 
 // ── entry modes ────────────────────────────────────────────────────────
 

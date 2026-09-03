@@ -26,6 +26,7 @@ interface SummaryRow {
   thinking: boolean
   contentTokens: number
   reasoningTokens: number
+  reportedCompletionTokens: number | null
   latencyMs: number
   ttftMs: number | null
   finishReason: string | null
@@ -117,14 +118,15 @@ function h3FieldOrder(text: string, testCase: ThinkingEvalCase): DeterministicFi
 }
 
 function strictBreakdown(text: string): ReturnType<typeof parseBreakdown> {
+  const visible = text.trim()
+  // The breakdown stage is consumed as a machine document. Unlike the
+  // forgiving UI parser, the eval must not silently strip prose or fences.
+  if (!visible.startsWith('{') || !visible.endsWith('}')) return null
   const parsed = parseBreakdown(text)
   if (!parsed) return null
-  const start = text.indexOf('{')
-  const end = text.lastIndexOf('}')
-  if (start < 0 || end <= start) return null
   let raw: unknown
   try {
-    raw = JSON.parse(text.slice(start, end + 1))
+    raw = JSON.parse(visible)
   } catch {
     return null
   }
@@ -135,15 +137,22 @@ function strictBreakdown(text: string): ReturnType<typeof parseBreakdown> {
     clips.every((item) => {
       if (!item || typeof item !== 'object') return false
       const clip = item as Record<string, unknown>
-      return Number.isFinite(Number(clip.index)) &&
+      return typeof clip.index === 'number' && Number.isInteger(clip.index) &&
         typeof clip.title === 'string' && !!clip.title.trim() &&
         typeof clip.role === 'string' && validRoles.has(clip.role) &&
-        Number.isFinite(Number(clip.seconds)) && Number(clip.seconds) > 0 &&
+        typeof clip.seconds === 'number' && Number.isFinite(clip.seconds) && clip.seconds > 0 &&
         typeof clip.covers === 'string' && !!clip.covers.trim() &&
         typeof clip.precedes === 'string' &&
         typeof clip.follows === 'string'
     })
-  return valid ? parsed : null
+  if (!valid) return null
+  for (let index = 0; index < clips.length; index++) {
+    const clip = clips[index] as Record<string, unknown>
+    if (clip.index !== index + 1) return null
+  }
+  if (clips.length === 3 && clips.some((item) => (item as Record<string, unknown>).role === 'standalone')) return null
+  if (clips.length === 3 && JSON.stringify(clips.map((item) => (item as Record<string, unknown>).role)) !== JSON.stringify(['opening', 'rising', 'closing'])) return null
+  return parsed
 }
 
 function replacementBlocks(text: string): DeterministicFinding {
@@ -179,6 +188,13 @@ function directionSheetContract(text: string): DeterministicFinding {
 }
 
 function expectedDuration(testCase: ThinkingEvalCase): number | null {
+  // Prompt fixtures carry their duration only in timecode ranges inside the
+  // current canonical prompt. Do not mistake the first range's right-hand
+  // endpoint (2.5 seconds) for the clip's total length (7 seconds).
+  if (testCase.family === 'prompt') {
+    const currentSpans = timeSpans(testCase.current)
+    return currentSpans.length ? currentSpans[currentSpans.length - 1][1] : null
+  }
   const source = `${testCase.story}\n${testCase.current}`
   const match = source.match(/\b(?:of |for )?(\d+(?:\.\d+)?)\s*(?:-second|seconds?|secs?|sec)\b/i)
   return match ? Number(match[1]) : null
@@ -192,7 +208,7 @@ function timeSpans(text: string): [number, number][] {
 
 function clipDuration(text: string, testCase: ThinkingEvalCase): DeterministicFinding {
   if (testCase.id === 'scene-breakdown') {
-    const breakdown = parseBreakdown(text)
+    const breakdown = strictBreakdown(text)
     const passed = !!breakdown && breakdown.clips.length === 3 && breakdown.clips.every((clip) => clip.seconds === 3)
     return finding('clip-duration', passed, passed ? 'three clips are exactly 3 seconds each' : 'scene breakdown must contain exactly three 3-second clips')
   }
@@ -207,18 +223,49 @@ function clipDuration(text: string, testCase: ThinkingEvalCase): DeterministicFi
   const declaredSeconds = declared ? Number(declared[1]) : null
   const end = spans.length ? spans[spans.length - 1][1] : null
   const contiguous = spans.every((span, index) => index === 0 || Math.abs(span[0] - spans[index - 1][1]) < 0.051)
-  const passed = (declaredSeconds === null || Math.abs(declaredSeconds - target) < 0.051) && (end === null || Math.abs(end - target) < 0.051) && contiguous
+  const requiresTimeline = testCase.id === 'clip-t2va-draft-from-direction-sheet'
+  const startsAtZero = spans.length > 0 && Math.abs(spans[0][0]) < 0.051
+  const passed = (declaredSeconds === null || Math.abs(declaredSeconds - target) < 0.051) &&
+    (end === null || Math.abs(end - target) < 0.051) && contiguous &&
+    (!requiresTimeline || (spans.length >= 2 && startsAtZero && end !== null && Math.abs(end - target) < 0.051))
   return finding('clip-duration', passed, passed ? `timing fits the fixture's ${target}-second constraint` : `expected ${target} seconds, got declared ${declaredSeconds ?? 'none'} and timeline end ${end ?? 'none'}`)
+}
+
+function orderedBreakdownActions(text: string): DeterministicFinding {
+  const breakdown = strictBreakdown(text)
+  if (!breakdown || breakdown.clips.length !== 3) return finding('ordered-actions', false, 'cannot verify action order without a strict three-clip breakdown')
+  const covers = breakdown.clips.map((clip) => normalized(clip.covers))
+  const passed =
+    /cross|crosses|crossing/.test(covers[0]) &&
+    /lantern/.test(covers[0]) &&
+    /train/.test(covers[1]) &&
+    /find|finds|drawing|unfold/.test(covers[1]) &&
+    /leave|leaves|lit/.test(covers[2]) &&
+    /drawing/.test(covers[2])
+  return finding('ordered-actions', passed, passed ? 'crossing, listening/finding, and lantern placement are in causal order' : 'three clips must move from crossing, through the absent train/drawing discovery, to the final lit lantern placement')
+}
+
+function stateTokens(value: string): Set<string> {
+  const stop = new Set(['the', 'and', 'with', 'from', 'this', 'that', 'while', 'into', 'beside', 'next', 'clip', 'must', 'open', 'able', 'having', 'just', 'seen'])
+  return new Set(normalized(value).match(/[a-z]{4,}/g)?.filter((token) => !stop.has(token)) ?? [])
+}
+
+function semanticAdjacency(left: string, right: string): boolean {
+  const leftTokens = stateTokens(left)
+  const rightTokens = stateTokens(right)
+  const overlap = [...leftTokens].filter((token) => rightTokens.has(token))
+  return overlap.length >= 2
 }
 
 function neighboringStates(text: string, testCase: ThinkingEvalCase): DeterministicFinding {
   if (testCase.id === 'scene-breakdown') {
-    const breakdown = parseBreakdown(text)
+    const breakdown = strictBreakdown(text)
     const passed = !!breakdown && breakdown.clips.every((clip, index) => {
       if (clip.index !== index + 1) return false
       if (index === 0 && clip.precedes.trim()) return false
       if (index > 0 && !clip.precedes.trim()) return false
       if (index < breakdown.clips.length - 1 && !clip.follows.trim()) return false
+      if (index > 0 && !semanticAdjacency(breakdown.clips[index - 1].follows, clip.precedes)) return false
       return true
     })
     return finding('neighboring-states', passed, passed ? 'every clip boundary has an explicit handoff state' : 'each adjacent breakdown boundary needs non-empty precedes and follows fields')
@@ -306,16 +353,64 @@ function actingSpecificity(text: string, testCase: ThinkingEvalCase): Determinis
   return finding('dialogue-acting', passed, passed ? 'both performers have observable physical actions and the constrained coat beat' : 'two-hander output must specify observable older/younger performances and the coat action')
 }
 
+function twoHanderContract(text: string, testCase: ThinkingEvalCase): DeterministicFinding {
+  if (testCase.id !== 'clip-direction-acting-heavy-two-hander') return finding('two-hander-contract', true, 'not applicable to this fixture')
+  const lower = normalized(text)
+  const oneShot = /\bone\s+continuous\s+7[- ]second\s+shot\b|\bsingle\s+continuous\s+7[- ]second\s+shot\b/i.test(lower)
+  const hasCut = /\b(?:cut\s+to|cutaway|multiple\s+shots?|multi[- ]shot|shot\s+[2-9]|then\s+cut)\b/i.test(lower)
+  const addedCharacter = /\b(?:third|another|additional)\s+(?:character|person|performer|sister|woman|man|child)\b|\b(?:mother|waiter|friend|child)\s+(?:enters?|appears?|joins?)\b/i.test(lower)
+  const passed = oneShot && !hasCut && !addedCharacter
+  return finding('two-hander-contract', passed, passed ? 'one continuous 7-second shot contains only the two sisters' : 'two-hander must be one continuous 7-second shot with no cuts, multi-shot structure, or added characters')
+}
+
+function promptInventedEvents(text: string, testCase: ThinkingEvalCase): DeterministicFinding {
+  if (testCase.id !== 'prompt-revise' && testCase.id !== 'prompt-rebuild') return finding('prompt-invented-events', true, 'not applicable to this fixture')
+  const lower = normalized(text)
+  const invented = /\b(?:the\s+)?woman\s+(?:leaves?|walks?\s+away|enters?|speaks?|says?)\b|\bthe\s+moth\s+(?:flies?|leaves?|takes?\s+off)\b|\b(?:the\s+)?door\s+(?:closes?|slams?|locks?)\b/i.test(lower)
+  const endingLines = [...lower.matchAll(/\b(?:end|ends|ending|concludes?|finally)\b[^.\n]{0,100}/gi)].map((match) => match[0])
+  const badEnding = endingLines.some((line) => !/latch|hand/.test(line))
+  const passed = !invented && !badEnding
+  return finding('prompt-invented-events', passed, passed ? 'greenhouse prompt contains no event or ending outside the requested latch beat' : 'greenhouse replacement invents an event or resolves the scene away from the hand turning the latch')
+}
+
+function rebuildMaterialChange(text: string, testCase: ThinkingEvalCase): DeterministicFinding {
+  if (testCase.id !== 'prompt-rebuild') return finding('material-rebuild', true, 'not applicable to this fixture')
+  const replacement = splitPromptReplacement(text)
+  if (!replacement) return finding('material-rebuild', false, 'rebuild has no parsed replacement prompt')
+  const compact = (value: string) => normalized(value).replace(/[^a-z0-9]+/g, '')
+  const changed = compact(replacement.prompt) !== compact(testCase.current)
+  const craftCategories = [
+    { label: 'camera', terms: ['camera', 'framing', 'shot', 'lens', 'dolly', 'close-up', 'wide', 'medium', 'tracking', 'handheld'] },
+    { label: 'blocking', terms: ['blocking', 'position', 'eyeline', 'hand', 'hands', 'fingers', 'shoulders', 'handle'] },
+    { label: 'acting', terms: ['gaze', 'breath', 'reaction', 'performance', 'gesture', 'pause', 'eyes', 'fingers', 'shoulders', 'stop'] },
+    { label: 'light', terms: ['light', 'lighting', 'palette', 'texture', 'shadow', 'cool', 'dark'] },
+    { label: 'sound', terms: ['sound', 'soundscape', 'creak', 'click', 'insects', 'breath'] },
+  ] as const
+  const categorySignature = (value: string, terms: readonly string[]) => {
+    const words = new Set(value.toLowerCase().match(/[a-z]+(?:-[a-z]+)?/g) ?? [])
+    return terms.filter((term) => words.has(term)).join('|')
+  }
+  const changedCategories = craftCategories.filter((category) => categorySignature(replacement.prompt, category.terms) !== categorySignature(testCase.current, category.terms))
+  const actingChanged = changedCategories.some((category) => category.label === 'acting')
+  const directingChanged = changedCategories.some((category) => ['camera', 'blocking', 'light', 'sound'].includes(category.label))
+  const passed = changed && changedCategories.length >= 2 && actingChanged && directingChanged
+  return finding('material-rebuild', passed, passed ? `rebuild changed the prompt and rethought ${changedCategories.map((category) => category.label).join(', ')}` : 'rebuild must materially change more than punctuation/whitespace and rethink both directing and observable acting')
+}
+
 function soundAndMusic(text: string, testCase: ThinkingEvalCase): DeterministicFinding {
   if (testCase.stage === 'breakdown' || testCase.stage === 'handoff') return finding('sound-music', true, 'not applicable to a planning-only contract')
   const lower = normalized(text)
   const sound = fieldValue(text, 'overall_soundscape')
   const music = fieldValue(text, 'non_diegetic_music')
-  const soundSources = /\b(?:rain|footsteps?|traffic|door|wind|engine|birds?|breath|voices?|clatter|hum|bell|water|thunder|clock|ticking|creak|rustle|scrape|whistle|horn|radio|glass|metal|paper|fabric|foley|coin|hinge|insects?)\b/i.test(sound)
-  const musicValid = !!music && (/^n\/a\.?$/i.test(music) || !/\b(?:no|without|none|silence|silent|absent|do not|don't)\s+(?:music|score|soundtrack)\b/i.test(music))
-  const directionSound = testCase.stage === 'direct' && !testCase.id.startsWith('continuation-') ? soundSources || /sound anchors?|sound design|footsteps?|breath|fabric|coin|hinge/i.test(lower) : true
+  const soundSources = /\b(?:rain|footsteps?|traffic|door|wind|engine|birds?|breath|clatter|hum|bell|water|thunder|clock|ticking|creak|rustle|scrape|whistle|horn|radio|glass|metal|paper|fabric|foley|coin|hinge|insects?)\b/i.test(sound)
+  const voiceCue = /\b(?:voice|voices|dialogue|speech|words|speak|talk|conversation|says?)\b/i.test(sound)
+  const silentCase = new Set(['clip-t2va-draft-from-direction-sheet', 'prompt-revise', 'prompt-rebuild', 'continuation-prompt-authoring']).has(testCase.id)
+  const musicValid = silentCase ? /^n\/a\.?$/i.test(music) : (!!music || testCase.stage === 'direct')
+  const directionSound = testCase.stage === 'direct' && !testCase.id.startsWith('continuation-')
+    ? (!voiceCue && (soundSources || /sound anchors?|sound design|footsteps?|breath|fabric|coin|hinge/i.test(lower)))
+    : true
   const passed = testCase.stage === 'draft' || testCase.stage === 'revise' || testCase.stage === 'rebuild'
-    ? !!sound && soundSources && musicValid
+    ? !!sound && soundSources && !voiceCue && musicValid
     : directionSound
   return finding('sound-music', passed, passed ? 'sound uses concrete sources and music is represented safely' : 'soundscape must name concrete sources and non-diegetic music must use a safe sentinel or explicit score')
 }
@@ -343,15 +438,18 @@ function protocolFindings(testCase: ThinkingEvalCase, record: RawEvalRecord): De
 function stageFindings(testCase: ThinkingEvalCase, record: RawEvalRecord): DeterministicFinding[] {
   const content = record.response?.content ?? ''
   const findings = protocolFindings(testCase, record)
+  let semanticContent = content
 
   if (testCase.id === 'scene-breakdown') {
     const breakdown = strictBreakdown(content)
-    findings.push(finding('breakdown-json', !!breakdown, breakdown ? 'breakdown JSON has the required clip fields' : 'response is not valid breakdown JSON with non-empty clip fields'))
+    findings.push(finding('breakdown-json', !!breakdown, breakdown ? 'breakdown JSON has the required clip fields' : 'response is not valid plain breakdown JSON with numeric sequential clip fields'))
+    findings.push(orderedBreakdownActions(content))
   } else if (testCase.id === 'continuation-planning') {
     findings.push(handoffBlocks(content))
   } else if (testCase.id === 'prompt-revise' || testCase.id === 'prompt-rebuild') {
     const replacement = splitPromptReplacement(content)
     findings.push(replacementBlocks(content), requiredH3Fields(replacement?.prompt ?? '', testCase), h3FieldOrder(replacement?.prompt ?? '', testCase))
+    semanticContent = replacement?.prompt ?? ''
   } else if (testCase.stage === 'direct') {
     // Direct produces a direction sheet. It is deliberately not a prompt
     // authoring pass, so applying the H3 field validators here would mark a
@@ -363,20 +461,32 @@ function stageFindings(testCase: ThinkingEvalCase, record: RawEvalRecord): Deter
   }
 
   findings.push(
-    clipDuration(content, testCase),
+    clipDuration(semanticContent, testCase),
     neighboringStates(content, testCase),
     continuityOpening(content, testCase),
     reestablishesPriorAction(content, testCase),
-    fixedFacts(content, testCase),
+    fixedFacts(semanticContent, testCase),
     verbatimDialogue(content, testCase),
     actingSpecificity(content, testCase),
-    soundAndMusic(content, testCase),
-    prematureResolution(content, testCase),
+    twoHanderContract(content, testCase),
+    soundAndMusic(semanticContent, testCase),
+    prematureResolution(semanticContent, testCase),
+    promptInventedEvents(semanticContent, testCase),
   )
 
   if (testCase.id === 'prompt-rebuild') {
-    const replacement = splitPromptReplacement(content)
-    findings.push(finding('material-rebuild', !!replacement && normalized(replacement.prompt) !== normalized(testCase.current), !!replacement && normalized(replacement.prompt) !== normalized(testCase.current) ? 'rebuild materially rethought the directing' : 'rebuild returned the unchanged source prompt'))
+    findings.push(rebuildMaterialChange(content, testCase))
+  }
+
+  // Every fixture declares a public validator ID. Keep those IDs visible in
+  // the result even when the implementation uses several lower-level checks
+  // to establish one contract (continuity is the main example).
+  for (const validatorId of testCase.validators) {
+    if (findings.some((item) => item.id === validatorId)) continue
+    const mapped = validatorId === 'continuity'
+      ? findings.filter((item) => ['neighboring-states', 'continuity-opening', 'continuity-reestablishment', 'no-premature-resolution'].includes(item.id))
+      : []
+    findings.push(finding(validatorId, mapped.length > 0 && mapped.every((item) => item.passed), mapped.length > 0 ? 'all continuity sub-checks passed' : `validator ${validatorId} was not executed`))
   }
 
   return findings
@@ -442,8 +552,12 @@ function summaryRow(testCase: ThinkingEvalCase | undefined, record: RawEvalRecor
     stage: record.stage,
     model: record.model,
     thinking: record.chatTemplateKwargs?.enable_thinking === true,
-    contentTokens: numberValue(response?.usage?.completion) ?? estTokens(content),
+    // llama's reported completion count covers the whole completion and can
+    // include hidden reasoning. Keep visible content and reasoning estimates
+    // separate; retain the provider total under its truthful name.
+    contentTokens: estTokens(content),
     reasoningTokens: estTokens(reasoning),
+    reportedCompletionTokens: numberValue(response?.usage?.completion),
     latencyMs: response?.elapsedMs ?? 0,
     ttftMs: numberValue(response?.timeToFirstTokenMs),
     finishReason: response?.finishReason ?? null,
@@ -466,6 +580,7 @@ function csvCell(value: unknown): string {
 function toCsv(rows: SummaryRow[]): string {
   const headers = [
     'caseId', 'family', 'stage', 'model', 'thinking', 'contentTokens', 'reasoningTokens', 'latencyMs', 'ttftMs', 'finishReason',
+    'reportedCompletionTokens',
     'contractPass', 'errors', 'validatorFindings', 'pairedOnOffPassDelta', 'pairedOnOffContentTokenDelta',
     'pairedOnOffReasoningTokenDelta', 'pairedOnOffLatencyDeltaMs', 'pairedOnOffTtftDeltaMs',
   ]
@@ -473,7 +588,7 @@ function toCsv(rows: SummaryRow[]): string {
   for (const row of rows) {
     lines.push([
       row.caseId, row.family, row.stage, row.model, row.thinking, row.contentTokens, row.reasoningTokens, row.latencyMs,
-      row.ttftMs, row.finishReason ?? '', row.contractPass, row.errors, row.validatorFindings.map((item) => `${item.id}:${item.passed ? 'pass' : 'fail'}`),
+      row.ttftMs, row.finishReason ?? '', row.reportedCompletionTokens, row.contractPass, row.errors, row.validatorFindings.map((item) => `${item.id}:${item.passed ? 'pass' : 'fail'}`),
       row.pairedOnOffPassDelta, row.pairedOnOffContentTokenDelta, row.pairedOnOffReasoningTokenDelta,
       row.pairedOnOffLatencyDeltaMs, row.pairedOnOffTtftDeltaMs,
     ].map(csvCell).join(','))
@@ -547,7 +662,7 @@ export async function scoreFile(rawPath: string): Promise<{ records: number; fai
     } catch (error) {
       rows.push({
         caseId: '(malformed-jsonl)', family: 'unknown', stage: 'unknown', model: 'unknown', thinking: false,
-        contentTokens: 0, reasoningTokens: 0, latencyMs: 0, ttftMs: null, finishReason: null, contractPass: false,
+        contentTokens: 0, reasoningTokens: 0, reportedCompletionTokens: null, latencyMs: 0, ttftMs: null, finishReason: null, contractPass: false,
         errors: [`invalid JSONL record: ${error instanceof Error ? error.message : String(error)}`], validatorFindings: [finding('record-shape', false, 'record is not valid JSON')],
         pairedOnOffPassDelta: null, pairedOnOffContentTokenDelta: null, pairedOnOffReasoningTokenDelta: null, pairedOnOffLatencyDeltaMs: null, pairedOnOffTtftDeltaMs: null,
       })
@@ -557,7 +672,7 @@ export async function scoreFile(rawPath: string): Promise<{ records: number; fai
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       rows.push({
         caseId: '(malformed-record)', family: 'unknown', stage: 'unknown', model: 'unknown', thinking: false,
-        contentTokens: 0, reasoningTokens: 0, latencyMs: 0, ttftMs: null, finishReason: null, contractPass: false,
+        contentTokens: 0, reasoningTokens: 0, reportedCompletionTokens: null, latencyMs: 0, ttftMs: null, finishReason: null, contractPass: false,
         errors: ['record is not a JSON object'], validatorFindings: [finding('record-shape', false, 'record is not a JSON object')],
         pairedOnOffPassDelta: null, pairedOnOffContentTokenDelta: null, pairedOnOffReasoningTokenDelta: null, pairedOnOffLatencyDeltaMs: null, pairedOnOffTtftDeltaMs: null,
       })

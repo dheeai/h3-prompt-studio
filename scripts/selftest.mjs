@@ -351,6 +351,16 @@ Maya, the red lantern, the drawing, the empty railway platform, and the absent t
 DIRECTION SHEET
 The shot opens on Maya holding the unlit lantern beside the drawing. She listens for the absent train, unfolds the drawing, and carries the lantern toward the end of the platform. The next clip can open on the lantern lit at the platform end.
 Sound anchors: wind against the platform, Maya’s breath, paper unfolding, and a distant rail hum; no score.`
+const validT2vaPrompt = `integrated_multimodal_description: [0.0–1.5 seconds] The street magician displays an empty palm to the skeptical child. [1.5–4.5 seconds] The magician closes the other hand around the coin while the child leans in with a skeptical expression. [4.5–6.0 seconds] The magician holds the closed fist in frame; the coin remains hidden and the child remains skeptical.
+overall_soundscape: coin click against the palm, fabric movement, and the child’s quiet breath.
+non_diegetic_music: N/A`
+const validTwoHanderDirection = `WHERE THE SOURCE STANDS
+This is a single continuous two-hander in a quiet kitchen after a funeral; the requested coat action and dialogue are fixed.
+WHAT THE BRIEF FIXES
+The older and younger sisters argue over their father’s worn blue coat. The older sister says, “You only want it because he forgave you.” The younger sister takes it, cannot put it on, and sets it back down.
+DIRECTION SHEET
+One continuous 7-second shot. Hold a restrained two-shot as the older sister keeps one hand on the coat and delivers the line; let the younger sister’s eyes drop, fingers test the sleeve, and shoulders stop before she sets the coat back down. The shot ends on both sisters and the coat, with no resolution beyond the physical action.
+Sound anchors: cloth rasp, one breath catch, and the coat settling on the table; no score.`
 
 check('thinking eval scorer: valid breakdown passes exact three clips and handoffs', (() => {
   const result = scoreRecord(EVAL_CASES.find((c) => c.id === 'scene-breakdown'), syntheticRecord(EVAL_CASES[0], validBreakdown))
@@ -360,6 +370,27 @@ check('thinking eval scorer: wrong breakdown duration fails the duration finding
   const wrong = validBreakdown.replace('"seconds":3', '"seconds":4')
   const result = scoreRecord(EVAL_CASES[0], syntheticRecord(EVAL_CASES[0], wrong))
   return !result.passed && result.findings.some((f) => f.id === 'clip-duration' && !f.passed)
+})())
+check('thinking eval scorer: breakdown action order is enforced', (() => {
+  const shuffled = validBreakdown.replace('Maya hears the absent train, finds the child drawing, and unfolds it.', 'Maya leaves the lantern lit beside the drawing.')
+  const result = scoreRecord(EVAL_CASES[0], syntheticRecord(EVAL_CASES[0], shuffled))
+  return result.findings.some((f) => f.id === 'ordered-actions' && !f.passed)
+})())
+check('thinking eval scorer: adjacent breakdown handoffs must carry the same semantic state', (() => {
+  const disconnected = validBreakdown.replace('"precedes":"Maya reaches the bench with the drawing."', '"precedes":"Maya is still crossing the platform."')
+  const result = scoreRecord(EVAL_CASES[0], syntheticRecord(EVAL_CASES[0], disconnected))
+  return result.findings.some((f) => f.id === 'neighboring-states' && !f.passed)
+})())
+check('thinking eval scorer: breakdown response must be plain JSON without prose or fences', (() => {
+  const fenced = scoreRecord(EVAL_CASES[0], syntheticRecord(EVAL_CASES[0], `Here is the plan:\n\`\`\`json\n${validBreakdown}\n\`\`\``))
+  return fenced.findings.some((f) => f.id === 'breakdown-json' && !f.passed)
+})())
+check('thinking eval scorer: three-clip breakdown requires numeric integer indices and non-standalone roles', (() => {
+  const stringIndex = validBreakdown.replace('"index":1', '"index":"1"')
+  const standalone = validBreakdown.replace('"role":"opening"', '"role":"standalone"')
+  const stringResult = scoreRecord(EVAL_CASES[0], syntheticRecord(EVAL_CASES[0], stringIndex))
+  const standaloneResult = scoreRecord(EVAL_CASES[0], syntheticRecord(EVAL_CASES[0], standalone))
+  return stringResult.findings.some((f) => f.id === 'breakdown-json' && !f.passed) && standaloneResult.findings.some((f) => f.id === 'breakdown-json' && !f.passed)
 })())
 check('thinking eval scorer: malformed breakdown JSON fails the breakdown contract', (() => {
   const result = scoreRecord(EVAL_CASES[0], syntheticRecord(EVAL_CASES[0], '{"spine":"unfinished"'))
@@ -376,6 +407,12 @@ check('thinking eval scorer: canonical T2VA fields pass in the required order', 
   const result = scoreRecord(testCase, syntheticRecord(testCase, prompt))
   return result.findings.some((f) => f.id === 'required-h3-fields' && f.passed) && result.findings.some((f) => f.id === 'h3-field-order' && f.passed)
 })())
+check('thinking eval scorer: T2VA 6-second draft requires explicit contiguous beats ending at 6 seconds', (() => {
+  const testCase = EVAL_CASES.find((c) => c.id === 'clip-t2va-draft-from-direction-sheet')
+  const missing = scoreRecord(testCase, syntheticRecord(testCase, 'integrated_multimodal_description: A magician hides a coin from a skeptical child.\noverall_soundscape: coin click, fabric movement, quiet breath.\nnon_diegetic_music: N/A'))
+  const valid = scoreRecord(testCase, syntheticRecord(testCase, validT2vaPrompt))
+  return missing.findings.some((f) => f.id === 'clip-duration' && !f.passed) && valid.findings.some((f) => f.id === 'clip-duration' && f.passed)
+})())
 check('thinking eval scorer: direct Direction Sheet passes without H3 prompt fields', (() => {
   const testCase = EVAL_CASES.find((c) => c.id === 'scene-middle-closing-direction')
   const result = scoreRecord(testCase, syntheticRecord(testCase, validDirectionSheet))
@@ -385,6 +422,12 @@ check('thinking eval scorer: direct output that emits H3 fields fails its direct
   const testCase = EVAL_CASES.find((c) => c.id === 'scene-middle-closing-direction')
   const result = scoreRecord(testCase, syntheticRecord(testCase, `${validDirectionSheet}\nintegrated_multimodal_description: an improper prompt payload`))
   return !result.passed && result.findings.some((f) => f.id === 'direction-sheet-contract' && !f.passed)
+})())
+check('thinking eval scorer: two-hander direct requires one continuous 7-second shot', (() => {
+  const testCase = EVAL_CASES.find((c) => c.id === 'clip-direction-acting-heavy-two-hander')
+  const valid = scoreRecord(testCase, syntheticRecord(testCase, validTwoHanderDirection))
+  const cut = scoreRecord(testCase, syntheticRecord(testCase, `${validTwoHanderDirection}\nCut to a third character entering the kitchen for Shot 2.`))
+  return valid.passed && valid.findings.some((f) => f.id === 'two-hander-contract' && f.passed) && cut.findings.some((f) => f.id === 'two-hander-contract' && !f.passed)
 })())
 check('thinking eval scorer: reordered H3 fields fail the field-order contract', (() => {
   const testCase = EVAL_CASES.find((c) => c.id === 'clip-t2va-draft-from-direction-sheet')
@@ -399,6 +442,33 @@ check('thinking eval scorer: replacement prompt fields are validated inside PROM
   return result.findings.some((f) => f.id === 'prompt-replacement-blocks' && f.passed) &&
     result.findings.some((f) => f.id === 'required-h3-fields' && !f.passed) &&
     result.findings.some((f) => f.id === 'h3-field-order' && !f.passed)
+})())
+check('thinking eval scorer: rebuild rejects punctuation-only edits and invented greenhouse events', (() => {
+  const testCase = EVAL_CASES.find((c) => c.id === 'prompt-rebuild')
+  const unchangedReplacement = `<<<PROMPT>>>\n${testCase.current}\n<<<EXPLANATION>>>\nNo material change.`
+  const punctuationOnly = unchangedReplacement.replace('latch.', 'latch!')
+  const invented = validPromptReplacement.replace('end on the latch.', 'the woman leaves the greenhouse and the moth flies away; end with the door closed.')
+  const punctuationResult = scoreRecord(testCase, syntheticRecord(testCase, punctuationOnly))
+  const inventedResult = scoreRecord(testCase, syntheticRecord(testCase, invented))
+  return punctuationResult.findings.some((f) => f.id === 'material-rebuild' && !f.passed) && inventedResult.findings.some((f) => f.id === 'prompt-invented-events' && !f.passed)
+})())
+check('thinking eval scorer: rebuild rejects a trivial adjective change without directing or acting rethink', (() => {
+  const testCase = EVAL_CASES.find((c) => c.id === 'prompt-rebuild')
+  const trivial = `<<<PROMPT>>>\n${testCase.current.replace('turns the latch', 'firmly turns the latch')}\n<<<EXPLANATION>>>\nA stronger adjective was added.`
+  const result = scoreRecord(testCase, syntheticRecord(testCase, trivial))
+  return result.findings.some((f) => f.id === 'material-rebuild' && !f.passed)
+})())
+check('thinking eval scorer: silent prompt cases do not treat voices as ambient sound', (() => {
+  const testCase = EVAL_CASES.find((c) => c.id === 'clip-t2va-draft-from-direction-sheet')
+  const voiceOnly = validT2vaPrompt.replace('coin click against the palm, fabric movement, and the child’s quiet breath.', 'voices only.').replace('non_diegetic_music: N/A', 'non_diegetic_music: N/A')
+  const result = scoreRecord(testCase, syntheticRecord(testCase, voiceOnly))
+  return result.findings.some((f) => f.id === 'sound-music' && !f.passed)
+})())
+check('thinking eval scorer: silent prompt cases require exact N/A music sentinel', (() => {
+  const testCase = EVAL_CASES.find((c) => c.id === 'clip-t2va-draft-from-direction-sheet')
+  const denial = validT2vaPrompt.replace('non_diegetic_music: N/A', 'non_diegetic_music: no music')
+  const result = scoreRecord(testCase, syntheticRecord(testCase, denial))
+  return result.findings.some((f) => f.id === 'sound-music' && !f.passed)
 })())
 check('thinking eval scorer: prompt replacement requires exactly PROMPT then EXPLANATION', (() => {
   const testCase = EVAL_CASES.find((c) => c.id === 'prompt-revise')
@@ -439,18 +509,34 @@ check('thinking eval scorer: raw records retain one request, zero continuations,
   const row = syntheticRecord(EVAL_CASES[0], validBreakdown)
   return row.response.requestCount === 1 && row.response.continuations === 0 && row.qualitative === null
 })())
+check('thinking eval scorer: every case-declared validator has an explicit finding ID', (() => {
+  const required = new Set(EVAL_CASES.flatMap((testCase) => testCase.validators))
+  const observed = new Set(EVAL_CASES.flatMap((testCase) => scoreRecord(testCase, syntheticRecord(testCase, '')).findings.map((f) => f.id)))
+  return [...required].every((id) => observed.has(id))
+})())
 
 {
   const outputPath = await mkdtemp(join(tmpdir(), 'h3-prompt-studio-thinking-score-'))
   try {
     const rawPath = join(outputPath, 'raw.jsonl')
     const row = syntheticRecord(EVAL_CASES[0], validBreakdown)
-    await writeFile(rawPath, `${JSON.stringify(row)}\n`)
+    const on = syntheticRecord(EVAL_CASES[0], validBreakdown, {
+      chatTemplateKwargs: { enable_thinking: true },
+      request: { ...row.request, body: { ...row.request.body, chat_template_kwargs: { enable_thinking: true } } },
+      response: { ...row.response, reasoning: 'private plan', content: validBreakdown },
+    })
+    const failed = syntheticRecord(EVAL_CASES[0], validBreakdown, { errors: ['synthetic provider failure'] })
+    await writeFile(rawPath, `${JSON.stringify(on)}\n${JSON.stringify(row)}\n${JSON.stringify(failed)}\n`)
     const result = await scoreFile(rawPath)
     const summary = JSON.parse(readFileSync(result.summaryJson, 'utf8'))
+    const pair = summary.pairs.find((candidate) => candidate.caseId === 'scene-breakdown' && candidate.model === 'default')
+    const rawRows = readFileSync(rawPath, 'utf8').trim().split('\n').map(JSON.parse)
     check('thinking eval scorer: summary files include row, pair data, failures, limitations, and blinded rubric',
-      result.records === 1 && result.failures === 0 && readFileSync(result.summaryCsv, 'utf8').includes('caseId') &&
-      summary.rows.length === 1 && Array.isArray(summary.pairs) && summary.planned === 48 &&
+      result.records === 3 && result.failures > 0 && readFileSync(result.summaryCsv, 'utf8').includes('caseId') &&
+      summary.rows.length === 3 && Array.isArray(summary.pairs) && pair?.delta?.contentTokens !== null &&
+      pair?.delta?.reasoningTokens !== null && summary.planned === 48 && rawRows.length === 3 &&
+      rawRows.some((candidate) => candidate.errors?.includes('synthetic provider failure')) &&
+      summary.rows.some((candidate) => candidate.contentTokens !== 20) &&
       Array.isArray(summary.limitations) && summary.qualitativeRubric?.dimensions?.length === 6,
       JSON.stringify({ result, summary }))
   } finally {

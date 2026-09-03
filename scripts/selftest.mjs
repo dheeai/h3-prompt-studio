@@ -8,7 +8,7 @@
 // for a non-OpenRouter provider — if it did, importing this file would throw.
 
 import { readFileSync } from 'node:fs'
-import { cp, mkdtemp, mkdir, rm } from 'node:fs/promises'
+import { cp, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -41,6 +41,7 @@ import { buildH3SystemPrompt, buildStudioSystemPrompt } from '../src/lib/context
 import { EVAL_ARMS, EVAL_CASES, EVAL_MODELS, buildEvalMessages, evalSkillRoot, evalVariants } from '../eval/cases.ts'
 import { parseEvalSse, streamOneResponse } from '../eval/stream.ts'
 import { parseCli, runOneVariant, runThinkingEval } from '../eval/run-thinking-eval.ts'
+import { repetitionLoop, scoreFile, scoreRecord } from '../eval/score-thinking-eval.ts'
 
 let pass = 0
 let fail = 0
@@ -285,6 +286,141 @@ check('thinking eval CLI: exact model and case filters are preserved', (() => {
       JSON.stringify({ result, requests: requests.length, actual }))
   } finally {
     globalThis.fetch = originalFetch
+    await rm(outputPath, { recursive: true, force: true })
+  }
+}
+
+// ── thinking-evaluation deterministic scoring ─────────────────────────────
+
+function syntheticRecord(testCase, content, overrides = {}) {
+  return {
+    eval: 'studio-thinking-v1',
+    caseId: testCase.id,
+    family: testCase.family,
+    stage: testCase.stage,
+    studioMode: testCase.studioMode,
+    model: 'default',
+    chatTemplateKwargs: { enable_thinking: false },
+    settings: {
+      temperature: 0.2,
+      maxTokens: 8192,
+      h3Mode: testCase.h3Mode,
+      selectedSkills: ['h3-acting', 'h3-direction', 'h3-prompting'],
+      inputHash: 'input',
+      systemHash: 'system',
+    },
+    request: {
+      url: 'http://eval.local/llama/v1/chat/completions',
+      body: {
+        model: 'default', messages: [], temperature: 0.2, max_tokens: 8192, stream: true,
+        chat_template_kwargs: { enable_thinking: false },
+      },
+    },
+    response: {
+      content,
+      reasoning: '',
+      finishReason: 'stop',
+      usage: { prompt: 10, completion: 20 },
+      elapsedMs: 100,
+      timeToFirstTokenMs: 10,
+      unterminatedThink: false,
+      requestCount: 1,
+      continuations: 0,
+    },
+    deterministic: { passed: true, findings: [] },
+    qualitative: null,
+    errors: [],
+    ...overrides,
+  }
+}
+
+const validBreakdown = JSON.stringify({
+  spine: 'Maya leaves a light for a child at dawn.',
+  clips: [
+    { index: 1, title: 'Crossing', role: 'opening', seconds: 3, covers: 'Maya crosses the empty railway platform carrying the red paper lantern.', precedes: '', follows: 'Maya reaches the bench with the drawing.' },
+    { index: 2, title: 'Drawing', role: 'rising', seconds: 3, covers: 'Maya hears the absent train, finds the child drawing, and unfolds it.', precedes: 'Maya reaches the bench with the drawing.', follows: 'Maya carries the lantern toward the end of the platform.' },
+    { index: 3, title: 'Light', role: 'closing', seconds: 3, covers: 'Maya leaves the red paper lantern lit beside the drawing as first light reaches the tracks.', precedes: 'Maya carries the lantern toward the end of the platform.', follows: '' },
+  ],
+})
+const validPromptReplacement = `<<<PROMPT>>>\nsubject_definitions:\n<Subject 1> is the woman at the greenhouse door.\n<Subject 2> is the glass greenhouse door and latch.\n<Subject 3> is the pale moth.\n\nsummary: At night, a woman opens the greenhouse door, a moth lands on her wrist, and her hand turns the latch.\n\nretention_analysis:\n<Subject 1>: fully_preserved\n<Subject 2>: fully_preserved\n<Subject 3>: fully_preserved\n\ndetailed_description:\n[Shot 1 — 0.0–2.5 seconds] The woman opens the greenhouse door at night.\n[Shot 2 — 2.5–5.0 seconds] The moth lands on her wrist and she stops to watch it.\n[Shot 3 — 5.0–7.0 seconds] Her hand turns the latch; end on the latch.\n\noverall_soundscape: night insects, hinge creak, breath catch, latch click.\nnon_diegetic_music: N/A\n<<<EXPLANATION>>>\nThe reaction is observable and the requested ending and named objects remain fixed.`
+const validHandoff = `<<<PRECEDES>>>\nThe red lantern is already lit beside the child’s drawing.\n<<<FOLLOWS>>>\nMaya walks away while the flame remains visible and the train stays absent.\n<<<OPEN>>>\nThe flame bends in the wind; the absent train remains unresolved.`
+
+check('thinking eval scorer: valid breakdown passes exact three clips and handoffs', (() => {
+  const result = scoreRecord(EVAL_CASES.find((c) => c.id === 'scene-breakdown'), syntheticRecord(EVAL_CASES[0], validBreakdown))
+  return result.passed && result.findings.some((f) => f.id === 'breakdown-json' && f.passed) && result.findings.some((f) => f.id === 'neighboring-states' && f.passed)
+})())
+check('thinking eval scorer: wrong breakdown duration fails the duration finding', (() => {
+  const wrong = validBreakdown.replace('"seconds":3', '"seconds":4')
+  const result = scoreRecord(EVAL_CASES[0], syntheticRecord(EVAL_CASES[0], wrong))
+  return !result.passed && result.findings.some((f) => f.id === 'clip-duration' && !f.passed)
+})())
+check('thinking eval scorer: malformed breakdown JSON fails the breakdown contract', (() => {
+  const result = scoreRecord(EVAL_CASES[0], syntheticRecord(EVAL_CASES[0], '{"spine":"unfinished"'))
+  return result.findings.some((f) => f.id === 'breakdown-json' && !f.passed)
+})())
+check('thinking eval scorer: canonical T2VA fields pass in the required order', (() => {
+  const testCase = EVAL_CASES.find((c) => c.id === 'clip-t2va-draft-from-direction-sheet')
+  const prompt = 'integrated_multimodal_description: A magician hides a coin from a skeptical child and holds the closed fist.\noverall_soundscape: coin click, fabric movement, quiet breath.\nnon_diegetic_music: N/A'
+  const result = scoreRecord(testCase, syntheticRecord(testCase, prompt))
+  return result.findings.some((f) => f.id === 'required-h3-fields' && f.passed) && result.findings.some((f) => f.id === 'h3-field-order' && f.passed)
+})())
+check('thinking eval scorer: reordered H3 fields fail the field-order contract', (() => {
+  const testCase = EVAL_CASES.find((c) => c.id === 'clip-t2va-draft-from-direction-sheet')
+  const prompt = 'overall_soundscape: coin click, fabric movement, quiet breath.\nintegrated_multimodal_description: A magician hides a coin from a skeptical child and holds the closed fist.\nnon_diegetic_music: N/A'
+  const result = scoreRecord(testCase, syntheticRecord(testCase, prompt))
+  return result.findings.some((f) => f.id === 'h3-field-order' && !f.passed)
+})())
+check('thinking eval scorer: prompt replacement requires exactly PROMPT then EXPLANATION', (() => {
+  const testCase = EVAL_CASES.find((c) => c.id === 'prompt-revise')
+  const valid = scoreRecord(testCase, syntheticRecord(testCase, validPromptReplacement))
+  const invalid = scoreRecord(testCase, syntheticRecord(testCase, `${validPromptReplacement}\n<<<CHANGES>>>\n- endless patch`))
+  return valid.findings.some((f) => f.id === 'prompt-replacement-blocks' && f.passed) && invalid.findings.some((f) => f.id === 'prompt-replacement-blocks' && !f.passed)
+})())
+check('thinking eval scorer: handoff requires three non-empty fields', (() => {
+  const testCase = EVAL_CASES.find((c) => c.id === 'continuation-planning')
+  const valid = scoreRecord(testCase, syntheticRecord(testCase, validHandoff))
+  const invalid = scoreRecord(testCase, syntheticRecord(testCase, '<<<PRECEDES>>>\nonly one field'))
+  return valid.findings.some((f) => f.id === 'handoff-blocks' && f.passed) && invalid.findings.some((f) => f.id === 'handoff-blocks' && !f.passed)
+})())
+check('thinking eval scorer: missing neighboring state fails continuity', (() => {
+  const testCase = EVAL_CASES.find((c) => c.id === 'scene-middle-closing-direction')
+  const result = scoreRecord(testCase, syntheticRecord(testCase, 'WHERE THE SOURCE STANDS\nThe platform is established.\nWHAT THE BRIEF FIXES\nMaya unfolds the drawing.\nDIRECTION SHEET\nThe shot begins and ends.'))
+  return result.findings.some((f) => f.id === 'neighboring-states' && !f.passed)
+})())
+check('thinking eval scorer: continuation cannot re-establish the prior placement', (() => {
+  const testCase = EVAL_CASES.find((c) => c.id === 'continuation-planning')
+  const result = scoreRecord(testCase, syntheticRecord(testCase, `${validHandoff}\nMaya places the lantern beside the drawing again.`))
+  return result.findings.some((f) => f.id === 'continuity-reestablishment' && !f.passed)
+})())
+check('thinking eval scorer: fixed dialogue cannot be rewritten', (() => {
+  const testCase = EVAL_CASES.find((c) => c.id === 'clip-direction-acting-heavy-two-hander')
+  const result = scoreRecord(testCase, syntheticRecord(testCase, `integrated_multimodal_description: Two sisters argue in a kitchen. The older sister says, "You only want it because he forgot you." The younger sister takes the blue coat and sets it down.\noverall_soundscape: fabric movement, breath.\nnon_diegetic_music: N/A`))
+  return result.findings.some((f) => f.id === 'verbatim-dialogue' && !f.passed)
+})())
+check('thinking eval scorer: repeated paragraphs and loop language are reported', (() => {
+  const repeated = 'same paragraph about the shot\n\nsame paragraph about the shot\nI will continue and retry this pass.'
+  const loops = repetitionLoop(repeated)
+  return loops.some((item) => /same paragraph/.test(item)) && loops.some((item) => /I will continue|retry/i.test(item))
+})())
+check('thinking eval scorer: raw records retain one request, zero continuations, and null qualitative', (() => {
+  const row = syntheticRecord(EVAL_CASES[0], validBreakdown)
+  return row.response.requestCount === 1 && row.response.continuations === 0 && row.qualitative === null
+})())
+
+{
+  const outputPath = await mkdtemp(join(tmpdir(), 'h3-prompt-studio-thinking-score-'))
+  try {
+    const rawPath = join(outputPath, 'raw.jsonl')
+    const row = syntheticRecord(EVAL_CASES[0], validBreakdown)
+    await writeFile(rawPath, `${JSON.stringify(row)}\n`)
+    const result = await scoreFile(rawPath)
+    const summary = JSON.parse(readFileSync(result.summaryJson, 'utf8'))
+    check('thinking eval scorer: summary files include row, pair data, failures, limitations, and blinded rubric',
+      result.records === 1 && result.failures === 0 && readFileSync(result.summaryCsv, 'utf8').includes('caseId') &&
+      summary.rows.length === 1 && Array.isArray(summary.pairs) && summary.planned === 48 &&
+      Array.isArray(summary.limitations) && summary.qualitativeRubric?.dimensions?.length === 6,
+      JSON.stringify({ result, summary }))
+  } finally {
     await rm(outputPath, { recursive: true, force: true })
   }
 }

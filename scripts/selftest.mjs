@@ -181,11 +181,12 @@ check('thinking eval CLI: exact model and case filters are preserved', (() => {
 
 {
   const originalFetch = globalThis.fetch
-  globalThis.fetch = async () => { throw new Error('synthetic connection refused') }
+  let requests = 0
+  globalThis.fetch = async () => { requests++; throw new Error('synthetic connection refused') }
   try {
     const record = await runOneVariant('http://eval.local/llama/v1', EVAL_CASES[0], 'default', false)
     check('thinking eval runner: fetch rejection is one recorded attempt with no retry',
-      record.response.requestCount === 1 && record.response.continuations === 0 && record.errors.length === 1 &&
+      requests === 1 && record.response.requestCount === 1 && record.response.continuations === 0 && record.errors.length === 1 &&
       record.errors[0].includes('synthetic connection refused'))
   } finally {
     globalThis.fetch = originalFetch

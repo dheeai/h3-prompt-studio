@@ -109,6 +109,40 @@ check('thinking eval messages: each case produces exactly a system and user mess
     JSON.stringify({ parsed, streamed, firstTokenCalls }))
 }
 
+check('thinking eval stream: null SSE payload is ignored without aborting later frames',
+  parseEvalSse('data: null\n\ndata: {"choices":[{"delta":{"content":"answer"},"finish_reason":"stop"}]}').content === 'answer')
+
+{
+  const chunks = [
+    'data: {"choices":[{"delta":{"content":"<think>"}}]}\n\n',
+    'data: {"choices":[{"delta":{"content":"reason"}}]}\n\n',
+    'data: {"choices":[{"delta":{"content":"</think>answer"},"finish_reason":"length"}]}',
+  ]
+  const response = new Response(new ReadableStream({
+    start(controller) {
+      for (const chunk of chunks) controller.enqueue(new TextEncoder().encode(chunk))
+      controller.close()
+    },
+  }))
+  let firstTokenCalls = 0
+  const streamed = await streamOneResponse(response, () => { firstTokenCalls++ })
+  check('thinking eval stream: reasoning_content, split inline think tags, raw-token TTFT, and length finish are retained', (() => {
+    const separate = parseEvalSse('data: {"choices":[{"delta":{"reasoning_content":"separate reasoning"}}]}')
+    return separate.reasoning === 'separate reasoning' && streamed.reasoning === 'reason' &&
+      streamed.content === 'answer' && streamed.finishReason === 'length' &&
+      streamed.unterminatedThink === false && firstTokenCalls === 1 && streamed.timeToFirstTokenMs !== null
+  })(), JSON.stringify({ streamed, firstTokenCalls }))
+}
+
+{
+  const response = new Response('data: {"choices":[{"delta":{"content":"<think>"}}]}\n\ndata: [DONE]\n\n')
+  let firstTokenCalls = 0
+  const streamed = await streamOneResponse(response, () => { firstTokenCalls++ })
+  check('thinking eval stream: first raw inline think token triggers TTFT before splitter output',
+    firstTokenCalls === 1 && streamed.timeToFirstTokenMs !== null && streamed.content === '' && streamed.unterminatedThink,
+    JSON.stringify({ streamed, firstTokenCalls }))
+}
+
 check('thinking eval CLI: default selects both arms',
   JSON.stringify(parseCli([]).thinking) === JSON.stringify(undefined) &&
   JSON.stringify(parseCli([]).arms) === JSON.stringify([true, false]))
@@ -116,12 +150,16 @@ check('thinking eval CLI: --thinking on selects the enabled arm',
   JSON.stringify(parseCli(['--thinking', 'on']).arms) === JSON.stringify([true]))
 check('thinking eval CLI: --thinking off selects the disabled arm',
   JSON.stringify(parseCli(['--thinking', 'off']).arms) === JSON.stringify([false]))
+check('thinking eval CLI: exact model and case filters are preserved', (() => {
+  const parsed = parseCli(['--model', 'thinkingcap-27b', '--case', 'prompt-revise'])
+  return parsed.model === 'thinkingcap-27b' && parsed.caseId === 'prompt-revise' && JSON.stringify(parsed.arms) === JSON.stringify([true, false])
+})())
 
 {
   const originalFetch = globalThis.fetch
   let requests = 0
   let requestInit
-  const responseBody = 'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'
+  const responseBody = 'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"length"}]}\n\ndata: [DONE]\n\n'
   globalThis.fetch = async (_url, init) => {
     requests++
     requestInit = init
@@ -134,10 +172,47 @@ check('thinking eval CLI: --thinking off selects the disabled arm',
       requests === 1 && requestInit.method === 'POST' && !requestInit.headers?.Authorization &&
       body.model === 'thinkingcap-27b' && body.temperature === 0.2 && body.max_tokens === 8192 &&
       body.stream === true && body.chat_template_kwargs?.enable_thinking === false &&
-      record.response.requestCount === 1 && record.response.continuations === 0,
+      record.response.finishReason === 'length' && record.response.requestCount === 1 && record.response.continuations === 0,
       JSON.stringify({ requests, body, record }))
   } finally {
     globalThis.fetch = originalFetch
+  }
+}
+
+{
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async () => { throw new Error('synthetic connection refused') }
+  try {
+    const record = await runOneVariant('http://eval.local/llama/v1', EVAL_CASES[0], 'default', false)
+    check('thinking eval runner: fetch rejection is one recorded attempt with no retry',
+      record.response.requestCount === 1 && record.response.continuations === 0 && record.errors.length === 1 &&
+      record.errors[0].includes('synthetic connection refused'))
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+}
+
+{
+  const originalFetch = globalThis.fetch
+  const malformedCase = { ...EVAL_CASES[0], id: 'synthetic-assembly-failure', stage: 'not-a-stage' }
+  const originalCase = EVAL_CASES[0]
+  const outputPath = await mkdtemp(join(tmpdir(), 'h3-prompt-studio-thinking-assembly-'))
+  let requests = 0
+  EVAL_CASES[0] = malformedCase
+  globalThis.fetch = async () => { requests++; throw new Error('fetch must not be called after assembly failure') }
+  try {
+    const result = await runThinkingEval({
+      baseUrl: 'http://eval.local/llama/v1', outputDir: outputPath,
+      thinking: undefined, model: 'default', caseId: 'synthetic-assembly-failure',
+    })
+    const rows = readFileSync(join(outputPath, 'raw.jsonl'), 'utf8').trim().split('\n').map(JSON.parse)
+    check('thinking eval runner: message assembly failure becomes a record and matrix continues',
+      result.planned === 2 && result.written === 2 && result.failures === 2 && requests === 0 &&
+      rows.every((row) => row.response.requestCount === 1 && row.errors.length === 1 && /assembly|stage|replace/i.test(row.errors[0])))
+  } finally {
+    EVAL_CASES[0] = originalCase
+    globalThis.fetch = originalFetch
+    await rm(outputPath, { recursive: true, force: true })
   }
 }
 
@@ -178,6 +253,35 @@ check('thinking eval CLI: --thinking off selects the disabled arm',
       result.planned === 2 && result.written === 2 && result.failures === 0 && requests === 2 &&
       JSON.stringify(rows.map((row) => row.chatTemplateKwargs.enable_thinking)) === JSON.stringify([true, false]),
       JSON.stringify({ result, requests, rows }))
+  } finally {
+    globalThis.fetch = originalFetch
+    await rm(outputPath, { recursive: true, force: true })
+  }
+}
+
+{
+  const originalFetch = globalThis.fetch
+  const outputPath = await mkdtemp(join(tmpdir(), 'h3-prompt-studio-thinking-runner-full-'))
+  const requests = []
+  const responseBody = 'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'
+  globalThis.fetch = async (url, init) => {
+    requests.push({ url, body: JSON.parse(init.body) })
+    return new Response(responseBody, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
+  }
+  try {
+    const result = await runThinkingEval({
+      baseUrl: 'http://eval.local/llama/v1', outputDir: outputPath,
+      thinking: undefined, model: undefined, caseId: undefined,
+    })
+    const expected = EVAL_MODELS.flatMap((model) => EVAL_CASES.flatMap((testCase) => [
+      [model, testCase.id, true], [model, testCase.id, false],
+    ]))
+    const rows = readFileSync(join(outputPath, 'raw.jsonl'), 'utf8').trim().split('\n').map(JSON.parse)
+    const actual = rows.map((row) => [row.model, row.caseId, row.chatTemplateKwargs.enable_thinking])
+    check('thinking eval runner: default matrix writes all 48 variants in model/case/true-before-false order',
+      result.planned === 48 && result.written === 48 && result.failures === 0 && requests.length === 48 &&
+      JSON.stringify(actual) === JSON.stringify(expected),
+      JSON.stringify({ result, requests: requests.length, actual }))
   } finally {
     globalThis.fetch = originalFetch
     await rm(outputPath, { recursive: true, force: true })

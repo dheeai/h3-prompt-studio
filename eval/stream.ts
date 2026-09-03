@@ -93,7 +93,9 @@ function consumePayload(payload: string, state: CaptureState, onToken?: () => vo
 
   let json: SsePayload
   try {
-    json = JSON.parse(trimmed) as SsePayload
+    const parsed: unknown = JSON.parse(trimmed)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return
+    json = parsed as SsePayload
   } catch {
     // A malformed/partial SSE payload is not a reason to terminate a stream.
     // The framing buffer keeps later complete events usable.
@@ -118,7 +120,12 @@ function consumePayload(payload: string, state: CaptureState, onToken?: () => vo
   }
 
   const content = stringOrUndefined(choice?.delta?.content) ?? stringOrUndefined(choice?.text)
-  if (content) state.splitter.push(content)
+  if (content) {
+    // Mark the first raw content token before inline <think> parsing. The
+    // splitter may hold an opening tag and emit no visible text yet.
+    onToken?.()
+    state.splitter.push(content)
+  }
 }
 
 function consumeFrame(frame: string, state: CaptureState, onToken?: () => void): void {
@@ -130,11 +137,9 @@ function consumeFrame(frame: string, state: CaptureState, onToken?: () => void):
 }
 
 function parseText(frameText: string, onToken?: () => void): Omit<ParsedEvalResponse, 'elapsedMs' | 'timeToFirstTokenMs'> {
-  let content = ''
-  let reasoning = ''
   const state: CaptureState = {
-    content,
-    reasoning,
+    content: '',
+    reasoning: '',
     finishReason: null,
     usage: null,
     splitter: makeThinkSplitter(

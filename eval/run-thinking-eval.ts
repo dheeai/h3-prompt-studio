@@ -90,8 +90,8 @@ export async function runOneVariant(
   enableThinking: boolean,
 ): Promise<RawEvalRecord> {
   const started = performance.now()
-  const messages = await buildEvalMessages(testCase)
   const url = `${baseUrl.replace(/\/$/, '')}/chat/completions`
+  let messages: ChatMessage[] = []
   const body: Record<string, unknown> = {
     model,
     messages,
@@ -99,6 +99,13 @@ export async function runOneVariant(
     max_tokens: 8192,
     stream: true,
     chat_template_kwargs: { enable_thinking: enableThinking },
+  }
+  try {
+    messages = await buildEvalMessages(testCase)
+    body.messages = messages
+  } catch (error) {
+    const errors = [`message assembly failed: ${errorText(error)}`]
+    return makeRecord(testCase, model, enableThinking, body, url, messages, responseDefaults(Math.round(performance.now() - started)), errors)
   }
   const requestInit: RequestInit = {
     method: 'POST',

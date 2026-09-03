@@ -36,15 +36,47 @@ import {
   clearDraftContext,
   shouldContinueStoryLoop,
 } from '../src/lib/entry.ts'
-import { agentApiKey, buildAgentModel, buildAgentTools, reduceAgentEvent, agentEventStatus } from '../src/lib/agent.ts'
+import { agentApiKey, agentEventStatus, agentRequestPayload, buildAgentModel, buildAgentTools, reduceAgentEvent } from '../src/lib/agent.ts'
 import { buildH3SystemPrompt, buildStudioSystemPrompt } from '../src/lib/context.ts'
 import { EVAL_ARMS, EVAL_CASES, EVAL_MODELS, buildEvalMessages, evalSkillRoot, evalVariants } from '../eval/cases.ts'
 import { parseEvalSse, streamOneResponse } from '../eval/stream.ts'
 import { parseCli, runOneVariant, runThinkingEval } from '../eval/run-thinking-eval.ts'
 import { repetitionLoop, scoreFile, scoreRecord } from '../eval/score-thinking-eval.ts'
 
+// The thinking-control adapter is deliberately pure, so both Studio's fetch
+// client and Pi Agent's onPayload hook can be checked without network access.
+const thinkingControl = await import('../src/lib/thinking.ts').catch(() => null)
+
 let pass = 0
 let fail = 0
+
+check('Qwen thinking control: local llama aliases receive the paired zero budget', (() => {
+  if (!thinkingControl) return false
+  const body = thinkingControl.withQwenReasoningBudget(
+    { id: 'llamacpp', baseUrl: 'http://localhost:8080/v1', sendCachePrompt: true },
+    'default',
+    { model: 'default', messages: [] },
+  )
+  return body.reasoning_budget_tokens === 0 &&
+    body.reasoning_budget_message === 'Time to stop thinking. Give the final answer.'
+})())
+
+check('Qwen thinking control: named Qwen models are recognized only on local llama endpoints', (() => {
+  if (!thinkingControl) return false
+  return thinkingControl.isQwenFamilyModel({ id: 'llamacpp', baseUrl: 'https://5090.tail3cca41.ts.net:9000/llama/v1' }, 'Qwen/Qwen3-30B') &&
+    thinkingControl.isQwenFamilyModel({ id: 'llamacpp', baseUrl: 'http://localhost:8080/v1' }, 'thinkingcap-27b') &&
+    !thinkingControl.isQwenFamilyModel({ id: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1' }, 'qwen/qwen3-30b') &&
+    !thinkingControl.isQwenFamilyModel({ id: 'custom', baseUrl: 'https://models.example/v1' }, 'default')
+})())
+
+check('Qwen thinking control: hosted and non-Qwen payloads are unchanged', (() => {
+  if (!thinkingControl) return false
+  const hosted = { model: 'qwen/qwen3-30b', messages: [], max_tokens: 99 }
+  const nonQwen = { model: 'llama-3.1-8b', messages: [], temperature: 0.2 }
+  return thinkingControl.withQwenReasoningBudget({ id: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1' }, hosted.model, hosted) === hosted &&
+    thinkingControl.withQwenReasoningBudget({ id: 'llamacpp', baseUrl: 'http://localhost:8080/v1' }, nonQwen.model, nonQwen) === nonQwen &&
+    !('reasoning_budget_tokens' in hosted) && !('reasoning_budget_tokens' in nonQwen)
+})())
 
 check('thinking eval fixtures: use the approved eight-case order',
   JSON.stringify(EVAL_CASES.map((testCase) => testCase.id)) === JSON.stringify([
@@ -802,6 +834,11 @@ check('cancelled thinking: partial reasoning is retained, empty reasoning is not
   const model = buildAgentModel({ id: 'ollama', baseUrl: 'http://localhost:11434/v1' }, 'test-model')
   check('agent model: reuses the configured provider endpoint', model.api === 'openai-completions' && model.baseUrl.endsWith('/v1') && model.id === 'test-model')
   check('agent model: keyless local/LAN providers receive a non-secret compatibility key', agentApiKey({ baseUrl: 'http://localhost:11434/v1' }) === 'local-browser-runtime' && agentApiKey({ baseUrl: 'http://5090.tail3cca41.ts.net:9000/v1' }) === 'local-browser-runtime' && agentApiKey({ baseUrl: 'https://custom-model.example/v1' }) === 'local-browser-runtime' && agentApiKey({ baseUrl: 'https://openrouter.ai/api/v1' }) === undefined)
+  const agentQwen = agentRequestPayload({ id: 'llamacpp', baseUrl: 'https://5090.tail3cca41.ts.net:9000/llama/v1' }, 'thinkingcap-27b', { model: 'thinkingcap-27b', stream: true })
+  const agentHosted = agentRequestPayload({ id: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1' }, 'qwen/qwen3-30b', { model: 'qwen/qwen3-30b', stream: true })
+  check('agent request adapter: Pi payload gets the same paired Qwen budget while hosted payload stays unchanged',
+    agentQwen.reasoning_budget_tokens === 0 && agentQwen.reasoning_budget_message === 'Time to stop thinking. Give the final answer.' &&
+    agentHosted.reasoning_budget_tokens === undefined)
 }
 
 // Pi can finish a run without a text_delta (for example a provider error, or
@@ -916,6 +953,37 @@ check('prompt replacement parser: accepts fenced markers and strict JSON from lo
   return fenced?.prompt === 'canonical' && fenced?.explanation === 'fixed timing' &&
     json?.prompt === 'canonical' && json?.explanation === 'fixed timing' && incomplete === null
 })())
+
+// Studio's direct client must put the paired budget fields at the request
+// top-level. This fetch capture never leaves the process.
+{
+  const originalFetch = globalThis.fetch
+  const bodies = []
+  globalThis.fetch = async (_url, init) => {
+    bodies.push(JSON.parse(init.body))
+    return new Response('data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n')
+  }
+  try {
+    await streamChat({
+      provider: { id: 'llamacpp', baseUrl: 'http://localhost:8080/v1', sendCachePrompt: true },
+      model: 'default', messages: [{ role: 'user', content: 'prompt' }], temperature: 0.2, maxTokens: 0, onDelta() {},
+    })
+    await streamChat({
+      provider: { id: 'llamacpp', baseUrl: 'http://localhost:8080/v1', sendCachePrompt: true },
+      model: 'llama-3.1-8b', messages: [{ role: 'user', content: 'prompt' }], temperature: 0.2, maxTokens: 0, onDelta() {},
+    })
+    const [localQwen, localOther] = bodies
+    check('Studio request body: Qwen budget is top-level and non-Qwen/hosted bodies are unchanged',
+      localQwen?.reasoning_budget_tokens === 0 &&
+      localQwen?.reasoning_budget_message === 'Time to stop thinking. Give the final answer.' &&
+      localQwen?.chat_template_kwargs === undefined &&
+      localOther?.reasoning_budget_tokens === undefined &&
+      thinkingControl?.withQwenReasoningBudget({ id: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1' }, 'qwen/qwen3-30b', { model: 'qwen/qwen3-30b' }).reasoning_budget_tokens === undefined,
+      JSON.stringify(bodies))
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+}
 
 // llama.cpp can close an SSE response immediately after its final data frame,
 // without writing the optional blank-line separator. The final explanation

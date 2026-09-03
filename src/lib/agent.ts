@@ -6,6 +6,7 @@ import { H3_AGENT_SYSTEM_RULES } from './context'
 import { needsKey } from './providers'
 import { isCanonicalPromptStage } from './studio-workflow'
 import type { Breakdown, BreakdownClip, Provider } from './types'
+import { withQwenReasoningBudget } from './thinking'
 
 export type AgentConfirmation = 'render_current' | 'render_multiclip'
 
@@ -152,6 +153,11 @@ export function agentEventStatus(event: AgentEvent): AgentEventStatus | null {
  */
 export function agentApiKey(provider: Pick<Provider, 'baseUrl' | 'apiKey'>): string | undefined {
   return provider.apiKey || (!needsKey(provider) ? 'local-browser-runtime' : undefined)
+}
+
+/** Apply Studio's Qwen request contract to a Pi-generated payload. */
+export function agentRequestPayload<T>(provider: Pick<Provider, 'id' | 'baseUrl' | 'sendCachePrompt'>, model: string, payload: T): T {
+  return withQwenReasoningBudget(provider, model, payload)
 }
 
 function contentText(result: unknown): string {

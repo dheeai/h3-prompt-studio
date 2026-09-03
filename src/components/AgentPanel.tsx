@@ -4,7 +4,7 @@ import type { AgentEvent } from '@mariozechner/pi-agent-core'
 import { streamSimpleOpenAICompletions } from '@mariozechner/pi-ai/openai-completions'
 import type { Model } from '@mariozechner/pi-ai'
 import { useApp } from '../app/state'
-import { agentApiKey, agentEventStatus, buildAgentModel, buildAgentTools, reduceAgentEvent, type AgentConfirmation, type AgentTranscriptItem } from '../lib/agent'
+import { agentApiKey, agentEventStatus, agentRequestPayload, buildAgentModel, buildAgentTools, reduceAgentEvent, type AgentConfirmation, type AgentTranscriptItem } from '../lib/agent'
 import { buildH3SystemPrompt } from '../lib/context'
 import { isCanonicalPromptStage } from '../lib/studio-workflow'
 import { ProseDoc } from './ProseDoc'
@@ -54,6 +54,14 @@ export function AgentPanel({ onOpenStudio }: AgentPanelProps) {
         apiKey: providerRef.current ? agentApiKey(providerRef.current) : undefined,
         temperature: settingsRef.current.temperature,
         ...(settingsRef.current.maxTokens > 0 ? { maxTokens: settingsRef.current.maxTokens } : {}),
+        onPayload: async (payload, payloadModel) => {
+          // Pi owns request construction; apply the same transport-level
+          // contract as Studio after any upstream payload customization.
+          const customized = await options?.onPayload?.(payload, payloadModel)
+          const base = customized === undefined ? payload : customized
+          const selectedProvider = providerRef.current
+          return selectedProvider ? agentRequestPayload(selectedProvider, payloadModel.id, base) : base
+        },
       }),
     })
     let turns = 0

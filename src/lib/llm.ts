@@ -1,4 +1,5 @@
 import { markSent, wasSent } from './context'
+import { withQwenReasoningBudget } from './thinking'
 import type { Provider, StageId } from './types'
 
 export interface ChatMessage {
@@ -119,6 +120,7 @@ export async function streamChat(opts: StreamOptions): Promise<StreamResult> {
   // no fixed number here could ever guess correctly across every model.
   if (maxTokens > 0) body.max_tokens = maxTokens
   if (provider.sendCachePrompt) body.cache_prompt = true
+  const requestBody = withQwenReasoningBudget(provider, model, body)
 
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (provider.apiKey) headers.Authorization = `Bearer ${provider.apiKey}`
@@ -132,7 +134,7 @@ export async function streamChat(opts: StreamOptions): Promise<StreamResult> {
   const send = (payload: Record<string, unknown>) =>
     fetch(url, { method: 'POST', headers, body: JSON.stringify(payload), signal })
 
-  let res = await send(body)
+  let res = await send(requestBody)
 
   // Servers disagree about max_tokens in both directions: most reject a ceiling
   // larger than their context with a 400 rather than clamping it, and a few
@@ -149,9 +151,9 @@ export async function streamChat(opts: StreamOptions): Promise<StreamResult> {
         // demanding SOME number rarely has to reject this one too. If it is
         // still too small for a particular reply, streamChatComplete's
         // continuation loop below covers however much is left over.
-        res = await send({ ...body, max_tokens: 200_000 })
+        res = await send({ ...requestBody, max_tokens: 200_000 })
       } else if (!demandsOne && maxTokens > 0) {
-        const { max_tokens: _dropped, ...withoutLimit } = body
+        const { max_tokens: _dropped, ...withoutLimit } = requestBody
         res = await send(withoutLimit)
       }
     }
@@ -250,7 +252,7 @@ export async function streamChat(opts: StreamOptions): Promise<StreamResult> {
     cacheReused,
     finishReason,
     unterminatedThink,
-    sentLimit: typeof body.max_tokens === 'number' ? body.max_tokens : null,
+    sentLimit: typeof requestBody.max_tokens === 'number' ? requestBody.max_tokens : null,
     usage,
   }
 }

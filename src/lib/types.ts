@@ -170,10 +170,12 @@ export interface Settings {
   comfyEndpointId?: string
   /** Which stored recipe to render with. */
   recipeId?: string
-  /** Which stored recipe is the Long Media (multiclip) workflow — a user has both. */
-  multiclipRecipeId?: string
-  /** Which stored recipe is the Contex-Loop (chain) workflow — a user can have all three. */
+  /** Which stored recipe is the Contex-Loop (chain) workflow — the studio's
+   * only multi-clip render path — a user has both this and `recipeId`. */
   chainRecipeId?: string
+  /** UNET stamped onto every chain graph. Unset means `SINGULARITY_UNET` — the
+   * model the 27-clip film of 2026-09-06 shipped on. Set it to override. */
+  chainUnetName?: string
   /** Target clip length before the frame grid snaps it. */
   seconds: number
   /** A film normally wants one seed the whole way down. */
@@ -233,7 +235,45 @@ export interface Plate {
   mode: 'carried' | 'replaced'
   /** Set when this plate was pulled from a clip's last frame. */
   fromClipId?: string
+  /** Which possessive phrasing seeds `job` — the radio in the plate editor. */
+  subjectKind?: 'male' | 'female' | 'other'
+  /**
+   * Structured identity read from a vision-model analysis of this plate's
+   * image, in separate fields so `wardrobe` can be overridden independently
+   * of identity — see `wardrobeOverride` and `lib/subject.ts`'s `composeSubjectJob`.
+   */
+  subjectDef?: SubjectDefinition
+  /**
+   * Wardrobe stated in the operator's own words, replacing `subjectDef.wardrobe`
+   * in the composed `job` text entirely rather than negating it — the source
+   * garment is never named once an override is set (see `composeSubjectJob`).
+   */
+  wardrobeOverride?: string
+  /**
+   * The exact text this app itself last wrote into `job` (from the subject-kind
+   * radio or a composed analysis). If `job` no longer equals this, the operator
+   * has hand-edited it, and a later radio/analysis change must not silently
+   * overwrite it — only offer to.
+   */
+  jobAuto?: string
   addedAt: number
+}
+
+/**
+ * Identity attributes read off a plate's image by a vision-model pass, kept
+ * apart from every other field so wardrobe can be replaced without touching
+ * identity — the Lara Croft -> saree case `lib/subject.ts` exists for.
+ */
+export interface SubjectDefinition {
+  apparentAge: string
+  build: string
+  face: string
+  hair: string
+  skin: string
+  /** A scar, tattoo, mole or similar — empty string when none are visible. */
+  distinguishingMarks: string
+  /** What the subject is actually wearing in the image — never blended with identity. */
+  wardrobe: string
 }
 
 export interface ComfyEndpoint {
@@ -289,28 +329,6 @@ export interface ComfyNode {
 
 export type ClipState = 'queued' | 'rendering' | 'done' | 'failed'
 
-/** One clip's frame accounting inside a multiclip job — see multiclip.ts's `padForOverlap`. */
-export interface MulticlipPerClip {
-  /** 1-based position in the plan this entry came from. */
-  index: number
-  authored: number
-  rendered: number
-  delivered: number
-}
-
-/**
- * Set when a `Clip` is not one render loop pass but a whole plan submitted as
- * ONE Long Media multiclip job — still a single render producing a single
- * video, so it stays one `Clip` rather than becoming a new kind of record.
- */
-export interface MulticlipRecord {
-  /** Which plan clip indexes this one job covered, in order. */
-  clipIndexes: number[]
-  perClip: MulticlipPerClip[]
-  /** Delivered seconds, summed — what the film actually runs, not what was asked for. */
-  totalSeconds: number
-}
-
 /**
  * Set when a `Clip` was rendered as one scene of a Contex-Loop CHAIN — a
  * single job that resumes every earlier scene from its ComfyUI checkpoint
@@ -356,8 +374,8 @@ export interface Clip {
   error?: string
   ms?: number
   at: number
-  /** Set when this clip is a whole plan submitted as one Long Media multiclip job. */
-  multiclip?: MulticlipRecord
-  /** Set when this clip is one scene of a Contex-Loop chain. */
+  /** Set when this clip is one scene of a Contex-Loop chain — either a
+   * manually-continued one, or one plan clip of a whole plan submitted as a
+   * chain (every plan clip gets its own `Clip`, sharing one `runName`). */
   chain?: ClipChainInfo
 }

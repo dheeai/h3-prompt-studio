@@ -1,0 +1,31 @@
+{
+  "artboards": [
+    { "file": "Start.dc.html", "x": 0, "y": 0, "w": 1440, "h": 940, "title": "1 · The first render — no fork" },
+    { "file": "Main.dc.html", "x": 1560, "y": 0, "w": 1440, "h": 940, "title": "2 · Mid-chain — the film and its scenes" },
+    { "file": "Rendering.dc.html", "x": 3120, "y": 0, "w": 1440, "h": 940, "title": "3 · While a scene renders" }
+  ],
+  "annotations": [
+    {
+      "id": "brief",
+      "x": 0,
+      "y": -190,
+      "w": 620,
+      "text": "The four questions this redesign has to answer:\n\n1. What is a chain, and how do I start one?\n2. Which scene am I on?\n3. What does rendering actually cost — does it redo everything?\n4. Where is the long joined film, versus one scene?\n\nNo fork here any more: a single prompt is always continuable, because every render IS scene 1 of a chain. Asking someone to choose 'one clip' or 'a chain' up front asks them to predict, unseen, whether a prompt is worth building on — and picking wrong used to mean a wasted render."
+    },
+    {
+      "id": "fix-cumulative",
+      "x": 1560,
+      "y": -190,
+      "w": 620,
+      "text": "THE MAIN FIX. Today the newest clip's card holds the cumulative film — scene 1's card is 5s, scene 2's is 10.8s — and nothing says so. Here the joined film is ONE named panel at the top with its own scene-ticked scrubber, and the scenes below are segments with their own ~15s durations. Two different things, two different places."
+    },
+    {
+      "id": "fix-cost",
+      "x": 3120,
+      "y": -190,
+      "w": 620,
+      "text": "The resume is invisible today. Making the work ledger explicit — four scenes 'restored', one 'sampling' — is what makes the chain's whole value legible, and explains why authoring is held while the GPU is busy."
+    }
+  ],
+  "launch": { "view": "canvas" }
+}

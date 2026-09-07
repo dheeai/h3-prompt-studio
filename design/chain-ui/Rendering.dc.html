@@ -1,0 +1,176 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+    :root {
+      --paper: oklch(0.973 0.008 88); --panel: oklch(0.946 0.011 85); --sunk: oklch(0.930 0.013 85);
+      --ink: oklch(0.255 0.016 62); --ink2: oklch(0.435 0.014 62); --ink3: oklch(0.605 0.013 65);
+      --rule: oklch(0.875 0.012 78); --rule2: oklch(0.815 0.016 78);
+      --ox: oklch(0.470 0.135 27); --ox-soft: oklch(0.930 0.030 30);
+      --grn: oklch(0.480 0.090 152); --grn-soft: oklch(0.930 0.045 152);
+      --amb: oklch(0.560 0.110 72); --amb-soft: oklch(0.940 0.050 80);
+      --serif: 'Instrument Serif', Georgia, serif;
+      --sans: 'IBM Plex Sans', system-ui, sans-serif;
+      --mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: var(--sans); font-size: 12px; background: var(--paper); color: var(--ink); -webkit-font-smoothing: antialiased; }
+    a { color: var(--ox); text-decoration: none; } a:hover { color: var(--ink); text-decoration: underline; }
+    .lbl { font-size: 9.5px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink3); }
+    .tok { font-family: var(--mono); font-size: 10.5px; color: var(--ink3); font-variant-numeric: tabular-nums; }
+    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 13px; font-size: 11.5px; font-weight: 500; border: 1px solid var(--rule2); background: var(--paper); color: var(--ink2); border-radius: 0; }
+    .btn:disabled, .btn.dis { opacity: 0.42; }
+    .chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; font-size: 11px; border: 1px solid var(--rule2); background: var(--paper); color: var(--ink2); border-radius: 0; white-space: nowrap; }
+    .chip.on { border-color: var(--ox); background: var(--ox-soft); color: var(--ox); font-weight: 500; }
+    .dot { width: 5px; height: 5px; border-radius: 50%; flex: 0 0 auto; }
+    .dot.ok { background: var(--grn); } .dot.err { background: var(--ox); } .dot.idle { background: var(--rule2); }
+  </style>
+</helmet>
+
+<div style="width: 1440px; height: 940px; display: flex; flex-direction: column; background: var(--paper); overflow: hidden">
+
+  <div style="flex: 0 0 auto; padding: 13px 26px 11px; border-bottom: 1px solid var(--rule2); display: flex; align-items: baseline; gap: 15px">
+    <span style="font-family: var(--serif); font-size: 21px; letter-spacing: -0.01em">H3 Prompt Studio</span>
+    <span class="tok">chain &#183; courtyard_dawn</span>
+    <span style="flex-grow: 1"></span>
+    <span style="display: inline-flex; align-items: center; gap: 6px" class="tok"><span class="dot err"></span>rendering scene 5</span>
+  </div>
+
+  <!-- the live render band: what is being reused, what is being made -->
+  <div style="flex: 0 0 auto; background: var(--ox-soft); border-bottom: 1px solid var(--ox); padding: 14px 26px">
+    <div style="display: flex; align-items: center; gap: 14px">
+      <span class="lbl" style="color: var(--ox)">Sampling scene 5 only</span>
+      <span class="tok" style="color: var(--ox)">1 of 5 scenes on the GPU &#183; 2:07 elapsed</span>
+      <span style="flex-grow: 1"></span>
+      <span class="tok" style="color: var(--ox)">prompt 40efc8d6</span>
+      <span class="btn sm" style="border-color: var(--ox); color: var(--ox); background: transparent; padding: 3px 9px; font-size: 10.5px">Stop</span>
+    </div>
+
+    <!-- per-scene work ledger -->
+    <div style="display: flex; gap: 0; margin-top: 12px; align-items: stretch">
+      <div style="flex: 0 0 auto; display: flex; gap: 0">
+        <div style="width: 108px; border: 1px solid var(--rule2); background: var(--grn-soft); padding: 8px 9px">
+          <div class="lbl" style="color: var(--ink2); margin-bottom: 3px">Scene 1</div>
+          <div class="tok" style="color: var(--grn)">restored</div>
+        </div>
+        <div style="width: 108px; border: 1px solid var(--rule2); border-left: none; background: var(--grn-soft); padding: 8px 9px">
+          <div class="lbl" style="color: var(--ink2); margin-bottom: 3px">Scene 2</div>
+          <div class="tok" style="color: var(--grn)">restored</div>
+        </div>
+        <div style="width: 108px; border: 1px solid var(--rule2); border-left: none; background: var(--grn-soft); padding: 8px 9px">
+          <div class="lbl" style="color: var(--ink2); margin-bottom: 3px">Scene 3</div>
+          <div class="tok" style="color: var(--grn)">restored</div>
+        </div>
+        <div style="width: 108px; border: 1px solid var(--rule2); border-left: none; background: var(--grn-soft); padding: 8px 9px">
+          <div class="lbl" style="color: var(--ink2); margin-bottom: 3px">Scene 4</div>
+          <div class="tok" style="color: var(--grn)">restored</div>
+        </div>
+        <div style="width: 152px; border: 1px solid var(--ox); border-left: none; background: var(--paper); padding: 8px 9px">
+          <div class="lbl" style="color: var(--ox); margin-bottom: 3px">Scene 5</div>
+          <div class="tok" style="color: var(--ox)">sampling &#183; step 4 / 6</div>
+          <div style="height: 3px; background: var(--sunk); margin-top: 6px">
+            <div style="width: 66%; height: 3px; background: var(--ox)"></div>
+          </div>
+        </div>
+      </div>
+      <div style="flex: 1 1 auto; display: flex; align-items: center; padding-left: 16px">
+        <span class="tok" style="line-height: 1.6; color: var(--ink2)">
+          Four scenes came back from disk in under a second. Only the fifth costs GPU time &#8212; that is what the chain buys you.
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <div style="flex: 1 1 auto; display: flex; min-height: 0">
+
+    <!-- left: the film, stale until this lands -->
+    <div style="flex: 1 1 auto; min-width: 0; border-right: 1px solid var(--rule); padding: 18px 26px; overflow: hidden">
+      <div style="display: flex; align-items: baseline; gap: 12px; margin-bottom: 9px">
+        <span class="lbl">The film so far</span>
+        <span class="tok" style="color: var(--ink2)">4 scenes &#183; 61.8s</span>
+        <span style="flex-grow: 1"></span>
+        <span class="chip"><span class="dot err"></span>rebuilding to 5 scenes &#183; 77.4s</span>
+      </div>
+
+      <div style="border: 1px solid var(--rule2); background: var(--sunk); height: 344px; display: flex; align-items: center; justify-content: center; position: relative">
+        <svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="oklch(0.605 0.013 65)" stroke-width="1.1">
+          <circle cx="12" cy="12" r="9.2"></circle>
+          <path d="M10.2 8.6 L15.6 12 L10.2 15.4 Z" stroke-linejoin="round"></path>
+        </svg>
+        <div style="position: absolute; left: 11px; bottom: 11px">
+          <span class="chip" style="background: var(--paper); font-size: 10px; padding: 3px 8px">still the 4-scene cut &#8212; playable now</span>
+        </div>
+      </div>
+
+      <div style="display: flex; height: 5px; border: 1px solid var(--rule2); margin-top: 9px">
+        <div style="width: 24.4%; background: var(--ox-soft); border-right: 1px solid var(--rule2)"></div>
+        <div style="width: 25.2%; background: var(--ox-soft); border-right: 1px solid var(--rule2)"></div>
+        <div style="width: 25.2%; background: var(--ox-soft); border-right: 1px solid var(--rule2)"></div>
+        <div style="width: 25.2%; background: var(--ox-soft); border-right: 1px dashed var(--ox)"></div>
+      </div>
+
+      <div class="tok" style="margin-top: 10px; line-height: 1.7; color: var(--ink2)">
+        The old cut keeps playing while the new one renders. It is replaced in place the moment scene 5 lands &#8212;
+        you never assemble anything yourself.
+      </div>
+    </div>
+
+    <!-- right: what is locked while the GPU is busy, and why -->
+    <div style="flex: 0 0 452px; padding: 18px 22px; display: flex; flex-direction: column">
+      <div class="lbl" style="margin-bottom: 11px">Held until this finishes</div>
+
+      <div style="border: 1px solid var(--rule2); background: var(--panel)">
+        <div style="display: flex; gap: 9px; padding: 11px 12px; border-bottom: 1px solid var(--rule)">
+          <span class="dot idle" style="margin-top: 5px"></span>
+          <div>
+            <div style="color: var(--ink3)">Authoring the next prompt</div>
+            <div class="tok" style="margin-top: 2px">the model and the render share one GPU</div>
+          </div>
+        </div>
+        <div style="display: flex; gap: 9px; padding: 11px 12px; border-bottom: 1px solid var(--rule)">
+          <span class="dot idle" style="margin-top: 5px"></span>
+          <div>
+            <div style="color: var(--ink3)">Critique and revise</div>
+            <div class="tok" style="margin-top: 2px">queued &#183; runs the moment the render lands</div>
+          </div>
+        </div>
+        <div style="display: flex; gap: 9px; padding: 11px 12px">
+          <span class="dot idle" style="margin-top: 5px"></span>
+          <div>
+            <div style="color: var(--ink3)">Starting another render</div>
+            <div class="tok" style="margin-top: 2px">one scene at a time</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top: 18px; border-left: 2px solid var(--rule2); padding: 2px 0 2px 12px">
+        <div style="color: var(--ink2); line-height: 1.7">
+          Asking the model for anything right now would take the GPU away mid-scene and lose this render. The studio
+          holds those actions rather than letting that happen.
+        </div>
+      </div>
+
+      <div style="flex-grow: 1"></div>
+
+      <div style="border: 1px solid var(--rule2); background: var(--paper); padding: 11px 12px">
+        <div class="lbl" style="margin-bottom: 6px">Scene 5 prompt</div>
+        <div style="font-family: var(--mono); font-size: 10.5px; line-height: 1.65; color: var(--ink3)">
+          <span style="color: var(--ox)">@chandni</span> crosses the courtyard in a slow arc, the<br>
+          lamp swinging at her side&#8230;
+        </div>
+        <div class="tok" style="margin-top: 8px">374f &#183; seed 1005 &#183; locked for this render</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

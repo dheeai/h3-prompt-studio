@@ -337,7 +337,29 @@ export async function listBoxInputs(ep: ComfyEndpoint): Promise<{ images: string
 }
 
 /** A file already on the box, addressed for display. */
-export function inputUrl(ep: ComfyEndpoint, filename: string): string {
+/**
+ * `preview` is for VISUAL FEEDBACK ONLY — a browse tile or a plate's thumbnail.
+ *
+ * ComfyUI's `/view?preview=<format>;<quality>` re-encodes but never RESIZES
+ * (server.py: `img.save(buffer, format, quality)`, no thumbnail/resize call), so
+ * this buys bytes, not pixels. Measured against this box on 2026-09-07 — a
+ * 2.5 MB input PNG comes back as 86 KB at `webp;60`, ~29x smaller, while a single
+ * image's latency is unchanged (~0.4s either way; `webp;90` is actually SLOWER
+ * than raw because the encode costs more than the transfer it saves). The win is
+ * therefore aggregate: a browse grid of a few hundred inputs is ~720 MB raw.
+ *
+ * NEVER pass `preview` for an image that conditions a render or feeds the vision
+ * analysis. Reference fidelity is paid for deliberately elsewhere (H3's
+ * `ref_image_size: max` buys identity fidelity at several times the cost because
+ * reference tokens ride through every sampling step); handing that path a lossy
+ * re-encode silently spends that money on nothing. A `boxFile` plate is safe by
+ * construction — the graph cites it by filename on the box, not through this URL.
+ */
+export function inputUrl(ep: ComfyEndpoint, filename: string, preview?: string): string {
   const q = new URLSearchParams({ filename, subfolder: '', type: 'input' })
+  if (preview) q.set('preview', preview)
   return `${trim(ep.baseUrl)}/view?${q}`
 }
+
+/** Byte-cheapest re-encode that still reads fine in a 92px tile. */
+export const THUMB_PREVIEW = 'webp;60'

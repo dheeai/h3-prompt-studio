@@ -1,6 +1,6 @@
-import { REF_CAPS } from './recipe'
-import { padForOverlap, snapUp } from './multiclip'
-import type { PaddedClip } from './multiclip'
+import { REF_CAPS, framesForSeconds } from './recipe'
+import { padForOverlap, snapUp } from './frames'
+import type { PaddedClip } from './frames'
 import type { ComfyNode } from './types'
 
 /**
@@ -8,12 +8,13 @@ import type { ComfyNode } from './types'
  * job, porting `buildChainGraph` from h3-shots' `longform.mjs` (measured 2026-09-01,
  * `submit.mjs --longform chain`).
  *
- * Chain differs from the studio's existing Long Media multiclip path
- * (`multiclip.ts`) in the property that makes it worth having at all: it writes
- * per-scene checkpoints under ComfyUI's `output/h3_chains/<run_name>/`, so a later
- * call can resume from clip N's checkpoint and sample ONLY clip N+1 via
- * `scene_range` — the studio's "Continue" turn pays for one clip's render, not the
- * whole plan's. Long Media has no such resume; every submit re-samples everything.
+ * Chain is the studio's ONLY multi-clip render path (Long Media multiclip was
+ * removed — "everything should be chainable through context loop," founder
+ * 2026-09-07). What makes it worth having: it writes per-scene checkpoints
+ * under ComfyUI's `output/h3_chains/<run_name>/`, so a later call can resume
+ * from clip N's checkpoint and sample ONLY clip N+1 via `scene_range` — the
+ * studio's "Continue" turn, and a plan's single-scene redo, both pay for one
+ * clip's render, not the whole plan's.
  *
  * ═══ THE SETTINGS THIS FILE DOES NOT LET YOU CHOOSE ═══════════════════════════════
  *
@@ -34,8 +35,7 @@ import type { ComfyNode } from './types'
  * h3-shots' shot prose names a plate by its FILENAME ("...shown in aarav.png..."),
  * and `tagifyPrompt` there swaps the filename for `@<id>`. The studio has no
  * filenames in its prose — every clip cites a plate by its position in the ONE
- * session-global plate list, as `<Subject N>` / `<Picture N>` (the same convention
- * `multiclip.ts` already relies on — see its own module comment). So this file's
+ * session-global plate list, as `<Subject N>` / `<Picture N>`. So this file's
  * `citeToTag` reads that citation instead of a filename match; everything downstream
  * (the per-scene @tag activation, the Tagged Ref2VA reference chain, the 9-reference
  * cap per scene) is otherwise the same mechanism h3-shots uses.
@@ -43,7 +43,7 @@ import type { ComfyNode } from './types'
 
 // ── node classes, resolved by TYPE — never by node number, so a turbo / 8-step /
 //    SLA variant of the graph all bind with no configuration (same governing idea
-//    as recipe.ts / multiclip.ts). ──────────────────────────────────────────────
+//    as recipe.ts). ─────────────────────────────────────────────────────────────
 const PLAN_CLASS = 'MiniMaxH3ChainPlan'
 const CURRENT_CLASS = 'MiniMaxH3ChainCurrent'
 const CONTEXT_CLASS = 'MiniMaxH3ChainContext'
@@ -62,6 +62,11 @@ const LORA_MODEL_ONLY_CLASS = 'LoraLoaderModelOnly'
 const UNET_LOADER_CLASS = 'UNETLoader'
 const TAGGED_PICTURE_CLASS = 'MiniMaxH3TaggedPictureReference'
 const TAGGED_R2V_CLASS = 'MiniMaxH3TaggedReferenceToVideo'
+/** The stock (non-Tagged) MiniMax H3 ref2va conditioning node — a ComfyUI
+ * built-in (`comfy_extras/nodes_minimax_h3.py`), not part of the Contex-Loop
+ * pack. Used only when a chain has no plate to cite — see the module comment
+ * beside its wiring below. */
+const STOCK_R2V_CLASS = 'MiniMaxH3ReferenceToVideo'
 
 /** Contex-Loop's context_length is an ENUM; anything else snaps DOWN silently. */
 export const CONTEXT_CHOICES = [1, 5, 22, 39, 56, 73] as const
@@ -88,8 +93,32 @@ export const CHAIN_DEFAULT_DURATION_SECONDS = 15.0
  * graph so a stale workflow file cannot silently load a different turbo LoRA. */
 export const CANONICAL_TURBO_LORA = 'minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors'
 
-/** Canonical diffusion model (founder 2026-09-01) — same stamping contract. */
+/** Canonical diffusion model (founder 2026-09-01) — same stamping contract.
+ *
+ * This is h3-shots' canonical UNET and stays the BUILDER's default, because the
+ * golden-graph test compares this module's output against a real
+ * `submit.mjs --longform chain --dry`, which stamps exactly this file. Changing
+ * the constant would make that comparison assert nothing. To render on a
+ * different model, pass `opts.unetName` — see `SINGULARITY_UNET`. */
 export const CANONICAL_UNET = 'minimax_h3_fastvideo_vsa_datafree_1300step_4step_int8_convrot.safetensors'
+
+/**
+ * The studio's rendering default: MiniMax H3 Singularity, a pruned ref2va
+ * checkpoint.
+ *
+ * Chosen by the founder on 2026-09-06 after an A/B against the canonical
+ * fastvideo UNET, and then used to render a whole 27-clip film (6:57 at
+ * 1216x672, 6 steps). It is paired with `CANONICAL_TURBO_LORA` — the ref2v
+ * turbo v0.1 accelerator — which is what that film shipped on, so switching
+ * only the UNET here reproduces the validated configuration exactly.
+ *
+ * Note the pairing is deliberate and measured, not incidental: the ref2v LoRA
+ * is distilled for ref2v, and this is a ref2va checkpoint. The fl2v-distilled
+ * continuation LoRA that h3-shots' runbook specified for scenes 2+ was dropped
+ * for that film precisely because it put an FL2V-distilled LoRA on a REF2VA
+ * model. Do not reintroduce an fl2v LoRA alongside this UNET.
+ */
+export const SINGULARITY_UNET = 'Minimax-h3_Singularity_ref2va_Pruned_v1.3_int8.safetensors'
 
 /** Below this the accelerator LoRA samples above its distilled step count — a
  * 4-step production render came back looking corrupted (founder, 2026-08-23).
@@ -156,8 +185,7 @@ function applyUnetOverride(g: Record<string, ComfyNode>, name: string): void {
   g[k].inputs.unet_name = name
 }
 
-/** `<Subject N>` or `<Picture N>` — the same labels recipe prompts use elsewhere,
- * and the same regex `multiclip.ts` matches for its own citation gate. */
+/** `<Subject N>` or `<Picture N>` — the same labels recipe prompts use elsewhere. */
 const CITATION = /<\s*(Subject|Picture)\s+(\d+)\s*>/gi
 
 /** One reference plate, keyed by its position in the studio's ONE session-global
@@ -201,6 +229,62 @@ export interface ChainShot {
   frames: number
   steps?: number
   seed: number
+}
+
+/** One clip of a Studio clip plan, as the pieces needed to become a `ChainShot`. */
+export interface ChainPlanClip {
+  /** 1-based position in the plan — the same identity as `ChainShot.index`. */
+  index: number
+  prompt: string
+  seconds: number
+}
+
+/** What was actually recorded for a plan clip the last time IT rendered as
+ * part of THIS plan's chain — what a redo of some OTHER clip must resend
+ * byte-identically. See `chainShotsForPlan`. */
+export interface ChainPlanPriorClip {
+  prompt: string
+  frames: number
+  steps?: number
+  seed?: number
+}
+
+/**
+ * Map a Studio clip plan into the `ChainShot[]` a chain submit needs —
+ * shared by the whole-plan submit and a single-scene redo, which differ only
+ * in which clips are allowed to use their CURRENT prompt/settings.
+ *
+ * With no `sceneIndex`: every clip uses its current prompt/settings — the
+ * whole-plan fast path, nothing has rendered yet so there is nothing to
+ * resend.
+ *
+ * With a `sceneIndex`: every clip OTHER than that one resends exactly what
+ * `priorOf` returns for it (an earlier submit of this same plan's chain) —
+ * never re-derived from the plan's current prompt/settings, which is exactly
+ * the drift Contex-Loop's `verify_resume_history` exists to catch. The target
+ * scene alone uses its current prompt/settings — that is the redo. A clip
+ * `priorOf` has nothing for (never rendered) falls back to current values
+ * too, same as the whole-plan case.
+ */
+export function chainShotsForPlan(
+  plan: ChainPlanClip[],
+  opts: {
+    sceneIndex?: number
+    steps: number
+    fps?: number
+    /** Seed for a clip using its CURRENT settings — a plain counter in tests,
+     * `settings.lockSeed ? settings.seed : Math.floor(Math.random() * 2 ** 31)`
+     * in the app. Called once per such clip, in plan order. */
+    nextSeed: () => number
+    priorOf: (index: number) => ChainPlanPriorClip | undefined
+  },
+): ChainShot[] {
+  const fps = opts.fps ?? 24
+  return plan.map((c) => {
+    const prior = opts.sceneIndex !== undefined && c.index !== opts.sceneIndex ? opts.priorOf(c.index) : undefined
+    if (prior) return { index: c.index, prompt: prior.prompt, frames: prior.frames, steps: prior.steps ?? opts.steps, seed: prior.seed ?? 0 }
+    return { index: c.index, prompt: c.prompt, frames: framesForSeconds(c.seconds, fps), steps: opts.steps, seed: opts.nextSeed() }
+  })
 }
 
 export interface ChainBuildOpts {
@@ -380,46 +464,80 @@ export function buildChainGraph(args: BuildChainArgs): BuildChainResult {
     .filter((x) => x.n > REF_CAPS.image)
   if (over.length) throw new ChainError(`scene(s) over H3's ${REF_CAPS.image}-reference cap: ${JSON.stringify(over)}`)
 
-  const byId = new Map(plates.map((p) => [p.id, p]))
-  let prev: string | null = null
-  used.forEach((p, i) => {
-    const plate = byId.get(p.id) as ChainPlate
-    g[`h3lfImg${i}`] = {
-      class_type: 'LoadImage',
-      inputs: { image: plate.subfolder ? `${plate.subfolder}/${plate.filename}` : plate.filename },
-    }
-    g[`h3lfRef${i}`] = {
-      class_type: TAGGED_PICTURE_CLASS,
+  if (used.length) {
+    const byId = new Map(plates.map((p) => [p.id, p]))
+    let prev: string | null = null
+    used.forEach((p, i) => {
+      const plate = byId.get(p.id) as ChainPlate
+      g[`h3lfImg${i}`] = {
+        class_type: 'LoadImage',
+        inputs: { image: plate.subfolder ? `${plate.subfolder}/${plate.filename}` : plate.filename },
+      }
+      g[`h3lfRef${i}`] = {
+        class_type: TAGGED_PICTURE_CLASS,
+        inputs: {
+          image: [`h3lfImg${i}`, 0],
+          tag: p.id,
+          ...(prev ? { previous: [prev, 0] } : {}),
+        },
+      }
+      prev = `h3lfRef${i}`
+    })
+
+    g.h3lfSref = {
+      class_type: TAGGED_R2V_CLASS,
       inputs: {
-        image: [`h3lfImg${i}`, 0],
-        tag: p.id,
-        ...(prev ? { previous: [prev, 0] } : {}),
+        clip: [clip as string, 0],
+        vae: [vVae as string, 0],
+        audio_vae: [aVae as string, 0],
+        references: [prev, 0],
+        clip_index: [cur as string, 1],
+        clip_count: [cur as string, 2],
+        prompt: [cur as string, 4],
+        width: [cur as string, 8],
+        height: [cur as string, 9],
+        length: [cur as string, 6],
+        ref_image_size: CHAIN_REF_IMAGE_SIZE,
+        state: [cur as string, 0],
+        reference_policy: CHAIN_REFERENCE_POLICY,
+        conditioning_backend: 'native_ref2va',
       },
     }
-    prev = `h3lfRef${i}`
-  })
-
-  g.h3lfSref = {
-    class_type: TAGGED_R2V_CLASS,
-    inputs: {
-      clip: [clip as string, 0],
-      vae: [vVae as string, 0],
-      audio_vae: [aVae as string, 0],
-      references: [prev, 0],
-      clip_index: [cur as string, 1],
-      clip_count: [cur as string, 2],
-      prompt: [cur as string, 4],
-      width: [cur as string, 8],
-      height: [cur as string, 9],
-      length: [cur as string, 6],
-      ref_image_size: CHAIN_REF_IMAGE_SIZE,
-      state: [cur as string, 0],
-      reference_policy: CHAIN_REFERENCE_POLICY,
-      conditioning_backend: 'native_ref2va',
-    },
+    g[ctx as string].inputs.conditioning = ['h3lfSref', 0]
+    g[ctx as string].inputs.latent = ['h3lfSref', 1]
+  } else {
+    // No plate is cited anywhere in this chain — a text-only film. The
+    // Tagged wrapper's `references` input is a REQUIRED custom-typed socket
+    // (`MiniMaxH3TaggedReferenceToVideo` on the box) and there is no node
+    // that emits an "empty" registry to satisfy it, so wiring it with
+    // nothing upstream (a dangling link) is exactly what came back as
+    // `prompt_outputs_failed_validation` on 2026-09-07 — a validation error
+    // ComfyUI blamed on the downstream conditioning consumer, not on the
+    // actual missing input.
+    //
+    // The fix is to condition on the STOCK `MiniMaxH3ReferenceToVideo` node
+    // instead — verified on the box (comfy_extras/nodes_minimax_h3.py) to
+    // take its `ref_images`/`ref_videos`/`ref_audios` as genuinely OPTIONAL
+    // Autogrow inputs (min: 0): with none connected it just tokenizes the
+    // prompt with no reference items, which is a normal, valid graph. This
+    // is the same node the pack's own (deprecated) scheduled-reference path
+    // builds under the Tagged API, so it is not a workaround invented here.
+    g.h3lfNoRef = {
+      class_type: STOCK_R2V_CLASS,
+      inputs: {
+        clip: [clip as string, 0],
+        vae: [vVae as string, 0],
+        audio_vae: [aVae as string, 0],
+        prompt: [cur as string, 4],
+        width: [cur as string, 8],
+        height: [cur as string, 9],
+        length: [cur as string, 6],
+        ref_image_size: CHAIN_REF_IMAGE_SIZE,
+      },
+    }
+    g[ctx as string].inputs.conditioning = ['h3lfNoRef', 0]
+    g[ctx as string].inputs.latent = ['h3lfNoRef', 1]
   }
-  g[ctx as string].inputs.conditioning = ['h3lfSref', 0]
-  g[ctx as string].inputs.latent = ['h3lfSref', 1]
   g[ctx as string].inputs.audio_vae = [aVae as string, 0]
   g[adv as string].inputs.latent_image = [ctx as string, 3]
   g[adv as string].inputs.sampler = [turbo as string, 0]
@@ -447,8 +565,7 @@ export function buildChainGraph(args: BuildChainArgs): BuildChainResult {
   return { graph: assertNoDanglingLinks(g), padded, planJson, references: used, outputNode: asm as string }
 }
 
-/** What the panel shows, and what blocks a chain submit — same contract as
- * `multiclipIssues` in `multiclip.ts`. */
+/** What the panel shows, and what blocks a chain submit. */
 export interface ChainIssuesInput {
   graph: Record<string, ComfyNode> | null
   shots: Array<{ index: number; prompt: string }>
@@ -502,13 +619,14 @@ export function chainIssues(input: ChainIssuesInput): string[] {
   if (!shots.length) out.push('No clips in the chain — nothing to submit.')
   for (const s of shots) if (!s.prompt.trim()) out.push(`Clip ${s.index} has no prompt yet.`)
 
-  // A chain with NO plate builds cleanly here and is then refused by the box:
-  // the Tagged Ref2VA reference chain has no image to condition on, and ComfyUI
-  // fails the submit with `prompt_outputs_failed_validation` on the reference
-  // node's `conditioning` input — an inner-validation error that says nothing
-  // about the missing plate. Measured live on 2026-09-07. Caught here so the
-  // failure lands before a submit rather than 400ing at the gateway.
-  if (!plateCount) out.push('A chain needs at least one plate bound — H3 conditions the chain on a reference image, and a plateless graph is refused at submit.')
+  // Zero plates is fine — a text-only film. A plateless chain used to build
+  // cleanly here and then be refused by the box (`prompt_outputs_failed_validation`
+  // on the Tagged Ref2VA reference node's `conditioning` input, measured live
+  // 2026-09-07), because the Tagged wrapper's `references` socket is a
+  // required custom-typed input nothing was connecting. `buildChainGraph` now
+  // conditions a plateless scene on the stock (non-Tagged) ref2va node
+  // instead, whose reference inputs are genuinely optional — see its own
+  // module comment. H3's reference cap is what actually blocks.
   if (plateCount > REF_CAPS.image) out.push(`${plateCount} plates exceeds H3's ${REF_CAPS.image}-reference cap.`)
 
   if (steps < CHAIN_MIN_STEPS) {

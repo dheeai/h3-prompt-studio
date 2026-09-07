@@ -138,7 +138,7 @@ export function App() {
     if (!story.trim() || busy || !connected) return
     const workflow = entryWorkflow(entryModeId)
     if (workflow === 'story-plan') {
-      // Story's primary action deliberately stops at the Long Media plan. A
+      // Story's primary action deliberately stops at the clip plan. A
       // separate explicit action below starts the multi-call authoring loop.
       await app.run('breakdown', undefined, { studioMode: 'story' })
     } else if (workflow === 'prompt-revise') {

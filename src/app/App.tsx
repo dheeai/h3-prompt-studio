@@ -8,6 +8,7 @@ import { ExternalVideoPanel } from '../components/ExternalVideoPanel'
 import { RecipePanel } from '../components/RecipePanel'
 import { EndpointPanel } from '../components/RenderPanel'
 import { ClipPlan } from '../components/ClipPlan'
+import { DraftingStatus } from '../components/DraftingStatus'
 import { Marginalia } from '../components/Marginalia'
 import { FilmRegion } from '../components/FilmRegion'
 import { ScenesStrip } from '../components/ScenesStrip'
@@ -114,7 +115,7 @@ export function App() {
         />
         {app.breakIntoScenes && (
           <div className="composer-plan">
-            {!app.breakdown ? (
+            {!app.breakdown && (
               <button
                 className="btn"
                 disabled={!story.trim() || !!app.streaming}
@@ -122,9 +123,12 @@ export function App() {
               >
                 {app.streaming ? 'Planning…' : 'Create clip plan'}
               </button>
-            ) : (
-              <ClipPlan />
             )}
+            {/* Planning is the longest silent stretch in the app — it reads the
+                whole source before it emits anything. The panel belongs next to
+                the button that started it, not only up in the composer. */}
+            {app.streaming?.stage === 'breakdown' && <DraftingStatus streaming={app.streaming} />}
+            {app.breakdown && <ClipPlan />}
           </div>
         )}
         {error && <div className="alert err composer-error"><span>{error}</span><button className="btn sm ghost" onClick={app.clearError}>dismiss</button></div>}

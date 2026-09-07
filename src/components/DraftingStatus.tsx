@@ -10,6 +10,7 @@ import { useApp } from '../app/state'
  * particular thinks for a while before emitting a single visible token.
  */
 export function DraftingStatus({ streaming }: { streaming: NonNullable<ReturnType<typeof useApp>['streaming']> }) {
+  const { cancel } = useApp()
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 250)
@@ -34,6 +35,11 @@ export function DraftingStatus({ streaming }: { streaming: NonNullable<ReturnTyp
         <span className="lbl">{streaming.stage} · {label}</span>
         <span className="tok">{secs}s</span>
         {!streaming.text && streaming.reasoning ? <span className="tok">reasoning {streaming.reasoning.length} chars</span> : null}
+        <span className="studio-grow" />
+        {/* `cancel` already existed and even preserves the interrupted
+            thought — it was simply never surfaced, so a pass that went off the
+            rails could only be escaped by resetting the whole draft. */}
+        <button className="btn sm" onClick={cancel}>Stop</button>
       </div>
       {tail ? <div className="composer-drafting-body tok">{tail}</div> : <div className="composer-drafting-body tok">waiting for the first token…</div>}
     </div>

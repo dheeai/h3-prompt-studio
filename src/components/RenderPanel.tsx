@@ -145,7 +145,7 @@ export function EndpointPanel({ onClose }: { onClose: () => void }) {
 
 /** The right-hand rail: what this render will be, and the button that starts it. */
 export function RenderRail({ onOpen }: { onOpen: (m: 'recipe' | 'plates' | 'endpoint') => void }) {
-  const { endpoint, comfyProbes, recipe, plates, settings, blockers, warnings, render, rendering, clips } = useApp()
+  const { endpoint, comfyProbes, recipe, plates, settings, blockers, warnings, render, rendering, clips, gpuBusy } = useApp()
   const probe = endpoint ? comfyProbes[endpoint.id] : undefined
   const recent = [...clips].reverse().slice(0, 4)
   const width = recipe ? settings.width ?? recipe.defaults.width : settings.width
@@ -189,10 +189,10 @@ export function RenderRail({ onOpen }: { onOpen: (m: 'recipe' | 'plates' | 'endp
         <button
           className="btn pri"
           style={{ width: '100%', justifyContent: 'center' }}
-          disabled={!!rendering || blockers.length > 0}
+          disabled={!!rendering || blockers.length > 0 || gpuBusy === 'llm'}
           onClick={() => void render()}
         >
-          {rendering ? `Rendering clip ${rendering.index}…` : 'Render this prompt'}
+          {rendering ? `Rendering clip ${rendering.index}…` : gpuBusy === 'llm' ? 'Waiting for the model call to finish…' : 'Render this prompt'}
         </button>
         {blockers.length > 0 && (
           <div style={{ marginTop: 9 }}>

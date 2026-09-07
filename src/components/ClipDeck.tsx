@@ -35,12 +35,24 @@ function Thumb({ clip, active, onClick }: { clip: Clip; active: boolean; onClick
 
 /** The current clip, plus the action that authors its next prompt. */
 export function ClipPlayer() {
-  const { clip, clipUrl, continueFrom, rendering, film, continuation } = useApp()
+  const { clip, clipUrl, continueFrom, rendering, film, continuation, chainRecipe, renderChain, gpuBusy } = useApp()
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
+  const [chainBusy, setChainBusy] = useState(false)
   const url = clip ? clipUrl(clip) : null
   const continuing = !!clip && continuation?.clipId === clip.id && continuation.state === 'running'
   const nextPromptReady = !!clip && continuation?.clipId === clip.id && continuation.state === 'ready'
+  const gpuHeldElsewhere = gpuBusy !== 'idle' && !(gpuBusy === 'render' && !!rendering)
+  const chainDisabled = chainBusy || !!rendering || gpuHeldElsewhere
+
+  const goChain = async () => {
+    setChainBusy(true)
+    try {
+      await renderChain()
+    } finally {
+      setChainBusy(false)
+    }
+  }
 
   if (!clip) {
     return (
@@ -50,6 +62,17 @@ export function ClipPlayer() {
           Write a prompt, then Render. When a clip lands it plays here, and Continue takes its last frame as the next
           clip’s <span style={{ color: 'var(--kw-picture)' }}>&lt;Picture 1&gt;</span> and authors its next prompt.
         </div>
+        {chainRecipe && (
+          <div style={{ marginTop: 14 }}>
+            <button className="btn pri" disabled={chainDisabled} onClick={() => void goChain()}>
+              {rendering ? 'Rendering…' : 'Start a Contex-Loop chain here'}
+            </button>
+            <div className="tok" style={{ display: 'block', marginTop: 7, lineHeight: 1.5, maxWidth: 330 }}>
+              Renders the current prompt as scene 1 of a new chain. Every clip after this one, rendered the same
+              way, resumes from this scene's checkpoint instead of re-sampling it.
+            </div>
+          </div>
+        )}
       </div>
     )
   }
@@ -114,6 +137,25 @@ export function ClipPlayer() {
               hand-off, advances the role from <b>{film.role}</b>, and authors the next prompt. It does not render until
               you choose Render current prompt.
             </div>
+            {chainRecipe && clip.chain && (
+              <div style={{ marginTop: 14, paddingTop: 13, borderTop: '1px solid var(--rule)' }}>
+                <button
+                  className="btn pri"
+                  style={{ width: '100%', justifyContent: 'center' }}
+                  disabled={!nextPromptReady || chainDisabled}
+                  onClick={() => void goChain()}
+                >
+                  {chainBusy || (rendering && gpuBusy === 'render')
+                    ? 'Rendering next scene…'
+                    : `Render as chain scene ${clip.chain.sceneIndex + 1}`}
+                </button>
+                <div className="tok" style={{ display: 'block', marginTop: 8, lineHeight: 1.5 }}>
+                  Resumes scene {clip.chain.sceneIndex} (run <code>{clip.chain.runName}</code>) from its checkpoint and
+                  samples only this new scene — one clip's worth of render, not the whole chain's.
+                  {!nextPromptReady && ' Continue from this clip first to author the next prompt.'}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

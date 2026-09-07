@@ -172,6 +172,8 @@ export interface Settings {
   recipeId?: string
   /** Which stored recipe is the Long Media (multiclip) workflow — a user has both. */
   multiclipRecipeId?: string
+  /** Which stored recipe is the Contex-Loop (chain) workflow — a user can have all three. */
+  chainRecipeId?: string
   /** Target clip length before the frame grid snaps it. */
   seconds: number
   /** A film normally wants one seed the whole way down. */
@@ -309,6 +311,19 @@ export interface MulticlipRecord {
   totalSeconds: number
 }
 
+/**
+ * Set when a `Clip` was rendered as one scene of a Contex-Loop CHAIN — a
+ * single job that resumes every earlier scene from its ComfyUI checkpoint
+ * and samples only this one. `runName` is the checkpoint folder identity
+ * (stable across every clip in one chain); `sceneIndex` is this clip's
+ * 1-based position within it (not necessarily equal to `Clip.index`, though
+ * the studio's own "Continue" turn always keeps them in step).
+ */
+export interface ClipChainInfo {
+  runName: string
+  sceneIndex: number
+}
+
 export interface Clip {
   id: string
   /** 1-based position in the film. */
@@ -326,6 +341,13 @@ export interface Clip {
   seed?: number
   frames?: number
   fps?: number
+  /**
+   * Recorded so a later chain scene can resend an EARLIER scene's exact
+   * step count in `plan_json` — Contex-Loop's `verify_resume_history` hashes
+   * prompt/frames/steps/seed per scene and refuses to resume on a mismatch,
+   * so this must survive even if `settings.steps` changes later.
+   */
+  steps?: number
   promptId?: string
   /** Where the mp4 lives on the box. Resolved to a URL at render time. */
   output?: { filename: string; subfolder: string; type: string }
@@ -336,4 +358,6 @@ export interface Clip {
   at: number
   /** Set when this clip is a whole plan submitted as one Long Media multiclip job. */
   multiclip?: MulticlipRecord
+  /** Set when this clip is one scene of a Contex-Loop chain. */
+  chain?: ClipChainInfo
 }

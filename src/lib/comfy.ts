@@ -1,4 +1,5 @@
 import { mixedContentBlocked } from './providers'
+import { pickAssembledVideo } from './chain'
 import type { Clip, ComfyEndpoint, ComfyNode, ProbeResult } from './types'
 
 export const DEFAULT_ENDPOINTS: ComfyEndpoint[] = [
@@ -143,11 +144,33 @@ export interface PollResult {
   output?: Clip['output']
 }
 
-export async function poll(ep: ComfyEndpoint, promptId: string): Promise<PollResult> {
+type HistoryEntry = { status?: Record<string, unknown>; outputs?: Record<string, unknown> }
+
+/** Every file any node in this history entry reported as an output, in the
+ * order `/history` returned them — whatever node produced it. */
+function collectOutputFiles(entry: HistoryEntry): NonNullable<Clip['output']>[] {
+  const files: NonNullable<Clip['output']>[] = []
+  for (const out of Object.values(entry.outputs ?? {})) {
+    for (const items of Object.values(out as Record<string, unknown>)) {
+      if (!Array.isArray(items)) continue
+      for (const it of items) {
+        const f = it as { filename?: string; subfolder?: string; type?: string }
+        if (f?.filename) files.push({ filename: f.filename, subfolder: f.subfolder ?? '', type: f.type ?? 'output' })
+      }
+    }
+  }
+  return files
+}
+
+async function fetchHistoryEntry(ep: ComfyEndpoint, promptId: string): Promise<HistoryEntry | null> {
   const r = await fetch(`${trim(ep.baseUrl)}/history/${promptId}`)
-  if (!r.ok) return { done: false }
-  const h = (await r.json()) as Record<string, { status?: Record<string, unknown>; outputs?: Record<string, unknown> }>
-  const entry = h[promptId]
+  if (!r.ok) return null
+  const h = (await r.json()) as Record<string, HistoryEntry>
+  return h[promptId] ?? null
+}
+
+export async function poll(ep: ComfyEndpoint, promptId: string): Promise<PollResult> {
+  const entry = await fetchHistoryEntry(ep, promptId)
   if (!entry) return { done: false }
 
   const status = entry.status ?? {}
@@ -159,17 +182,39 @@ export async function poll(ep: ComfyEndpoint, promptId: string): Promise<PollRes
 
   // Any node may be the one that saved; take the last file-bearing output
   // rather than assuming a node id, so a graph with VHS or SaveVideo both work.
-  let output: Clip['output'] | undefined
-  for (const out of Object.values(entry.outputs ?? {})) {
-    for (const items of Object.values(out as Record<string, unknown>)) {
-      if (!Array.isArray(items)) continue
-      for (const it of items) {
-        const f = it as { filename?: string; subfolder?: string; type?: string }
-        if (f?.filename) output = { filename: f.filename, subfolder: f.subfolder ?? '', type: f.type ?? 'output' }
-      }
-    }
-  }
+  const files = collectOutputFiles(entry)
+  const output = files[files.length - 1]
   return { done: true, output, failed: output ? undefined : 'The run finished but produced no file.' }
+}
+
+/**
+ * Poll a Contex-Loop chain job. Unlike `poll()`, this cannot just take
+ * whichever file came back — a chain job's history carries every scene's
+ * checkpoint MP4 alongside the assembled film, and picking the wrong one
+ * looks exactly like success (a valid, playable file at a plausible path).
+ * `pickAssembledVideo` (chain.ts) is what tells them apart.
+ */
+export async function pollChain(ep: ComfyEndpoint, promptId: string, runName: string): Promise<PollResult> {
+  const entry = await fetchHistoryEntry(ep, promptId)
+  if (!entry) return { done: false }
+
+  const status = entry.status ?? {}
+  if (status.status_str === 'error') {
+    const messages = JSON.stringify(status.messages ?? status).slice(0, 300)
+    return { done: true, failed: messages }
+  }
+  if (!status.completed) return { done: false }
+
+  const files = collectOutputFiles(entry)
+  const output = pickAssembledVideo(files, runName)
+  return {
+    done: true,
+    output,
+    failed: output
+      ? undefined
+      : `The chain job finished, but no assembled film matching run '${runName}' was found among ${files.length} output(s) — ` +
+        `check ComfyUI's output/h3_chains/${runName}/ directly.`,
+  }
 }
 
 export function viewUrl(ep: ComfyEndpoint, o: NonNullable<Clip['output']>): string {

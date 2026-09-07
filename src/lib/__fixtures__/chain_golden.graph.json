@@ -1,0 +1,522 @@
+{
+ "7": {
+  "inputs": {
+   "clip_name": "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+   "type": "minimax",
+   "device": "default"
+  },
+  "class_type": "CLIPLoader",
+  "_meta": {
+   "title": "Load CLIP"
+  }
+ },
+ "8": {
+  "inputs": {
+   "vae_name": "minimax_h3_audio_vae_fp32.safetensors"
+  },
+  "class_type": "VAELoader",
+  "_meta": {
+   "title": "Load VAE"
+  }
+ },
+ "11": {
+  "inputs": {
+   "vae_name": "minimax_h3_video_vae_fp16.safetensors"
+  },
+  "class_type": "VAELoader",
+  "_meta": {
+   "title": "Load VAE"
+  }
+ },
+ "36": {
+  "inputs": {
+   "unet_name": "minimax_h3_fastvideo_vsa_datafree_1300step_4step_int8_convrot.safetensors",
+   "weight_dtype": "default"
+  },
+  "class_type": "UNETLoader",
+  "_meta": {
+   "title": "MiniMax H3 Hybrid Loader"
+  }
+ },
+ "45": {
+  "inputs": {
+   "aspect_ratio": "16:9 (Widescreen)",
+   "megapixels": 1,
+   "multiple": 32
+  },
+  "class_type": "ResolutionSelector",
+  "_meta": {
+   "title": "Resolution Selector (Size)"
+  }
+ },
+ "59": {
+  "inputs": {
+   "shift_video": 12,
+   "shift_audio": 3,
+   "model": [
+    "77",
+    0
+   ]
+  },
+  "class_type": "MiniMaxH3SigmaShift",
+  "_meta": {
+   "title": "ModelSamplingMiniMaxH3"
+  }
+ },
+ "66": {
+  "inputs": {
+   "lora_name": "minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors",
+   "strength_model": 1,
+   "model": [
+    "36",
+    0
+   ]
+  },
+  "class_type": "LoraLoaderBypassModelOnly",
+  "_meta": {
+   "title": "Load LoRA (Bypass, Model Only) (for debugging)"
+  }
+ },
+ "76": {
+  "inputs": {
+   "attention": "comfy kitchen attention",
+   "model": [
+    "98",
+    0
+   ]
+  },
+  "class_type": "ModelAttentionBackend",
+  "_meta": {
+   "title": "ModelAttentionBackend"
+  }
+ },
+ "77": {
+  "inputs": {
+   "sparsity_ratio": 0.9,
+   "block_size": "64",
+   "min_seq_len": 8192,
+   "dense_last_steps": 0,
+   "protect_audio": true,
+   "enabled": true,
+   "model": [
+    "76",
+    0
+   ]
+  },
+  "class_type": "H3SLAAttention",
+  "_meta": {
+   "title": "H3 SLA Attention"
+  }
+ },
+ "80": {
+  "inputs": {
+   "plan_json": "{\n  \"shots\": [\n    {\n      \"id\": \"shot01\",\n      \"prompt\": \"subject_definitions:\\n<Subject 1> is the character shown in @hero: REPLACE ME with the wording from the refs.json \\\"appearsAs\\\" field. Follow the reference exactly for face, build and clothing, and do not change them at any point.\\n\\nsummary:\\n[reference generation] REPLACE ME — one paragraph using the <Subject N> labels, saying what happens and how the clip ends.\\n\\nretention_analysis:\\n<Subject 1>: fully_preserved\\n\\ndetailed_description:\\nREPLACE ME — one or two sentences of STYLE first, before the shot marker.\\n\\nFixed throughout this clip: REPLACE ME — the invariants from continuity.json, stated positively.\\n\\n[Shot 1] REPLACE ME — this placeholder is deliberately long enough to pass the audit's 150-word floor, so the scaffold runs before you rewrite it. Replace every sentence. A Tracking Shot travels with <Subject 1> at a slow speed from their left side, holding them at a constant distance in a wide-medium framing that keeps the whole body and the ground beneath them inside the frame. The camera stays in that one position for the entire clip. Describe, in this order and in playback order: the composition and framing; each subject's appearance and their position in frame; the environment and where the light comes from; the action as a STATE CHANGE rather than a static pose, so something is measurably different by the last frame than it was in the first; the camera motion, using the controlled vocabulary verbatim; and the sound of that moment. Re-anchor the camera explicitly as the action moves — restate where it is, because stated once at the top it decays across fifteen seconds. Every composition described here must be photographable from the camera position stated above.\\n\\noverall_soundscape:\\nREPLACE ME — ambience and physical sound only: breath, footsteps, fabric, impacts, wind, room tone. Write only what is heard.\\n\\nnon_diegetic_music:\\nN/A\",\n      \"length\": 362,\n      \"steps\": 6,\n      \"seed\": 1001,\n      \"audio_context_length\": 0\n    },\n    {\n      \"id\": \"shot02\",\n      \"prompt\": \"subject_definitions:\\n<Subject 1> is the character shown in @hero: REPLACE ME with the wording from the refs.json \\\"appearsAs\\\" field. Follow the reference exactly for face, build and clothing, and do not change them at any point.\\n\\nsummary:\\n[reference generation] REPLACE ME — one paragraph using the <Subject N> labels, saying what happens and how the clip ends.\\n\\nretention_analysis:\\n<Subject 1>: fully_preserved\\n\\ndetailed_description:\\nREPLACE ME — one or two sentences of STYLE first, before the shot marker.\\n\\nFixed throughout this clip: REPLACE ME — the invariants from continuity.json, stated positively.\\n\\n[Shot 1] REPLACE ME — this placeholder is deliberately long enough to pass the audit's 150-word floor, so the scaffold runs before you rewrite it. Replace every sentence. A Tracking Shot travels with <Subject 1> at a slow speed from their left side, holding them at a constant distance in a wide-medium framing that keeps the whole body and the ground beneath them inside the frame. The camera stays in that one position for the entire clip. Describe, in this order and in playback order: the composition and framing; each subject's appearance and their position in frame; the environment and where the light comes from; the action as a STATE CHANGE rather than a static pose, so something is measurably different by the last frame than it was in the first; the camera motion, using the controlled vocabulary verbatim; and the sound of that moment. Re-anchor the camera explicitly as the action moves — restate where it is, because stated once at the top it decays across fifteen seconds. Every composition described here must be photographable from the camera position stated above.\\n\\noverall_soundscape:\\nREPLACE ME — ambience and physical sound only: breath, footsteps, fabric, impacts, wind, room tone. Write only what is heard.\\n\\nnon_diegetic_music:\\nN/A\",\n      \"length\": 396,\n      \"steps\": 6,\n      \"seed\": 1002,\n      \"audio_context_length\": 0\n    },\n    {\n      \"id\": \"shot03\",\n      \"prompt\": \"subject_definitions:\\n<Subject 1> is the character shown in @hero: REPLACE ME with the wording from the refs.json \\\"appearsAs\\\" field. Follow the reference exactly for face, build and clothing, and do not change them at any point.\\n\\nsummary:\\n[reference generation] REPLACE ME — one paragraph using the <Subject N> labels, saying what happens and how the clip ends.\\n\\nretention_analysis:\\n<Subject 1>: fully_preserved\\n\\ndetailed_description:\\nREPLACE ME — one or two sentences of STYLE first, before the shot marker.\\n\\nFixed throughout this clip: REPLACE ME — the invariants from continuity.json, stated positively.\\n\\n[Shot 1] REPLACE ME — this placeholder is deliberately long enough to pass the audit's 150-word floor, so the scaffold runs before you rewrite it. Replace every sentence. A Tracking Shot travels with <Subject 1> at a slow speed from their left side, holding them at a constant distance in a wide-medium framing that keeps the whole body and the ground beneath them inside the frame. The camera stays in that one position for the entire clip. Describe, in this order and in playback order: the composition and framing; each subject's appearance and their position in frame; the environment and where the light comes from; the action as a STATE CHANGE rather than a static pose, so something is measurably different by the last frame than it was in the first; the camera motion, using the controlled vocabulary verbatim; and the sound of that moment. Re-anchor the camera explicitly as the action moves — restate where it is, because stated once at the top it decays across fifteen seconds. Every composition described here must be photographable from the camera position stated above.\\n\\noverall_soundscape:\\nREPLACE ME — ambience and physical sound only: breath, footsteps, fabric, impacts, wind, room tone. Write only what is heard.\\n\\nnon_diegetic_music:\\nN/A\",\n      \"length\": 396,\n      \"steps\": 6,\n      \"seed\": 1003,\n      \"audio_context_length\": 0\n    }\n  ]\n}",
+   "run_name": "__chain_probe_studio_chain_864x480_1-3",
+   "generation_fingerprint": "",
+   "width": 864,
+   "height": 480,
+   "context_length": 22,
+   "encode_mode": "video",
+   "anchor_mode": "head",
+   "crop": "disabled",
+   "audio_mode": "generated_audio",
+   "audio_context_length": 0,
+   "default_duration_seconds": 15,
+   "default_steps": 6,
+   "base_seed": 1000,
+   "segment_crf": 18,
+   "video_blend_frames": 0,
+   "continuation_mode": "guide"
+  },
+  "class_type": "MiniMaxH3ChainPlan",
+  "_meta": {
+   "title": "Contex-Loop: Plan"
+  }
+ },
+ "81": {
+  "inputs": {
+   "plan": [
+    "80",
+    0
+   ]
+  },
+  "class_type": "MiniMaxH3ChainScenePromptEditor",
+  "_meta": {
+   "title": "Contex-Loop: Scene Prompt Editor"
+  }
+ },
+ "82": {
+  "inputs": {
+   "start_clip": 1,
+   "scene_range": "",
+   "plan": [
+    "81",
+    0
+   ]
+  },
+  "class_type": "MiniMaxH3ChainLoopStart",
+  "_meta": {
+   "title": "Contex-Loop: Loop Start"
+  }
+ },
+ "83": {
+  "inputs": {
+   "align_audio_reference": false,
+   "state": [
+    "82",
+    1
+   ]
+  },
+  "class_type": "MiniMaxH3ChainCurrent",
+  "_meta": {
+   "title": "Contex-Loop: Current Shot"
+  }
+ },
+ "85": {
+  "inputs": {
+   "state": [
+    "83",
+    0
+   ],
+   "conditioning": [
+    "h3lfSref",
+    0
+   ],
+   "vae": [
+    "11",
+    0
+   ],
+   "latent": [
+    "h3lfSref",
+    1
+   ],
+   "audio_vae": [
+    "8",
+    0
+   ]
+  },
+  "class_type": "MiniMaxH3ChainContext",
+  "_meta": {
+   "title": "Contex-Loop: Loop Context"
+  }
+ },
+ "86": {
+  "inputs": {
+   "model": [
+    "59",
+    0
+   ],
+   "conditioning": [
+    "85",
+    0
+   ]
+  },
+  "class_type": "BasicGuider",
+  "_meta": {
+   "title": "Contex-Loop: Guider"
+  }
+ },
+ "87": {
+  "inputs": {
+   "scheduler": "simple",
+   "steps": [
+    "83",
+    7
+   ],
+   "denoise": 1,
+   "model": [
+    "59",
+    0
+   ]
+  },
+  "class_type": "BasicScheduler",
+  "_meta": {
+   "title": "Contex-Loop: Scheduler"
+  }
+ },
+ "88": {
+  "inputs": {
+   "noise_seed": [
+    "83",
+    5
+   ]
+  },
+  "class_type": "RandomNoise",
+  "_meta": {
+   "title": "Contex-Loop: Noise"
+  }
+ },
+ "89": {
+  "inputs": {
+   "sampler_name": "euler"
+  },
+  "class_type": "KSamplerSelect",
+  "_meta": {
+   "title": "Contex-Loop: Sampler Select"
+  }
+ },
+ "90": {
+  "inputs": {
+   "noise": [
+    "88",
+    0
+   ],
+   "guider": [
+    "86",
+    0
+   ],
+   "sampler": [
+    "89",
+    0
+   ],
+   "sigmas": [
+    "87",
+    0
+   ],
+   "latent_image": [
+    "85",
+    3
+   ]
+  },
+  "class_type": "SamplerCustomAdvanced",
+  "_meta": {
+   "title": "Contex-Loop: Sampler"
+  }
+ },
+ "91": {
+  "inputs": {
+   "samples": [
+    "90",
+    0
+   ],
+   "vae": [
+    "11",
+    0
+   ]
+  },
+  "class_type": "VAEDecode",
+  "_meta": {
+   "title": "Contex-Loop: VAE Decode"
+  }
+ },
+ "92": {
+  "inputs": {
+   "samples": [
+    "90",
+    0
+   ],
+   "vae": [
+    "8",
+    0
+   ]
+  },
+  "class_type": "VAEDecodeAudio",
+  "_meta": {
+   "title": "Contex-Loop: VAE Decode Audio"
+  }
+ },
+ "93": {
+  "inputs": {
+   "trim_frames": [
+    "85",
+    1
+   ],
+   "fps": 24,
+   "match_tail": true,
+   "retain_overlap_frames": 0,
+   "images": [
+    "91",
+    0
+   ],
+   "audio": [
+    "92",
+    0
+   ]
+  },
+  "class_type": "MiniMaxH3LoopTrim",
+  "_meta": {
+   "title": "Contex-Loop: Loop Trim"
+  }
+ },
+ "94": {
+  "inputs": {
+   "state": [
+    "83",
+    0
+   ],
+   "images": [
+    "93",
+    0
+   ],
+   "sampled_latent": [
+    "90",
+    0
+   ],
+   "audio": [
+    "93",
+    1
+   ],
+   "images_with_overlap": [
+    "93",
+    2
+   ]
+  },
+  "class_type": "MiniMaxH3ChainSegmentSave",
+  "_meta": {
+   "title": "Contex-Loop: Segment Save"
+  }
+ },
+ "95": {
+  "inputs": {
+   "enabled": false,
+   "play_notification_sound": false,
+   "auto_continue_timeout_minutes": 0,
+   "unload_models_while_waiting": false,
+   "assemble_partial_on_stop": true,
+   "partial_audio_source": "checkpointed",
+   "state": [
+    "83",
+    0
+   ],
+   "segment": [
+    "94",
+    0
+   ],
+   "audio": [
+    "93",
+    1
+   ]
+  },
+  "class_type": "MiniMaxH3ChainReview",
+  "_meta": {
+   "title": "Contex-Loop: Review Gate"
+  }
+ },
+ "96": {
+  "inputs": {
+   "flow": [
+    "82",
+    0
+   ],
+   "state": [
+    "83",
+    0
+   ],
+   "images": [
+    "93",
+    0
+   ],
+   "sampled_latent": [
+    "90",
+    0
+   ],
+   "segment": [
+    "95",
+    0
+   ]
+  },
+  "class_type": "MiniMaxH3ChainLoopEnd",
+  "_meta": {
+   "title": "Contex-Loop: Loop End"
+  }
+ },
+ "97": {
+  "inputs": {
+   "audio_source": "generated",
+   "filename": "__chain_probe_studio_chain_864x480_1-3",
+   "audio_bitrate": 256,
+   "copy_to_output": true,
+   "output_subfolder": "",
+   "manifest": [
+    "96",
+    0
+   ]
+  },
+  "class_type": "MiniMaxH3ChainAssemble",
+  "_meta": {
+   "title": "Contex-Loop: Assemble"
+  }
+ },
+ "98": {
+  "class_type": "LTX_lora_loader",
+  "_meta": {
+   "title": "MysticXXX LoRA (0.5)"
+  },
+  "inputs": {
+   "mode": "minimax",
+   "stack_data": "[{\"on\": true, \"lora\": \"MysticXXX_MMH3-V4.safetensors\", \"str\": 0.5, \"v\": 1, \"a\": 1, \"t\": 1}]",
+   "model": [
+    "66",
+    0
+   ]
+  }
+ },
+ "h3lfImg0": {
+  "class_type": "LoadImage",
+  "inputs": {
+   "image": "hero.png"
+  }
+ },
+ "h3lfRef0": {
+  "class_type": "MiniMaxH3TaggedPictureReference",
+  "inputs": {
+   "image": [
+    "h3lfImg0",
+    0
+   ],
+   "tag": "hero"
+  }
+ },
+ "h3lfSref": {
+  "class_type": "MiniMaxH3TaggedReferenceToVideo",
+  "inputs": {
+   "clip": [
+    "7",
+    0
+   ],
+   "vae": [
+    "11",
+    0
+   ],
+   "audio_vae": [
+    "8",
+    0
+   ],
+   "references": [
+    "h3lfRef0",
+    0
+   ],
+   "clip_index": [
+    "83",
+    1
+   ],
+   "clip_count": [
+    "83",
+    2
+   ],
+   "prompt": [
+    "83",
+    4
+   ],
+   "width": [
+    "83",
+    8
+   ],
+   "height": [
+    "83",
+    9
+   ],
+   "length": [
+    "83",
+    6
+   ],
+   "ref_image_size": "max",
+   "state": [
+    "83",
+    0
+   ],
+   "reference_policy": "strict",
+   "conditioning_backend": "native_ref2va"
+  }
+ }
+}

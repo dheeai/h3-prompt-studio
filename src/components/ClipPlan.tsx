@@ -1,14 +1,146 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useApp } from '../app/state'
-import type { Version } from '../lib/types'
+import { listLoraNames } from '../lib/comfy'
+import { planNeedsPerSceneLoraSplit, readBakedLoraStack, selectableStyleLoras } from '../lib/chain'
+import type { LoraStackEntry, Version } from '../lib/types'
 
 /** Stages whose output is a prompt — the only ones that count as "ready" for a clip. */
 const PROMPT_STAGES = new Set(['draft', 'revise', 'rebuild', 'freeform'])
 
+/** Some LoRA filenames are percent-encoded (`HMBreasts%20-%20...`) — decode
+ * only for DISPLAY. The value written into `stack_data` must stay whatever
+ * ComfyUI reported, byte-exact, or the box will not find the file. */
+function displayLoraName(name: string): string {
+  try {
+    return decodeURIComponent(name)
+  } catch {
+    return name
+  }
+}
+
+/**
+ * The style-stack editor for one plan clip — add/remove a LoRA, toggle it,
+ * adjust its strength. `stack` is `undefined` until this clip is customized,
+ * at which point it renders on whatever the bound Contex-Loop workflow's own
+ * `LTX_lora_loader.stack_data` already carries (`defaultStack`) — the
+ * no-op-until-edited contract `chain.ts`'s `buildChainGraph` keeps.
+ */
+function LoraStackEditor({
+  clipIndex,
+  stack,
+  defaultStack,
+  available,
+  allowExplicit,
+}: {
+  clipIndex: number
+  stack: LoraStackEntry[] | undefined
+  defaultStack: LoraStackEntry[]
+  available: string[]
+  allowExplicit: boolean
+}) {
+  const { setClipLoraStack } = useApp()
+  const customized = stack !== undefined
+  const effective = stack ?? defaultStack
+  const offered = selectableStyleLoras(available, { allowExplicit }).filter((name) => !effective.some((e) => e.lora === name))
+
+  const mutate = (next: LoraStackEntry[]) => setClipLoraStack(clipIndex, next)
+  const addLora = (name: string) => {
+    if (!name) return
+    mutate([...effective, { lora: name, strength: 0.5, on: true }])
+  }
+  const removeAt = (i: number) => mutate(effective.filter((_, idx) => idx !== i))
+  const toggleAt = (i: number) => mutate(effective.map((e, idx) => (idx === i ? { ...e, on: !e.on } : e)))
+  const setStrengthAt = (i: number, v: number) => mutate(effective.map((e, idx) => (idx === i ? { ...e, strength: v } : e)))
+
+  return (
+    <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--rule)' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+        <span className="lbl">Style LoRAs</span>
+        <span className="tok">{customized ? 'customized for this clip' : 'using the workflow\'s own default'}</span>
+        <div style={{ flexGrow: 1 }} />
+        {customized && (
+          <button className="btn sm ghost" onClick={() => setClipLoraStack(clipIndex, undefined)}>
+            reset to workflow default
+          </button>
+        )}
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginTop: 7 }}>
+        {effective.length === 0 && <span className="tok">no style LoRA — base model only</span>}
+        {effective.map((e, i) => (
+          <div key={`${e.lora}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button className={`chip${e.on ? ' on' : ' off'}`} style={{ padding: '2px 8px', fontSize: 10 }} onClick={() => toggleAt(i)}>
+              {e.on ? 'on' : 'off'}
+            </button>
+            <span
+              style={{ fontSize: 11, flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+              title={e.lora}
+            >
+              {displayLoraName(e.lora)}
+            </span>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={e.strength}
+              onChange={(ev) => setStrengthAt(i, Number(ev.target.value))}
+              style={{ width: 90 }}
+              aria-label={`${displayLoraName(e.lora)} strength`}
+            />
+            <span className="tok" style={{ width: 30, textAlign: 'right' }}>{e.strength.toFixed(2)}</span>
+            <button className="btn sm ghost" onClick={() => removeAt(i)}>remove</button>
+          </div>
+        ))}
+      </div>
+
+      {offered.length > 0 && (
+        <select
+          value=""
+          onChange={(ev) => addLora(ev.target.value)}
+          style={{ marginTop: 7, fontSize: 11, padding: '4px 7px' }}
+          aria-label="Add a style LoRA"
+        >
+          <option value="">＋ add a style LoRA…</option>
+          {offered.map((name) => (
+            <option key={name} value={name}>
+              {displayLoraName(name)}
+            </option>
+          ))}
+        </select>
+      )}
+      <div className="tok" style={{ marginTop: 6, lineHeight: 1.5 }}>
+        Strength runs 0–1, the range the workflow's own stack already uses. Applies only at build time, per scene — see
+        the render note below when clips in this plan disagree.
+      </div>
+    </div>
+  )
+}
+
 /** The clip plan a Break down pass produced, and one way in per clip. */
 export function ClipPlan() {
   const app = useApp()
-  const { breakdown, versions, streaming, clips, chainPlanPreview, renderChainPlan, rendering } = app
+  const { breakdown, versions, streaming, clips, chainPlanPreview, renderChainPlan, rendering, chainRecipe, endpoint } = app
+  const [loraNames, setLoraNames] = useState<string[]>([])
+  const [loraErr, setLoraErr] = useState<string | null>(null)
+  const [allowExplicit, setAllowExplicit] = useState(false)
+
+  // Fetched once per endpoint, shared by every clip's editor — an
+  // /object_info lookup, on the light_paths list, so it never forces a GPU
+  // backend switch and is safe alongside a render in flight.
+  useEffect(() => {
+    if (!endpoint) return
+    let live = true
+    listLoraNames(endpoint)
+      .then((names) => live && setLoraNames(names))
+      .catch((e) => live && setLoraErr(String((e as Error).message || e)))
+    return () => {
+      live = false
+    }
+  }, [endpoint])
+
+  const defaultStack = useMemo(() => readBakedLoraStack(chainRecipe?.graph ?? null), [chainRecipe])
+
   if (!breakdown) return null
 
   const latestFor = (clipIndex: number): Version | undefined =>
@@ -23,9 +155,15 @@ export function ClipPlan() {
 
   return (
     <div style={{ padding: '4px 26px 0' }}>
-      <div className="lbl" style={{ marginBottom: 7 }}>
-        Clip plan{breakdown.spine ? ` — ${breakdown.spine}` : ''}
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 7 }}>
+        <span className="lbl">Clip plan{breakdown.spine ? ` — ${breakdown.spine}` : ''}</span>
+        <div style={{ flexGrow: 1 }} />
+        <label className="tok" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
+          <input type="checkbox" checked={allowExplicit} onChange={(e) => setAllowExplicit(e.target.checked)} />
+          show explicit-content LoRAs
+        </label>
       </div>
+      {loraErr && <div className="tok" style={{ display: 'block', marginBottom: 7, color: 'var(--ox)' }}>{loraErr}</div>}
       {breakdown.clips.map((c) => {
         const ready = latestFor(c.index)
         const landed = renderedFor(c.index)
@@ -80,6 +218,13 @@ export function ClipPlan() {
                 {c.covers}
               </div>
             )}
+            <LoraStackEditor
+              clipIndex={c.index}
+              stack={c.loraStack}
+              defaultStack={defaultStack}
+              available={loraNames}
+              allowExplicit={allowExplicit}
+            />
           </div>
         )
       })}
@@ -102,12 +247,13 @@ export function ClipPlan() {
  */
 function ChainPlanSubmit() {
   const app = useApp()
-  const { chainPlanPreview, rendering, renderChainPlan } = app
+  const { chainPlanPreview, rendering, renderChainPlan, breakdown } = app
   const [busy, setBusy] = useState(false)
   if (!chainPlanPreview) return null
 
   const { clips, totalSeconds, issues, warnings } = chainPlanPreview
   const blocked = issues.length > 0 || !!rendering || busy
+  const splitting = planNeedsPerSceneLoraSplit((breakdown?.clips ?? []).map((c) => c.loraStack))
 
   const submitAll = async () => {
     setBusy(true)
@@ -157,9 +303,17 @@ function ChainPlanSubmit() {
         </div>
       )}
 
+      {splitting && (
+        <div className="alert warn" style={{ marginTop: 12 }}>
+          Clips in this plan disagree on their style LoRAs, so a single job cannot honour all of them — one ComfyUI job
+          samples every shot in it against the same style stack. This submits as {clips.length} sequential jobs instead,
+          one per scene, each resuming the last from its checkpoint — still one render at a time.
+        </div>
+      )}
+
       <div style={{ display: 'flex', gap: 9, marginTop: 12 }}>
         <button className="btn pri" disabled={blocked} onClick={() => void submitAll()}>
-          {rendering ? 'Rendering…' : `Submit all ${clips.length} as one chain`}
+          {rendering ? 'Rendering…' : splitting ? `Submit all ${clips.length} as ${clips.length} scene jobs` : `Submit all ${clips.length} as one chain`}
         </button>
       </div>
     </div>

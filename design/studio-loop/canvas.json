@@ -1,0 +1,38 @@
+{
+  "artboards": [
+    { "file": "Start.dc.html", "x": 0, "y": 0, "w": 1440, "h": 940, "title": "1 · What are you starting from?" },
+    { "file": "FromVideo.dc.html", "x": 1560, "y": 0, "w": 1440, "h": 940, "title": "2 · The video door, opened" },
+    { "file": "Main.dc.html", "x": 3120, "y": 0, "w": 1440, "h": 940, "title": "3 · The loop, mid-film" }
+  ],
+  "annotations": [
+    {
+      "id": "review-eye",
+      "x": 0,
+      "y": -300,
+      "w": 700,
+      "text": "UX REVIEW — what the eye actually hits, in order\n\n1. The big salmon 'Scene (Multi-shot)' block. A mode choice, demanded before you know anything.\n2. The empty 'Paste a scene, beat sheet, or script…' textarea.\n3. The centre panel explaining what a canonical prompt is.\n\nWhat the eye NEVER reaches:\n• 'Continue from an existing video · optional' — 11px, right-aligned, greyed, in the 4th panel. This is a whole way of using the product, and it was invisible. That is the reported complaint, and it is a layout fact, not a preference.\n• The red recipe blocker. The single thing preventing all work, rendered as the least prominent text on screen."
+    },
+    {
+      "id": "review-modes",
+      "x": 740,
+      "y": -300,
+      "w": 660,
+      "text": "WHY THE THREE MODES HAD TO GO\n\nScene / Clip / Prompt described OUTPUT SHAPES back when Long Media multiclip existed alongside chain. With Contex-Loop as the only path, every render is scene 1 of a chain — so the modes now differ in nothing the user cares about.\n\nWhat actually differs is the STARTING MATERIAL: an idea, a prompt you already have, or a video you already have. Reframing the fork that way does two things at once — it deletes a meaningless choice, and it gives video a door it never had.\n\n'Scene (Multi-shot)' survives as an option INSIDE the idea door ('plan the whole arc' vs 'just scene 1'), because how much to plan is a real question. It just was never a mode."
+    },
+    {
+      "id": "review-blockage",
+      "x": 1560,
+      "y": -300,
+      "w": 700,
+      "text": "REMOVING BLOCKAGE\n\nOld order: choose a mode → write a prompt → discover you cannot render.\n\nNew order: readiness is a band across the top, stated BEFORE you invest anything. Green when the workflow is loaded and the box is reachable; amber and specific when not. The workflow now ships with the app and binds itself, so for most sessions this band is simply green and silent.\n\nEvery number that used to be a surprise is now stated up front: what a scene costs in time, what it lands as after the join, and — on the video door — exactly what the finished file will contain."
+    },
+    {
+      "id": "review-film",
+      "x": 3120,
+      "y": -300,
+      "w": 700,
+      "text": "THE FILM IS THE POINT, SO IT IS THE PAGE\n\nBefore: the film lived in a bottom strip that said 'Generate a plan or render a prompt to start a clip rail', and the newest clip's card silently held the whole cumulative cut.\n\nNow: 'Your film' is the largest thing on screen with its own scene-ticked scrubber, the scenes it is made of sit beneath it as segments with their own lengths, and the right column holds only the single next action. The four numbered columns are gone — 01→04 implied a pipeline, but the real shape is a loop: start → write → render → watch → continue."
+    }
+  ],
+  "launch": { "view": "canvas" }
+}

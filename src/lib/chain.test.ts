@@ -3,10 +3,15 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { buildChainGraph, chainIssues, chainShotsForPlan, citeToTag, pickAssembledVideo, snapUp, ChainError, CHAIN_MIN_STEPS, CANONICAL_UNET, SINGULARITY_UNET } from './chain'
+import {
+  buildChainGraph, chainIssues, chainShotsForPlan, citeToTag, pickAssembledVideo, snapUp, ChainError,
+  CHAIN_MIN_STEPS, CANONICAL_UNET, CANONICAL_TURBO_LORA, SINGULARITY_UNET,
+  ACCELERATOR_LORA_RE, EXPLICIT_LORA_RE, selectableStyleLoras, serializeLoraStack, readBakedLoraStack,
+  loraStackKey, planNeedsPerSceneLoraSplit,
+} from './chain'
 import { padForOverlap } from './frames'
 import type { ChainPlate, ChainPlanClip, ChainShot } from './chain'
-import type { ComfyNode } from './types'
+import type { ComfyNode, LoraStackEntry } from './types'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const FIXTURES = join(HERE, '__fixtures__')
@@ -267,6 +272,100 @@ test('buildChainGraph conditions a plateless scene on the stock ref2va node, nev
   assert.deepStrictEqual(ctxNode!.inputs.latent, [stockId, 1])
 })
 
+// ── externalVideo — continue an existing video into scene 1 ──────────────────
+
+test('buildChainGraph wires LoadVideo -> MiniMaxH3ChainExternalVideo -> LoopStart.external_context when externalVideo is given', () => {
+  const workflow = loadFixture('contexloop_workflow.json')
+  const shots = [{ index: 1, prompt: 'A courtyard at dawn, empty and still.', frames: 124, seed: 1 }]
+  const built = buildChainGraph({
+    graph: workflow,
+    shots,
+    plates: [],
+    opts: { runName: 'r', width: 864, height: 480, steps: 6, externalVideo: { filename: 'dhee_src.mp4', prependOriginal: true } },
+  })
+
+  const loadVideo = Object.values(built.graph).find((n) => n.class_type === 'LoadVideo')
+  assert.ok(loadVideo, 'LoadVideo node is present')
+  assert.equal(loadVideo!.inputs.file, 'dhee_src.mp4')
+
+  const extVideo = Object.entries(built.graph).find(([, n]) => n.class_type === 'MiniMaxH3ChainExternalVideo')
+  assert.ok(extVideo, 'MiniMaxH3ChainExternalVideo node is present')
+  const [extVideoId, extVideoNode] = extVideo!
+  const loadVideoId = Object.entries(built.graph).find(([, n]) => n.class_type === 'LoadVideo')![0]
+  assert.deepStrictEqual(extVideoNode.inputs.source_video, [loadVideoId, 0])
+  assert.equal(extVideoNode.inputs.prepend_original, true)
+  assert.ok(!('source_frames' in extVideoNode.inputs), 'source_video and source_frames are never both connected')
+
+  const loopStart = Object.values(built.graph).find((n) => n.class_type === 'MiniMaxH3ChainLoopStart')
+  assert.ok(loopStart)
+  assert.deepStrictEqual(loopStart!.inputs.external_context, [extVideoId, 0])
+})
+
+test('buildChainGraph stamps prepend_original as passed, false included', () => {
+  const workflow = loadFixture('contexloop_workflow.json')
+  const shots = [{ index: 1, prompt: 'A courtyard at dawn.', frames: 124, seed: 1 }]
+  const built = buildChainGraph({
+    graph: workflow,
+    shots,
+    plates: [],
+    opts: { runName: 'r', width: 864, height: 480, steps: 6, externalVideo: { filename: 'clip1.mp4', prependOriginal: false } },
+  })
+  const extVideoNode = Object.values(built.graph).find((n) => n.class_type === 'MiniMaxH3ChainExternalVideo')
+  assert.equal(extVideoNode!.inputs.prepend_original, false)
+})
+
+test('buildChainGraph refuses externalVideo alongside a sceneRange that does not start at 1', () => {
+  const workflow = loadFixture('contexloop_workflow.json')
+  const shots = [{ index: 2, prompt: 'A courtyard at dawn.', frames: 124, seed: 1 }]
+  assert.throws(
+    () =>
+      buildChainGraph({
+        graph: workflow,
+        shots,
+        plates: [],
+        opts: {
+          runName: 'r', width: 864, height: 480, steps: 6, sceneRange: '2',
+          externalVideo: { filename: 'clip1.mp4', prependOriginal: true },
+        },
+      }),
+    ChainError,
+  )
+})
+
+test('buildChainGraph allows externalVideo with a sceneRange that starts at 1 (e.g. "1:3")', () => {
+  const workflow = loadFixture('contexloop_workflow.json')
+  const shots = [{ index: 1, prompt: 'A courtyard at dawn.', frames: 124, seed: 1 }]
+  const built = buildChainGraph({
+    graph: workflow,
+    shots,
+    plates: [],
+    opts: {
+      runName: 'r', width: 864, height: 480, steps: 6, sceneRange: '1:3',
+      externalVideo: { filename: 'clip1.mp4', prependOriginal: true },
+    },
+  })
+  const loopStart = Object.values(built.graph).find((n) => n.class_type === 'MiniMaxH3ChainLoopStart')
+  assert.deepStrictEqual(loopStart!.inputs.scene_range, '1:3')
+})
+
+test('buildChainGraph with no externalVideo leaves the golden graph byte-identical (no LoadVideo/ExternalVideo, no external_context)', () => {
+  const workflow = loadFixture('contexloop_workflow.json')
+  const golden = loadFixture('chain_golden.graph.json')
+  const result = buildChainGraph({
+    graph: workflow,
+    shots: scaffoldShots(),
+    plates: scaffoldPlates,
+    opts: { runName: GOLDEN_RUN_NAME, width: 864, height: 480, steps: 6, baseSeed: 1000 },
+  })
+  const classesUsed = new Set(Object.values(result.graph).map((n) => n.class_type))
+  assert.ok(!classesUsed.has('LoadVideo'))
+  assert.ok(!classesUsed.has('MiniMaxH3ChainExternalVideo'))
+  const loopStart = Object.values(result.graph).find((n) => n.class_type === 'MiniMaxH3ChainLoopStart')
+  assert.ok(!('external_context' in loopStart!.inputs))
+  // And the graph is still identical to the golden fixture, node for node.
+  assert.deepStrictEqual(new Set(Object.keys(result.graph)), new Set(Object.keys(golden)))
+})
+
 // ── padForOverlap / snapUp — the overlap tax and the frame-grid check ─────────
 
 test('snapUp never returns below 124, and only ever rounds UP onto the 17k+5 grid', () => {
@@ -402,4 +501,147 @@ test('chainShotsForPlan output feeds buildChainGraph for both a whole-plan submi
   assert.deepStrictEqual(redo[1], whole[1])
   const redoBuilt = buildChainGraph({ graph: workflow, shots: redo, plates, opts: { runName: 'plan_probe', width: 864, height: 480, steps: 6, sceneRange: '1' } })
   assert.equal(redoBuilt.graph['82'].inputs.scene_range, '1', 'a single-scene redo samples only the redone scene')
+})
+
+// ── style-stack LoRA selection (LTX_lora_loader.stack_data) ──────────────────
+
+test('serializeLoraStack matches the exact shape h3-shots\' own baked workflows use, byte-exact filenames included', () => {
+  const stack: LoraStackEntry[] = [
+    { lora: 'MysticXXX_MMH3-V4.safetensors', strength: 0.5, on: true },
+    { lora: 'HMBreasts%20-%20Breasts-Areoles%20-%20MinimaxH3%20-%20HMBreasts.safetensors', strength: 0.7, on: false },
+  ]
+  const json = serializeLoraStack(stack)
+  assert.deepStrictEqual(JSON.parse(json), [
+    { on: true, lora: 'MysticXXX_MMH3-V4.safetensors', str: 0.5, v: 1, a: 1, t: 1 },
+    { on: false, lora: 'HMBreasts%20-%20Breasts-Areoles%20-%20MinimaxH3%20-%20HMBreasts.safetensors', str: 0.7, v: 1, a: 1, t: 1 },
+  ])
+  // The %20-laden filename must survive round-trip without being decoded or re-encoded.
+  assert.ok(json.includes('HMBreasts%20-%20Breasts-Areoles%20-%20MinimaxH3%20-%20HMBreasts.safetensors'))
+})
+
+test('readBakedLoraStack reads back what serializeLoraStack wrote, round-trip', () => {
+  const stack: LoraStackEntry[] = [
+    { lora: 'MysticXXX_MMH3-V4.safetensors', strength: 0.5, on: true },
+    { lora: 'Torpedo%20Tits%20T2V%20-%20MinimaxH3.safetensors', strength: 1, on: false },
+  ]
+  const graph: Record<string, ComfyNode> = {
+    98: { class_type: 'LTX_lora_loader', inputs: { mode: 'minimax', stack_data: serializeLoraStack(stack), model: ['66', 0] } },
+  }
+  assert.deepStrictEqual(readBakedLoraStack(graph), stack)
+})
+
+test('readBakedLoraStack reads the shipped fixture\'s own default (MysticX @ 0.5, on)', () => {
+  const workflow = loadFixture('contexloop_workflow.json')
+  assert.deepStrictEqual(readBakedLoraStack(workflow), [{ lora: 'MysticXXX_MMH3-V4.safetensors', strength: 0.5, on: true }])
+})
+
+test('readBakedLoraStack never throws — no node, and malformed JSON, both read as empty', () => {
+  assert.deepStrictEqual(readBakedLoraStack(null), [])
+  assert.deepStrictEqual(readBakedLoraStack({}), [])
+  assert.deepStrictEqual(
+    readBakedLoraStack({ 98: { class_type: 'LTX_lora_loader', inputs: { stack_data: 'not json' } } }),
+    [],
+  )
+})
+
+test('ACCELERATOR_LORA_RE catches the canonical turbo LoRA and the fl2v/lightx2v family, never a style LoRA', () => {
+  assert.ok(ACCELERATOR_LORA_RE.test(CANONICAL_TURBO_LORA))
+  assert.ok(ACCELERATOR_LORA_RE.test('minimax_h3_fl2v_turbo_4step_v1.1_768p_comfyui_bf16.safetensors'))
+  assert.ok(ACCELERATOR_LORA_RE.test('lightx2v_T2V_14B_cfg_step_distill_v2_lora_rank16_bf16.safetensors'))
+  assert.ok(!ACCELERATOR_LORA_RE.test('MysticXXX_MMH3-V4.safetensors'))
+})
+
+test('EXPLICIT_LORA_RE catches exactly the four gated LoRAs, never an ordinary style LoRA', () => {
+  for (const name of [
+    'HMBreasts%20-%20Breasts-Areoles%20-%20MinimaxH3%20-%20HMBreasts.safetensors',
+    'HMPenis%20-%20Penis-Cock%20-%20MinimaxH3.safetensors',
+    'Torpedo%20Tits%20T2V%20-%20MinimaxH3.safetensors',
+    'Vagina%20v0.2%20T2V-I2V%20-%20MinimaxH3.safetensors',
+  ]) {
+    assert.ok(EXPLICIT_LORA_RE.test(name), `${name} should be gated`)
+  }
+  assert.ok(!EXPLICIT_LORA_RE.test('MysticXXX_MMH3-V4.safetensors'))
+})
+
+test('selectableStyleLoras excludes the accelerator family always, and the explicit four unless opted in', () => {
+  const all = [
+    'MysticXXX_MMH3-V4.safetensors',
+    CANONICAL_TURBO_LORA,
+    'minimax_h3_fl2v_turbo_4step_v1.1_768p_comfyui_bf16.safetensors',
+    'HMBreasts%20-%20Breasts-Areoles%20-%20MinimaxH3%20-%20HMBreasts.safetensors',
+    'PlagueKind-tiddies-realismslider.safetensors',
+  ]
+  assert.deepStrictEqual(selectableStyleLoras(all, { allowExplicit: false }), [
+    'MysticXXX_MMH3-V4.safetensors',
+    'PlagueKind-tiddies-realismslider.safetensors',
+  ])
+  assert.deepStrictEqual(selectableStyleLoras(all, { allowExplicit: true }), [
+    'MysticXXX_MMH3-V4.safetensors',
+    'HMBreasts%20-%20Breasts-Areoles%20-%20MinimaxH3%20-%20HMBreasts.safetensors',
+    'PlagueKind-tiddies-realismslider.safetensors',
+  ])
+})
+
+test('buildChainGraph leaves stack_data untouched when opts.loraStack is not given — the no-op-until-edited contract', () => {
+  const workflow = loadFixture('contexloop_workflow.json')
+  const shots = [{ index: 1, prompt: 'A courtyard at dawn.', frames: 124, seed: 1 }]
+  const built = buildChainGraph({ graph: workflow, shots, plates: [], opts: { runName: 'r', width: 864, height: 480, steps: 6 } })
+  const stackNode = Object.entries(built.graph).find(([, n]) => n.class_type === 'LTX_lora_loader')?.[1]
+  assert.equal(stackNode?.inputs.stack_data, '[{"on": true, "lora": "MysticXXX_MMH3-V4.safetensors", "str": 0.5, "v": 1, "a": 1, "t": 1}]')
+})
+
+test('buildChainGraph stamps opts.loraStack onto LTX_lora_loader.stack_data, replacing the workflow\'s own baked default', () => {
+  const workflow = loadFixture('contexloop_workflow.json')
+  const shots = [{ index: 1, prompt: 'A courtyard at dawn.', frames: 124, seed: 1 }]
+  const stack: LoraStackEntry[] = [{ lora: 'PlagueKind-tiddies-realismslider.safetensors', strength: 0.8, on: true }]
+  const built = buildChainGraph({ graph: workflow, shots, plates: [], opts: { runName: 'r', width: 864, height: 480, steps: 6, loraStack: stack } })
+  const stackNode = Object.entries(built.graph).find(([, n]) => n.class_type === 'LTX_lora_loader')?.[1]
+  assert.deepStrictEqual(readBakedLoraStack({ x: stackNode! }), stack)
+})
+
+test('buildChainGraph refuses an accelerator-family LoRA in the style stack, even if something upstream let it through', () => {
+  const workflow = loadFixture('contexloop_workflow.json')
+  const shots = [{ index: 1, prompt: 'A courtyard at dawn.', frames: 124, seed: 1 }]
+  assert.throws(
+    () =>
+      buildChainGraph({
+        graph: workflow, shots, plates: [],
+        opts: { runName: 'r', width: 864, height: 480, steps: 6, loraStack: [{ lora: CANONICAL_TURBO_LORA, strength: 1, on: true }] },
+      }),
+    ChainError,
+  )
+})
+
+test('buildChainGraph refuses a style-stack selection on a workflow with no LTX_lora_loader node', () => {
+  const workflow = loadFixture('contexloop_workflow.json') as Record<string, ComfyNode>
+  const stripped = Object.fromEntries(Object.entries(workflow).filter(([, n]) => n.class_type !== 'LTX_lora_loader'))
+  const shots = [{ index: 1, prompt: 'A courtyard at dawn.', frames: 124, seed: 1 }]
+  assert.throws(
+    () =>
+      buildChainGraph({
+        graph: stripped, shots, plates: [],
+        opts: { runName: 'r', width: 864, height: 480, steps: 6, loraStack: [{ lora: 'PlagueKind-tiddies-realismslider.safetensors', strength: 0.5, on: true }] },
+      }),
+    ChainError,
+  )
+})
+
+test('loraStackKey treats "unset" as its own value, distinct from an explicit empty or identical stack', () => {
+  const a: LoraStackEntry[] = [{ lora: 'MysticXXX_MMH3-V4.safetensors', strength: 0.5, on: true }]
+  const b: LoraStackEntry[] = [{ lora: 'MysticXXX_MMH3-V4.safetensors', strength: 0.5, on: true }]
+  assert.equal(loraStackKey(a), loraStackKey(b), 'two explicit stacks with identical content compare equal')
+  assert.notEqual(loraStackKey(undefined), loraStackKey(a), 'unset never compares equal to an explicit stack, even a matching one')
+  assert.notEqual(loraStackKey(undefined), loraStackKey([]), 'unset never compares equal to an explicit empty stack')
+})
+
+test('planNeedsPerSceneLoraSplit: false when every clip is unset, or every clip explicitly agrees; true the moment one differs', () => {
+  const a: LoraStackEntry[] = [{ lora: 'MysticXXX_MMH3-V4.safetensors', strength: 0.5, on: true }]
+  const b: LoraStackEntry[] = [{ lora: 'PlagueKind-tiddies-realismslider.safetensors', strength: 0.5, on: true }]
+
+  assert.equal(planNeedsPerSceneLoraSplit([undefined, undefined, undefined]), false, 'nobody customized anything')
+  assert.equal(planNeedsPerSceneLoraSplit([a, a, a]), false, 'every clip explicitly agrees')
+  assert.equal(planNeedsPerSceneLoraSplit([a]), false, 'a single-clip plan never needs to split')
+  assert.equal(planNeedsPerSceneLoraSplit([]), false)
+  assert.equal(planNeedsPerSceneLoraSplit([a, b, a]), true, 'one clip differs')
+  assert.equal(planNeedsPerSceneLoraSplit([undefined, a]), true, 'unset vs. customized still counts as differing')
 })

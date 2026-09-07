@@ -112,6 +112,23 @@ export interface FilmContext {
   clipIndex?: number
 }
 
+/**
+ * One entry of the Contex-Loop style-stack (`LTX_lora_loader.stack_data`) —
+ * the SELECTABLE LoRA slot, distinct from the accelerator LoRA stamped into
+ * `LoraLoaderBypassModelOnly` (`chain.ts`'s `CANONICAL_TURBO_LORA`), which is
+ * never user-editable. `lora` is the exact filename ComfyUI reported — some
+ * are percent-encoded (`HMBreasts%20-%20...`) — and must be carried byte-exact;
+ * never decoded or re-encoded, or the box will not find the file on disk.
+ */
+export interface LoraStackEntry {
+  lora: string
+  /** 0-1 — the range the workflow's own baked-in stack already uses (MysticX
+   * @ 0.5). Nothing in the node's schema documents a wider range accepting
+   * >1, so the studio's editor caps here. */
+  strength: number
+  on: boolean
+}
+
 /** One clip of a story broken down into several. */
 export interface BreakdownClip {
   index: number
@@ -124,6 +141,16 @@ export interface BreakdownClip {
   precedes: string
   /** What the next clip must open on. */
   follows: string
+  /**
+   * This clip's style-stack selection. Unset means "whatever the bound
+   * Contex-Loop workflow already carries baked into its own
+   * `LTX_lora_loader.stack_data`" — so an untouched clip renders exactly as
+   * before this existed. Set explicitly (including `[]`, "no style LoRA at
+   * all") the moment an operator edits it, and from then on THAT is what
+   * `chain.ts` stamps into the graph at build time, replacing whatever the
+   * workflow file carries.
+   */
+  loraStack?: LoraStackEntry[]
 }
 
 export interface Breakdown {
@@ -165,6 +192,16 @@ export interface Settings {
   seenBundled?: string[]
   onboarded: boolean
 
+  // ── the starting point ────────────────────────────────────────────────
+  /** Which of the three starting points ('idea' | 'prompt' | 'video') is
+   * selected — a sticky preference, unlike the draft itself. Migrated on
+   * load by `migrateEntryMode` (`lib/entry.ts`) so a profile carrying the
+   * pre-redesign 'story' door never lands on a value that no longer exists. */
+  studioMode?: 'idea' | 'prompt' | 'video'
+  /** Within the 'idea' door only: plan the whole arc first (the old "Scene
+   * (Multi-shot)" capability), rather than just scene 1. */
+  planFirst?: boolean
+
   // ── the render loop ───────────────────────────────────────────────────
   /** Which ComfyUI to render on. */
   comfyEndpointId?: string
@@ -173,6 +210,15 @@ export interface Settings {
   /** Which stored recipe is the Contex-Loop (chain) workflow — the studio's
    * only multi-clip render path — a user has both this and `recipeId`. */
   chainRecipeId?: string
+  /**
+   * Set once the app has auto-bound the shipped Contex-Loop recipe (see
+   * `fetchShippedChainRecipe`). Gates the attempt rather than `chainRecipeId`
+   * itself, so a deliberate later deletion of that recipe — which leaves
+   * `chainRecipeId` pointing at nothing — is never silently re-bound on the
+   * next reload. A fetch/parse failure leaves this unset, so it keeps retrying
+   * on later reloads rather than giving up forever on a transient miss.
+   */
+  chainRecipeAutoBound?: boolean
   /** UNET stamped onto every chain graph. Unset means `SINGULARITY_UNET` — the
    * model the 27-clip film of 2026-09-06 shipped on. Set it to override. */
   chainUnetName?: string
@@ -340,6 +386,22 @@ export type ClipState = 'queued' | 'rendering' | 'done' | 'failed'
 export interface ClipChainInfo {
   runName: string
   sceneIndex: number
+  /**
+   * Set when this scene's submit carried an external video as scene 1's
+   * predecessor (`ChainBuildOpts.externalVideo`). Contex-Loop's join still
+   * trims `CHAIN_CONTEXT_LENGTH` frames off this scene's front — but, unlike
+   * a continued CLIP, `buildChainGraph` has no compensation for it (nothing
+   * in `shots[0]` signals an external predecessor), so this scene genuinely
+   * DELIVERS fewer frames than authored rather than landing back at
+   * authored. Measured live 2026-09-07: a 56.928s source plus a 124f scene
+   * asked for landed at 61.167s (56.928 + 102/24), not 62.095s (an unpaid,
+   * untrimmed first clip) or 62.7s (a compensated continuation).
+   * `sceneAccounting`'s `padForOverlap` call reads this so the post-render
+   * display matches what actually rendered — see `padForOverlap`'s
+   * `firstHasPredecessor` for the formula and why it is a measured gap
+   * rather than a design choice.
+   */
+  continuesExternalVideo?: boolean
 }
 
 export interface Clip {
@@ -367,6 +429,11 @@ export interface Clip {
    */
   steps?: number
   promptId?: string
+  /** The style-stack this scene actually rendered with — recorded the same
+   * way `steps`/`seed` are, so a chain's card can say what rendered even
+   * after the plan clip it came from changes. Unset means the workflow's own
+   * baked default was used (see `BreakdownClip.loraStack`). */
+  loraStack?: LoraStackEntry[]
   /** Where the mp4 lives on the box. Resolved to a URL at render time. */
   output?: { filename: string; subfolder: string; type: string }
   /** Last frame, as a data URL, once pulled. */

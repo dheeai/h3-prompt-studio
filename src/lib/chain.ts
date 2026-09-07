@@ -1,7 +1,7 @@
 import { REF_CAPS, framesForSeconds } from './recipe'
 import { padForOverlap, snapUp } from './frames'
 import type { PaddedClip } from './frames'
-import type { ComfyNode } from './types'
+import type { ComfyNode, LoraStackEntry } from './types'
 
 /**
  * Submit a WHOLE RANGE of clips to ComfyUI as ONE MiniMax H3 Contex-Loop "chain"
@@ -59,6 +59,10 @@ const SAMPLER_ADV_CLASS = 'SamplerCustomAdvanced'
 const SAMPLER_SELECT_CLASS = 'KSamplerSelect'
 const LORA_BYPASS_CLASS = 'LoraLoaderBypassModelOnly'
 const LORA_MODEL_ONLY_CLASS = 'LoraLoaderModelOnly'
+/** The Contex-Loop pack's SELECTABLE LoRA stack — separate from the
+ * accelerator's `LoraLoaderBypassModelOnly` above, and never confused with it
+ * (see `LoraStackEntry`'s module comment in types.ts). */
+const LORA_STYLE_STACK_CLASS = 'LTX_lora_loader'
 const UNET_LOADER_CLASS = 'UNETLoader'
 const TAGGED_PICTURE_CLASS = 'MiniMaxH3TaggedPictureReference'
 const TAGGED_R2V_CLASS = 'MiniMaxH3TaggedReferenceToVideo'
@@ -67,6 +71,13 @@ const TAGGED_R2V_CLASS = 'MiniMaxH3TaggedReferenceToVideo'
  * pack. Used only when a chain has no plate to cite — see the module comment
  * beside its wiring below. */
 const STOCK_R2V_CLASS = 'MiniMaxH3ReferenceToVideo'
+/** Core ComfyUI video loader — its single required input is a COMBO of
+ * filenames already in the box's input folder (verified live 2026-09-07:
+ * `object_info` reports exactly `file`). Not the pack's own node. */
+const LOAD_VIDEO_CLASS = 'LoadVideo'
+/** Contex-Loop's own node for turning an uploaded/picked video into scene 1's
+ * predecessor — see `ChainBuildOpts.externalVideo`'s module comment. */
+const EXTERNAL_VIDEO_CLASS = 'MiniMaxH3ChainExternalVideo'
 
 /** Contex-Loop's context_length is an ENUM; anything else snaps DOWN silently. */
 export const CONTEXT_CHOICES = [1, 5, 22, 39, 56, 73] as const
@@ -183,6 +194,87 @@ function applyUnetOverride(g: Record<string, ComfyNode>, name: string): void {
   const k = byClass(g, UNET_LOADER_CLASS)
   if (!k) return
   g[k].inputs.unet_name = name
+}
+
+/**
+ * Every LoRA name matching this is an ACCELERATOR — distilled-step or
+ * turbo-family — never a style choice. Offering one of these in the
+ * selectable style stack invites the corrupted-render failure
+ * `CHAIN_MIN_STEPS` exists for (an accelerator LoRA sampled at the wrong step
+ * count), so this is checked both at the UI layer (`selectableStyleLoras`)
+ * and defensively at build time (`buildChainGraph` refuses one here even if
+ * something upstream let it through).
+ */
+export const ACCELERATOR_LORA_RE = /turbo|lightx2v/i
+
+/** Explicit-content style LoRAs — gated behind an opt-in toggle, off by
+ * default, same shape as h3-shots' `H3_NO_TORPEDO`/`H3_NO_VAGINA`/`H3_NO_PENIS`
+ * env gates (this is a browser app with no env vars, so the gate is a UI
+ * toggle instead). */
+export const EXPLICIT_LORA_RE = /HMBreasts|HMPenis|Torpedo|Vagina/i
+
+/** The style LoRAs worth offering in the picker: never an accelerator, and
+ * explicit-content ones only when the operator has opted in. */
+export function selectableStyleLoras(all: string[], opts: { allowExplicit: boolean }): string[] {
+  return all.filter((name) => !ACCELERATOR_LORA_RE.test(name) && (opts.allowExplicit || !EXPLICIT_LORA_RE.test(name)))
+}
+
+/** Serialize a style-stack selection into the exact `stack_data` shape the
+ * Contex-Loop pack's `LTX_lora_loader` parses — `str`/`v`/`a`/`t`, not
+ * `strength`, matching h3-shots' own baked workflows byte-for-byte so a
+ * filename with `%20` in it survives round-trip untouched. */
+export function serializeLoraStack(stack: LoraStackEntry[]): string {
+  return JSON.stringify(stack.map((e) => ({ on: e.on, lora: e.lora, str: e.strength, v: 1, a: 1, t: 1 })))
+}
+
+/** The inverse of `serializeLoraStack` — read back whatever a graph's
+ * `LTX_lora_loader.stack_data` already carries (the workflow file's OWN
+ * baked default, e.g. MysticX @ 0.5), so the studio can show and seed an
+ * edit from it rather than starting a customization from nothing. Never
+ * throws: a graph with no style-stack node, or malformed JSON, just reads as
+ * empty. */
+export function readBakedLoraStack(graph: Record<string, ComfyNode> | null | undefined): LoraStackEntry[] {
+  if (!graph) return []
+  const id = byClass(graph, LORA_STYLE_STACK_CLASS)
+  if (!id) return []
+  try {
+    const parsed = JSON.parse(String(graph[id].inputs.stack_data ?? '[]')) as Array<{ on?: unknown; lora?: unknown; str?: unknown }>
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .filter((e) => typeof e.lora === 'string')
+      .map((e) => ({ lora: e.lora as string, strength: typeof e.str === 'number' ? e.str : 0.5, on: e.on !== false }))
+  } catch {
+    return []
+  }
+}
+
+/**
+ * A stable comparison key for a plan clip's style-stack selection —
+ * `undefined` ("leave the workflow's own baked stack alone") is its OWN
+ * distinct value, never treated as equal to an explicit stack even one with
+ * identical content, because the two mean different things at build time
+ * (one stamps nothing, the other stamps exactly that array).
+ */
+export function loraStackKey(stack: LoraStackEntry[] | undefined): string {
+  if (stack === undefined) return '\0default'
+  return JSON.stringify(stack.map((e) => ({ on: e.on, lora: e.lora, str: e.strength })))
+}
+
+/**
+ * Whether a whole-plan chain submit can go out as ONE job, or must auto-split
+ * into one job per scene.
+ *
+ * One ComfyUI job builds ONE graph with ONE `LTX_lora_loader.stack_data` —
+ * every shot in that job samples against whatever this build stamped, so a
+ * whole-plan submit can only stay a single job when every plan clip wants the
+ * SAME style stack. The moment two clips differ, the only way to honour both
+ * is one job per scene (see the module comment on `renderChainPlan` in
+ * state.tsx for why that costs almost nothing extra).
+ */
+export function planNeedsPerSceneLoraSplit(stacks: ReadonlyArray<LoraStackEntry[] | undefined>): boolean {
+  if (stacks.length <= 1) return false
+  const first = loraStackKey(stacks[0])
+  return stacks.some((s) => loraStackKey(s) !== first)
 }
 
 /** `<Subject N>` or `<Picture N>` — the same labels recipe prompts use elsewhere. */
@@ -304,6 +396,31 @@ export interface ChainBuildOpts {
   loraName?: string
   loraStrength?: number
   unetName?: string
+  /**
+   * The style stack for THIS job. Unset leaves the workflow's own baked
+   * `LTX_lora_loader.stack_data` untouched — a clip that has never been
+   * customized renders exactly as before this existed (still MysticX @ 0.5
+   * on the shipped fixture). Set (including `[]`) to replace it, so a stale
+   * workflow file can never silently decide which style LoRAs render.
+   */
+  loraStack?: LoraStackEntry[]
+  /**
+   * Continue from an EXISTING video rather than starting a chain from
+   * nothing — wires `LoadVideo(filename) -> MiniMaxH3ChainExternalVideo(plan,
+   * source_video, prepend_original) -> LoopStart.external_context`.
+   *
+   * Only meaningful on a SCENE-1 submit: Contex-Loop's `_initial_state` only
+   * consults `external_context` when `range_start === 1` (`start_clip`
+   * defaulting to 1, or `scene_range` starting there) — any later scene
+   * ignores it silently, which would look like the option did nothing rather
+   * than fail loudly. So `buildChainGraph` throws `ChainError` instead of
+   * building a graph whose external video is a no-op.
+   *
+   * `prepend_original: true` (the node's own default) persists a normalized
+   * copy of the whole source video and places it before the generated scenes
+   * during assembly, audio included — false renders only the extension.
+   */
+  externalVideo?: { filename: string; prependOriginal: boolean }
 }
 
 export interface ChainReferenceUsage {
@@ -348,9 +465,20 @@ export function buildChainGraph(args: BuildChainArgs): BuildChainResult {
     loraName = CANONICAL_TURBO_LORA,
     loraStrength,
     unetName = CANONICAL_UNET,
+    loraStack,
+    externalVideo,
   } = opts
 
   if (!shots.length) throw new ChainError('No shots in this chain — nothing to submit.')
+  // `_initial_state` only reads `external_context` when the range starts at
+  // scene 1 — check before anything is mutated, not after, same contract as
+  // the steps/SLA guards below.
+  if (externalVideo && sceneRange && !/^1(:|$)/.test(sceneRange)) {
+    throw new ChainError(
+      `externalVideo can only continue a scene-1 submit — scene_range "${sceneRange}" does not start at 1, so ` +
+        'the imported video would be silently ignored.',
+    )
+  }
   if (steps < CHAIN_MIN_STEPS) {
     throw new ChainError(
       `${steps} steps is below the floor of ${CHAIN_MIN_STEPS} — the accelerator LoRA samples above its ` +
@@ -396,6 +524,14 @@ export function buildChainGraph(args: BuildChainArgs): BuildChainResult {
   pruneTo(g, asm as string)
   applyLoraOverride(g, loraName, loraStrength)
   applyUnetOverride(g, unetName)
+
+  if (loraStack !== undefined) {
+    const bad = loraStack.find((e) => ACCELERATOR_LORA_RE.test(e.lora))
+    if (bad) throw new ChainError(`Style-stack LoRA "${bad.lora}" is an accelerator LoRA — accelerators only belong in the turbo slot.`)
+    const stackNode = byClass(g, LORA_STYLE_STACK_CLASS)
+    if (!stackNode) throw new ChainError(`No ${LORA_STYLE_STACK_CLASS} node found — this workflow has nowhere to apply a style-stack selection.`)
+    g[stackNode].inputs.stack_data = serializeLoraStack(loraStack)
+  }
 
   // The demo branch's own image-to-video and sampler-select go; the chain's
   // sampler-select must NOT (they can be the same class), so `turbo` is
@@ -546,6 +682,21 @@ export function buildChainGraph(args: BuildChainArgs): BuildChainResult {
   g[trim as string].inputs.retain_overlap_frames = CHAIN_VIDEO_BLEND_FRAMES
   Object.assign(g[shift as string].inputs, { shift_video: CHAIN_SHIFT_VIDEO, shift_audio: CHAIN_SHIFT_AUDIO })
   if (sceneRange) g[loopStart as string].inputs.scene_range = sceneRange
+
+  if (externalVideo) {
+    g.h3lfLoadVideo = { class_type: LOAD_VIDEO_CLASS, inputs: { file: externalVideo.filename } }
+    g.h3lfExternalVideo = {
+      class_type: EXTERNAL_VIDEO_CLASS,
+      inputs: {
+        plan: [plan as string, 0],
+        source_fps: 24.0,
+        prepend_original: externalVideo.prependOriginal,
+        source_video: ['h3lfLoadVideo', 0],
+      },
+    }
+    g[loopStart as string].inputs.external_context = ['h3lfExternalVideo', 0]
+  }
+
   Object.assign(g[asm as string].inputs, {
     audio_source: 'generated',
     filename: runName,

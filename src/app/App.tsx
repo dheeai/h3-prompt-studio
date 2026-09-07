@@ -10,6 +10,7 @@ import { ConnectPanel } from '../components/ConnectPanel'
 import { SkillsPanel } from '../components/SkillsPanel'
 import { SettingsPanel } from '../components/SettingsPanel'
 import { PlatesPanel } from '../components/PlatesPanel'
+import { ExternalVideoPanel } from '../components/ExternalVideoPanel'
 import { RecipePanel } from '../components/RecipePanel'
 import { EndpointPanel } from '../components/RenderPanel'
 import { ClipPlayer, FilmStrip } from '../components/ClipDeck'
@@ -19,8 +20,9 @@ import { skillTokens } from '../lib/skills'
 import { estTokens, fmtTokens } from '../lib/tokens'
 import { wasSent } from '../lib/context'
 import { classifyInput, looksLikePrompt } from '../lib/lint'
-import { ENTRY_MODES, entryMode, entryStartCopy, entryWorkflow, shouldContinueStoryLoop, type EntryModeId } from '../lib/entry'
+import { ENTRY_MODES, authoringModeFor, entryMode, entryStartCopy, entryWorkflow, shouldContinueStoryLoop, type EntryModeId } from '../lib/entry'
 import { displayedStudioPass, runStatusText, studioActions, type StudioActionId } from '../lib/studio-workflow'
+import { ReadinessBand } from '../components/ReadinessBand'
 import type { StageId } from '../lib/types'
 
 /** Stages whose output is a prompt — the only things worth diffing together. */
@@ -49,9 +51,9 @@ function autosize(el: HTMLTextAreaElement | null) {
 
 export function App() {
   const app = useApp()
-  const { ready, skills, settings, providers, probes, story, versions, current, streaming, chat, film, error, failedReasoning, interruptedReasoning, continuation, context, studioMode: entryModeId } = app
+  const { ready, skills, settings, providers, probes, story, versions, current, streaming, chat, film, error, failedReasoning, interruptedReasoning, continuation, context, studioMode: entryModeId, planFirst } = app
   const { clips, rendering } = app
-  const [modal, setModal] = useState<'connect' | 'skills' | 'settings' | 'plates' | 'recipe' | 'endpoint' | null>(null)
+  const [modal, setModal] = useState<'connect' | 'skills' | 'settings' | 'plates' | 'recipe' | 'endpoint' | 'externalVideo' | null>(null)
   const [copied, setCopied] = useState(false)
   const [note, setNote] = useState('')
   const [editingSource, setEditingSource] = useState(false)
@@ -131,12 +133,12 @@ export function App() {
     const text = note.trim()
     if (!text || busy || !connected) return
     setNote('')
-    void app.run('freeform', text, { studioMode: entryModeId })
+    void app.run('freeform', text, { studioMode: authoringModeFor(entryModeId, planFirst) })
   }
 
   const startFromEntry = async () => {
     if (!story.trim() || busy || !connected) return
-    const workflow = entryWorkflow(entryModeId)
+    const workflow = entryWorkflow(entryModeId, planFirst)
     if (workflow === 'story-plan') {
       // Story's primary action deliberately stops at the clip plan. A
       // separate explicit action below starts the multi-call authoring loop.
@@ -186,7 +188,10 @@ export function App() {
   }
 
   const activeEntry = entryMode(entryModeId)
-  const visibleActions = useMemo(() => studioActions(entryModeId, !!app.breakdown), [entryModeId, app.breakdown])
+  const visibleActions = useMemo(
+    () => studioActions(authoringModeFor(entryModeId, planFirst), !!app.breakdown),
+    [entryModeId, planFirst, app.breakdown],
+  )
   const primaryAction = visibleActions[0]
 
   const generateSelectedPrompt = async () => {
@@ -351,6 +356,8 @@ export function App() {
         )}
       </header>
 
+      <ReadinessBand onOpenEndpoint={() => setModal('endpoint')} onOpenRecipe={() => setModal('recipe')} />
+
       <div className={`workspace-view ${workspace === 'studio' ? 'is-active' : 'is-hidden'}`} aria-hidden={workspace !== 'studio'}>
       <nav className="entry-tabs" role="tablist" aria-label="Choose how to start">
         <div className="entry-label">Start with</div>
@@ -363,7 +370,14 @@ export function App() {
             aria-selected={entryModeId === mode.id}
             aria-controls="studio-workspace"
             tabIndex={entryModeId === mode.id ? 0 : -1}
-            onClick={() => focusEntryTab(mode.id)}
+            onClick={() => {
+              focusEntryTab(mode.id)
+              // The video door used to be an 11px optional row inside the
+              // render panel — reachable in at most one click is the point of
+              // promoting it, so selecting the door opens the picker itself
+              // rather than just switching the source panel's copy.
+              if (mode.id === 'video') setModal('externalVideo')
+            }}
             onKeyDown={(e) => {
               if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
                 e.preventDefault()
@@ -375,10 +389,26 @@ export function App() {
               }
             }}
           >
-            <strong>{mode.label}</strong><span>{mode.description}</span>
+            <strong>{mode.label}</strong>
+            <span>
+              {mode.id === 'video' && app.externalVideo ? `continuing ${app.externalVideo.filename}` : mode.description}
+            </span>
           </button>
         ))}
       </nav>
+
+      {entryModeId === 'idea' && (
+        <div className="entry-plan-toggle">
+          <span className="lbl">How much to plan first</span>
+          <button className={`chip${!planFirst ? ' on' : ''}`} onClick={() => app.setPlanFirst(false)}>Just scene 1</button>
+          <button className={`chip${planFirst ? ' on' : ''}`} onClick={() => app.setPlanFirst(true)}>Plan the whole arc</button>
+          <span className="tok">
+            {planFirst
+              ? 'Planning up front writes every scene’s prompt before any render. You can still change your mind at scene 3.'
+              : 'Just this scene — you can still plan the whole arc later from the same source.'}
+          </span>
+        </div>
+      )}
 
       <div className="studio-reading">
         <span className="lbl">Reading</span>
@@ -398,10 +428,16 @@ export function App() {
         {context && <span className="tok studio-context">{fmtTokens(context.tokens)} est. · {loadedSkills.length} loaded · {wasSent(context.hash) ? 'cached' : 'not sent yet'}</span>}
       </div>
 
+      {/* The film is the point, so it comes first — see the module comment on
+          `FilmStrip`. Below it, the authoring workspace is where the NEXT
+          scene gets written; it stays the same tree whether or not a film
+          exists yet (`FilmStrip` renders nothing until a clip has). */}
+      <FilmStrip />
+
       <main className="studio-main" id="studio-workspace" role="tabpanel" aria-labelledby={`entry-${entryModeId}-tab`}>
         <section className="studio-source" aria-label="Source and clip plan">
           <div className="studio-panel-head">
-            <div className="studio-kicker">01 · SOURCE</div>
+            <div className="studio-kicker">SOURCE</div>
             <div className="studio-title-row"><h2>{activeEntry.title}</h2><span className="studio-kicker">{story.length.toLocaleString()} chars</span></div>
           </div>
           <div className="studio-source-editor">
@@ -412,7 +448,7 @@ export function App() {
             ) : (
               <textarea ref={storyRef} value={story} onChange={(e) => app.setStory(e.target.value)} placeholder={activeEntry.placeholder} rows={4} aria-label={activeEntry.title} />
             )}
-            <div className="studio-source-hint">{activeEntry.id === 'story' ? 'H3 will divide this into dramatic units, then keep continuity across the resulting prompts.' : activeEntry.id === 'prompt' ? 'Skills preserve your intent while repairing structure, timing, and model-specific weaknesses.' : 'One sentence is enough; the skills will supply shot logic and sound.'}</div>
+            <div className="studio-source-hint">{activeEntry.id === 'idea' && planFirst ? 'H3 will divide this into dramatic units, then keep continuity across the resulting prompts.' : activeEntry.id === 'prompt' ? 'Skills preserve your intent while repairing structure, timing, and model-specific weaknesses.' : activeEntry.id === 'video' ? 'One sentence is enough — H3 continues from the last moment of your footage.' : 'One sentence is enough; the skills will supply shot logic and sound.'}</div>
             <button className="studio-source-action" onClick={() => primaryAction && void runVisibleAction(primaryAction.id)} disabled={!story.trim() || busy || !connected}>
               <span>{busy && streaming ? runStatusText(streaming.stage, streaming.phase, streaming.continuations) : primaryAction?.label ?? activeEntry.action}</span><span className="tok">⌘ ↵</span>
             </button>
@@ -422,7 +458,7 @@ export function App() {
                   {action.label}
                 </button>
               ))}
-              <span className="tok">{entryModeId === 'story' ? 'Plan first, then author selected or all prompts.' : entryModeId === 'prompt' ? 'Both operations return one canonical prompt.' : 'The generated prompt becomes the current render payload.'}</span>
+              <span className="tok">{entryModeId === 'idea' && planFirst ? 'Plan first, then author selected or all prompts.' : entryModeId === 'prompt' ? 'Both operations return one canonical prompt.' : 'The generated prompt becomes the current render payload.'}</span>
             </div>
             {promptLoop && <div className="studio-loop-progress" role="status" aria-live="polite"><span>Prompt {promptLoop.index}/{promptLoop.total}</span><strong>Authoring</strong><span className="tok">Stop to leave the last successful prompt in place.</span></div>}
             {!story && <div className="studio-examples"><span className="tok">try</span>{EXAMPLES.map((ex) => <button key={ex.label} className="btn sm ghost" onClick={() => app.setStory(ex.text)}>{ex.label}</button>)}</div>}
@@ -446,17 +482,17 @@ export function App() {
               return <button className="studio-clip-row" key={c.index} aria-current={active} onClick={() => { if (v) app.selectVersion(v.id); app.setFilm({ role: c.role, spine: app.breakdown?.spine ?? '', precedes: c.precedes, follows: c.follows, covers: c.covers, title: c.title, clipIndex: c.index }) }}><span className="studio-clip-no">{String(c.index).padStart(2, '0')}</span><span className="studio-clip-copy"><strong>{c.title || `Clip ${c.index}`}</strong><span>{c.covers || c.role}</span></span><span className={`studio-clip-state ${v ? 'ready' : ''}`}>{v ? 'ready' : `${c.seconds}s`}</span></button>
             })}
             {!app.breakdown && clips.length === 0 && <div className="studio-empty-rail">Generate a plan or render a prompt to start a clip rail.</div>}
-            {!app.breakdown && clips.map((c) => <button className="studio-clip-row" key={c.id} aria-current={c.id === app.clip?.id} onClick={() => app.selectClip(c.id)}><span className="studio-clip-no">{String(c.index).padStart(2, '0')}</span><span className="studio-clip-copy"><strong>Clip {c.index}</strong><span>{c.film?.role || 'standalone'} · {c.state}</span></span><span className="studio-clip-state">{c.frames ? `${(c.frames / (c.fps || 24)).toFixed(1)}s` : 'draft'}</span></button>)}
+            {!app.breakdown && clips.map((c) => <button className="studio-clip-row" key={c.id} aria-current={c.id === app.clip?.id} onClick={() => app.selectClip(c.id)}><span className="studio-clip-no">{String(c.index).padStart(2, '0')}</span><span className="studio-clip-copy"><strong>{c.chain ? `Scene ${c.chain.sceneIndex}` : `Clip ${c.index}`}</strong><span>{c.film?.role || 'standalone'} · {c.state}</span></span><span className="studio-clip-state">{(app.sceneAccounting[c.id]?.delivered ?? c.frames) ? `${((app.sceneAccounting[c.id]?.delivered ?? c.frames!) / (c.fps || 24)).toFixed(1)}s` : 'draft'}</span></button>)}
           </div>
 
           {app.breakdown && <div className="studio-plan-details"><ClipPlan /></div>}
-          <div className="studio-source-clip"><ClipPlayer /></div>
+          <div className="studio-source-clip"><ClipPlayer onOpenPlates={() => setModal('plates')} /></div>
         </section>
 
         <section className="studio-prompt" aria-label="Current H3 prompt">
           <div className="studio-prompt-head">
             <div>
-              <div className="studio-kicker">02 · CANONICAL PROMPT</div>
+              <div className="studio-kicker">CANONICAL PROMPT</div>
               <div className="studio-title-row"><h2>{current && PROMPT_STAGES_UI.has(current.stage) ? STAGE_LABEL[current.stage] : 'Current H3 prompt'}</h2><span className="studio-pass-count">{current ? `v${versions.findIndex((v) => v.id === current.id) + 1}` : 'unrefined'}</span></div>
               <div className="studio-canonical"><span className="studio-canonical-dot" />Current prompt · this is what Copy, Lint, and Render use</div>
               <div className="studio-context-line">Context: {film.role === 'standalone' ? 'standalone clip' : `${film.role} · ${film.spine || 'film context'}`}{film.precedes ? ' + previous ending state' : ''}</div>
@@ -470,9 +506,9 @@ export function App() {
             <div>
               <div className="studio-kicker">WORKFLOW</div>
               <div className="studio-workflow-summary">
-                {entryModeId === 'story'
+                {entryModeId === 'idea' && planFirst
                   ? app.breakdown ? 'Plan ready · choose a prompt to author' : 'Source → clip plan'
-                  : entryModeId === 'prompt' ? 'Source → canonical replacement' : 'Idea → canonical prompt'}
+                  : entryModeId === 'prompt' ? 'Source → canonical replacement' : entryModeId === 'video' ? 'Footage → canonical prompt' : 'Idea → canonical prompt'}
               </div>
             </div>
             <div className="studio-workflow-note">
@@ -504,28 +540,34 @@ export function App() {
 
         <aside className="studio-side" aria-label="Refine and render">
           <section className="studio-chat">
-            <div className="studio-panel-head"><div className="studio-kicker">03 · REFINE</div><div className="studio-title-row"><h3>Direct with chat</h3><span className="studio-kicker">{loadedSkills.length} skills</span></div></div>
+            <div className="studio-panel-head"><div className="studio-kicker">REFINE</div><div className="studio-title-row"><h3>Direct with chat</h3><span className="studio-kicker">{loadedSkills.length} skills</span></div></div>
             <div className="studio-chat-feed" aria-live="polite"><p className="studio-chat-note">Every accepted refinement becomes the new current prompt. Old versions stay in history.</p>{chat.map((t, i) => <div className={`studio-message${t.role === 'user' ? ' user' : ''}`} key={i}><div className="studio-message-role">{t.role === 'user' ? 'You' : 'Studio'}</div><div className="studio-message-body">{t.role === 'user' ? t.text : <ProseDoc text={t.text} />}</div>{t.versionId && <div className="studio-change">✓ v{versions.findIndex((v) => v.id === t.versionId) + 1} is now current</div>}</div>)}{streaming?.stage === 'freeform' && <div className="studio-message"><div className="studio-message-role">Studio</div><ProseDoc text={streaming.text} streaming /></div>}</div>
             <div className="studio-chat-compose"><textarea ref={noteRef} value={note} onChange={(e) => setNote(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }} placeholder={connected ? 'Change the camera, action, dialogue, mood…' : 'Connect a model to refine'} rows={3} disabled={!connected || (!current && !pastedPrompt)} aria-label="Refinement instruction" /><div className="studio-compose-row"><span>Updates the current prompt</span><button className="studio-send" onClick={send} disabled={!note.trim() || busy || !connected || (!current && !pastedPrompt)}>{busy ? 'Working…' : 'Refine prompt'}</button></div></div>
           </section>
           <section className="studio-render">
-            <div className="studio-kicker">04 · RENDER</div><div className="studio-title-row"><h3>ComfyUI</h3><button className="studio-render-ready" onClick={() => setModal('endpoint')}><span className={`studio-health-dot ${app.comfyProbes[app.endpoint?.id ?? '']?.state === 'ok' ? 'ok' : 'idle'}`} />{app.endpoint?.label || 'configure endpoint'}</button></div>
-            <div className="studio-render-grid"><div><span>Recipe</span><strong>{app.recipe?.name || 'not configured'}</strong></div><div><span>References</span><strong>{app.plates.length} of 9 bound</strong></div><div><span>Geometry</span><strong>{app.recipe ? `${settings.width ?? app.recipe.defaults.width} × ${settings.height ?? app.recipe.defaults.height}` : '—'}</strong></div><div><span>Seed</span><strong>{settings.seed} · {settings.lockSeed ? 'locked' : 'random'}</strong></div></div>
-            {activeContinuation?.state === 'ready' && <div className="studio-context-receipt"><strong>Next prompt is ready</strong>Direct → Draft used the ending frame, current prompt, film context, and bound references. Refine it in chat or render it as the next clip.</div>}
-            {activeContinuation?.state === 'failed' && <div className="studio-context-receipt studio-context-failed"><strong>Continuation stopped during {activeContinuation.phase}</strong>{error || 'The previous successful prompt and rendered clip remain available.'}</div>}
-            {activeContinuation?.state === 'cancelled' && <div className="studio-context-receipt studio-context-failed"><strong>Continuation cancelled during {activeContinuation.phase}</strong>The previous prompt and rendered clip remain available; no new clip was rendered.</div>}
+            <div className="studio-kicker">RENDER</div><div className="studio-title-row"><h3>ComfyUI</h3><button className="studio-render-ready" onClick={() => setModal('endpoint')}><span className={`studio-health-dot ${app.comfyProbes[app.endpoint?.id ?? '']?.state === 'ok' ? 'ok' : 'idle'}`} />{app.endpoint?.label || 'configure endpoint'}</button></div>
+            <div className="studio-render-grid"><div><span>Contex-Loop recipe</span><strong>{app.chainRecipe?.name || 'not configured'}</strong></div><div><span>References</span><strong>{app.plates.length} of 9 bound</strong></div><div><span>Geometry</span><strong>{app.chainRecipe ? `${settings.width ?? app.chainRecipe.defaults.width} × ${settings.height ?? app.chainRecipe.defaults.height}` : '—'}</strong></div><div><span>Seed</span><strong>{settings.seed} · {settings.lockSeed ? 'locked' : 'random'}</strong></div></div>
+            {activeContinuation?.state === 'ready' && <div className="studio-context-receipt"><strong>Next prompt is ready</strong>Direct → Draft used the ending frame, current prompt, film context, and bound references. Refine it in chat or render it as the next scene.</div>}
+            {activeContinuation?.state === 'failed' && <div className="studio-context-receipt studio-context-failed"><strong>Continuation stopped during {activeContinuation.phase}</strong>{error || 'The previous successful prompt and rendered scene remain available.'}</div>}
+            {activeContinuation?.state === 'cancelled' && <div className="studio-context-receipt studio-context-failed"><strong>Continuation cancelled during {activeContinuation.phase}</strong>The previous prompt and rendered scene remain available; no new scene was rendered.</div>}
             {activeContinuation?.state === 'running' && <div className="studio-context-receipt" role="status" aria-live="polite"><strong>Continuing · {activeContinuation.phase}</strong>{activeContinuation.phase === 'frame' ? 'Taking the ending frame as Picture 1.' : activeContinuation.phase === 'handoff' ? 'Writing the next clip hand-off.' : activeContinuation.phase === 'direct' ? 'Directing the next clip.' : 'Drafting the next canonical prompt.'}</div>}
-            <button className="studio-render-current" disabled={busy || !!rendering || activeContinuation?.state === 'running' || app.blockers.length > 0} onClick={() => void app.render()}><span>{rendering ? `Rendering clip ${rendering.index}…` : 'Render current prompt'}</span><span>current →</span></button>
-            {app.clip?.state === 'done' && <button className="studio-continue" disabled={busy || !!rendering || activeContinuation?.state === 'running' || activeContinuation?.state === 'ready'} onClick={() => void app.continueFrom(app.clip!.id)}><span>Continue from this clip</span><span>{activeContinuation?.state === 'running' ? `${activeContinuation.phase}…` : activeContinuation?.state === 'ready' ? 'next prompt ready' : 'next prompt →'}</span></button>}
-            {app.blockers.length > 0 && <div className="studio-render-issues">{app.blockers.map((b) => <div key={b}>{b}</div>)}</div>}
+            {app.isFreshChainStart && (
+              <button className="btn sm ghost" style={{ width: '100%', justifyContent: 'space-between', marginBottom: 4 }} onClick={() => setModal('externalVideo')}>
+                <span>{app.externalVideo ? `Continuing from ${app.externalVideo.filename}` : 'Continue from an existing video'}</span>
+                <span className="tok">{app.externalVideo ? (app.externalVideo.prependOriginal ? 'prepend on' : 'prepend off') : 'optional'}</span>
+              </button>
+            )}
+            {/* No fork: every render is scene 1 of a chain, so this is the studio's ONE render action — see `renderChain`. */}
+            <button className="studio-render-current" disabled={busy || !!rendering || activeContinuation?.state === 'running' || app.chainBlockers.length > 0} onClick={() => void app.renderChain()}><span>{rendering ? `Rendering scene ${rendering.chain?.sceneIndex ?? rendering.index}…` : `Render scene ${(app.clip?.chain?.sceneIndex ?? 0) + 1}`}</span><span>current →</span></button>
+            {app.clip?.state === 'done' && <button className="studio-continue" disabled={busy || !!rendering || activeContinuation?.state === 'running' || activeContinuation?.state === 'ready'} onClick={() => void app.continueFrom(app.clip!.id)}><span>Continue from this scene</span><span>{activeContinuation?.state === 'running' ? `${activeContinuation.phase}…` : activeContinuation?.state === 'ready' ? 'next prompt ready' : 'next prompt →'}</span></button>}
+            {app.gpuBusy === 'render' && !rendering && <div className="studio-render-issues">A render is in flight on the box — authoring and starting another render are held until it finishes.</div>}
+            {app.chainBlockers.length > 0 && <div className="studio-render-issues">{app.chainBlockers.map((b) => <div key={b}>{b}</div>)}</div>}
             {app.warnings.length > 0 && <div className="studio-render-warnings">{app.warnings.map((w) => <div key={w}>{w}</div>)}</div>}
             <div className="studio-render-links"><button className="btn sm ghost" onClick={() => setModal('recipe')}>Recipe & geometry</button><button className="btn sm ghost" onClick={() => setModal('plates')}>Bind plates</button></div>
           </section>
           <section className="studio-audit"><Marginalia /></section>
         </aside>
       </main>
-
-      <FilmStrip />
       </div>
 
       <div className={`workspace-view ${workspace === 'agent' ? 'is-active' : 'is-hidden'}`} aria-hidden={workspace !== 'agent'}>
@@ -538,6 +580,7 @@ export function App() {
       {modal === 'plates' && <PlatesPanel onClose={() => setModal(null)} />}
       {modal === 'recipe' && <RecipePanel onClose={() => setModal(null)} />}
       {modal === 'endpoint' && <EndpointPanel onClose={() => setModal(null)} />}
+      {modal === 'externalVideo' && <ExternalVideoPanel onClose={() => setModal(null)} onOpenPlates={() => setModal('plates')} />}
     </div>
   )
 }

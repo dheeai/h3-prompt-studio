@@ -1,0 +1,200 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+    :root {
+      --paper: oklch(0.973 0.008 88); --panel: oklch(0.946 0.011 85); --sunk: oklch(0.930 0.013 85);
+      --ink: oklch(0.255 0.016 62); --ink2: oklch(0.435 0.014 62); --ink3: oklch(0.605 0.013 65);
+      --rule: oklch(0.875 0.012 78); --rule2: oklch(0.815 0.016 78);
+      --ox: oklch(0.470 0.135 27); --ox-soft: oklch(0.930 0.030 30);
+      --grn: oklch(0.480 0.090 152); --grn-soft: oklch(0.930 0.045 152);
+      --amb: oklch(0.560 0.110 72); --amb-soft: oklch(0.940 0.050 80);
+      --serif: 'Instrument Serif', Georgia, serif;
+      --sans: 'IBM Plex Sans', system-ui, sans-serif;
+      --mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: var(--sans); font-size: 12px; background: var(--paper); color: var(--ink); -webkit-font-smoothing: antialiased; }
+    a { color: var(--ox); text-decoration: none; } a:hover { color: var(--ink); text-decoration: underline; }
+    .lbl { font-size: 9.5px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink3); }
+    .tok { font-family: var(--mono); font-size: 10.5px; color: var(--ink3); font-variant-numeric: tabular-nums; }
+    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 13px; font-size: 11.5px; font-weight: 500; border: 1px solid var(--rule2); background: var(--paper); color: var(--ink2); border-radius: 0; }
+    .btn.pri { background: var(--ox); border-color: var(--ox); color: oklch(0.98 0.01 30); font-weight: 600; }
+    .btn.sm { padding: 3px 9px; font-size: 10.5px; }
+    .chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; font-size: 11px; border: 1px solid var(--rule2); background: var(--paper); color: var(--ink2); border-radius: 0; white-space: nowrap; }
+    .chip.on { border-color: var(--ox); background: var(--ox-soft); color: var(--ox); font-weight: 500; }
+    .dot { width: 5px; height: 5px; border-radius: 50%; flex: 0 0 auto; }
+    .dot.ok { background: var(--grn); } .dot.err { background: var(--ox); } .dot.idle { background: var(--rule2); }
+  </style>
+</helmet>
+
+<div style="width: 1440px; height: 940px; display: flex; flex-direction: column; background: var(--paper); overflow: hidden">
+
+  <div style="flex: 0 0 auto; padding: 13px 30px 11px; border-bottom: 1px solid var(--rule2); display: flex; align-items: baseline; gap: 15px">
+    <span style="font-family: var(--serif); font-size: 21px; letter-spacing: -0.01em">H3 Prompt Studio</span>
+    <span class="tok">courtyard_dawn &#183; 4 scenes</span>
+    <span style="flex-grow: 1"></span>
+    <span class="tok">Singularity &#183; 1216&#215;672 &#183; 6 steps</span>
+    <span style="display: inline-flex; align-items: center; gap: 6px" class="tok"><span class="dot ok"></span>ready</span>
+    <span class="tok">Settings</span>
+  </div>
+
+  <div style="flex: 1 1 auto; display: flex; min-height: 0">
+
+    <!-- THE FILM IS THE SPINE OF THE SCREEN, not a bottom strip -->
+    <div style="flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; border-right: 1px solid var(--rule); overflow: hidden">
+
+      <div style="flex: 0 0 auto; padding: 20px 26px 0">
+        <div style="display: flex; align-items: baseline; gap: 12px; margin-bottom: 10px">
+          <span style="font-family: var(--serif); font-size: 20px">Your film</span>
+          <span class="tok" style="color: var(--ink2)">4 scenes &#183; 889f &#183; 37.0s</span>
+          <span style="flex-grow: 1"></span>
+          <span class="btn sm">Download</span>
+        </div>
+
+        <div style="border: 1px solid var(--rule2); background: var(--sunk); height: 404px; display: flex; align-items: center; justify-content: center; position: relative">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="oklch(0.605 0.013 65)" stroke-width="1.1">
+            <circle cx="12" cy="12" r="9.2"></circle><path d="M10.2 8.6 L15.6 12 L10.2 15.4 Z" stroke-linejoin="round"></path>
+          </svg>
+          <div style="position: absolute; left: 12px; bottom: 12px">
+            <span class="chip" style="background: var(--paper); font-size: 10px; padding: 3px 8px">all four scenes, joined</span>
+          </div>
+        </div>
+
+        <div style="margin-top: 10px">
+          <div style="display: flex; height: 6px; border: 1px solid var(--rule2); border-bottom: none">
+            <div style="width: 27.3%; background: var(--ox-soft); border-right: 1px solid var(--rule2)"></div>
+            <div style="width: 15.3%; background: var(--ox-soft); border-right: 1px solid var(--rule2)"></div>
+            <div style="width: 42.1%; background: var(--ox-soft); border-right: 1px solid var(--rule2)"></div>
+            <div style="width: 15.3%; background: var(--ox-soft)"></div>
+          </div>
+          <div style="display: flex; border-top: 1px solid var(--rule2)">
+            <div style="width: 27.3%; padding-top: 5px" class="tok">1 &#183; 0.0s</div>
+            <div style="width: 15.3%; padding-top: 5px" class="tok">2 &#183; 10.1s</div>
+            <div style="width: 42.1%; padding-top: 5px" class="tok">3 &#183; 15.8s</div>
+            <div style="width: 15.3%; padding-top: 5px" class="tok">4 &#183; 31.4s</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- the scenes it is made of -->
+      <div style="flex: 1 1 auto; min-height: 0; margin-top: 18px; border-top: 1px solid var(--rule); background: var(--panel); padding: 15px 26px 0">
+        <div style="display: flex; align-items: baseline; gap: 12px; margin-bottom: 11px">
+          <span class="lbl">Scenes</span>
+          <span class="tok">sampled once, then reused from disk &#183; each sets its own length</span>
+        </div>
+
+        <div style="display: flex; align-items: stretch; gap: 0">
+          <div style="width: 146px; border: 1px solid var(--rule2); background: var(--paper)">
+            <div style="height: 70px; background: var(--sunk); border-bottom: 1px solid var(--rule2)"></div>
+            <div style="padding: 7px 9px 9px">
+              <div style="display: flex; align-items: center; gap: 5px; margin-bottom: 3px"><span class="dot ok"></span><span class="lbl" style="color: var(--ink2)">1</span></div>
+              <div class="tok" style="line-height: 1.5">10.1s &#183; 243f</div>
+            </div>
+          </div>
+          <div style="width: 40px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px">
+            <div style="width: 100%; height: 1px; background: var(--rule2)"></div><span class="tok" style="font-size: 9px">22f</span>
+          </div>
+          <div style="width: 146px; border: 1px solid var(--rule2); background: var(--paper)">
+            <div style="height: 70px; background: var(--sunk); border-bottom: 1px solid var(--rule2)"></div>
+            <div style="padding: 7px 9px 9px">
+              <div style="display: flex; align-items: center; gap: 5px; margin-bottom: 3px"><span class="dot ok"></span><span class="lbl" style="color: var(--ink2)">2</span></div>
+              <div class="tok" style="line-height: 1.5">5.7s &#183; 136f</div>
+            </div>
+          </div>
+          <div style="width: 40px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px">
+            <div style="width: 100%; height: 1px; background: var(--rule2)"></div><span class="tok" style="font-size: 9px">22f</span>
+          </div>
+          <div style="width: 146px; border: 1px solid var(--rule2); background: var(--paper)">
+            <div style="height: 70px; background: var(--sunk); border-bottom: 1px solid var(--rule2)"></div>
+            <div style="padding: 7px 9px 9px">
+              <div style="display: flex; align-items: center; gap: 5px; margin-bottom: 3px"><span class="dot ok"></span><span class="lbl" style="color: var(--ink2)">3</span></div>
+              <div class="tok" style="line-height: 1.5">15.6s &#183; 374f</div>
+            </div>
+          </div>
+          <div style="width: 40px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px">
+            <div style="width: 100%; height: 1px; background: var(--rule2)"></div><span class="tok" style="font-size: 9px">22f</span>
+          </div>
+          <div style="width: 146px; border: 1px solid var(--ox); background: var(--paper)">
+            <div style="height: 70px; background: var(--sunk); border-bottom: 1px solid var(--ox)"></div>
+            <div style="padding: 7px 9px 9px">
+              <div style="display: flex; align-items: center; gap: 5px; margin-bottom: 3px"><span class="dot ok"></span><span class="lbl" style="color: var(--ox)">4</span></div>
+              <div class="tok" style="line-height: 1.5">5.7s &#183; 136f</div>
+            </div>
+          </div>
+          <div style="width: 40px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px">
+            <div style="width: 100%; border-top: 1px dashed var(--rule2)"></div><span class="tok" style="font-size: 9px">22f</span>
+          </div>
+          <div style="width: 146px; border: 1px dashed var(--rule2)">
+            <div style="height: 70px; border-bottom: 1px dashed var(--rule2); display: flex; align-items: center; justify-content: center">
+              <span class="tok" style="font-size: 19px; color: var(--rule2)">+</span>
+            </div>
+            <div style="padding: 7px 9px 9px">
+              <div style="display: flex; align-items: center; gap: 5px; margin-bottom: 3px"><span class="dot idle"></span><span class="lbl">5</span></div>
+              <div class="tok" style="line-height: 1.5">writing&#8230;</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ONE column for the only thing you do next -->
+    <div style="flex: 0 0 428px; display: flex; flex-direction: column; overflow: hidden">
+      <div style="flex: 1 1 auto; min-height: 0; padding: 20px 24px; overflow: hidden">
+
+        <div style="font-family: var(--serif); font-size: 20px; margin-bottom: 3px">What happens next</div>
+        <div class="tok" style="margin-bottom: 13px">scene 5, continuing scene 4</div>
+
+        <div style="border: 1px solid var(--rule2); background: var(--paper); padding: 11px 12px; min-height: 78px; line-height: 1.7; color: var(--ink)">
+          She sets the lamp down on the step and turns back toward the gate, listening.
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 8px; margin-top: 11px">
+          <span class="btn sm">Write the prompt</span>
+          <span class="tok">or edit it yourself</span>
+        </div>
+
+        <div style="border-top: 1px solid var(--rule); margin-top: 20px; padding-top: 16px">
+          <div class="lbl" style="margin-bottom: 9px">Scene 5</div>
+          <div style="display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 11px">
+            <span class="chip" style="font-size: 10.5px; padding: 3px 8px">5.2s</span>
+            <span class="chip on" style="font-size: 10.5px; padding: 3px 8px">5.9s</span>
+            <span class="chip" style="font-size: 10.5px; padding: 3px 8px">8.0s</span>
+            <span class="chip" style="font-size: 10.5px; padding: 3px 8px">10.1s</span>
+            <span class="chip" style="font-size: 10.5px; padding: 3px 8px">15.1s</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; padding: 7px 0; border-top: 1px solid var(--rule)">
+            <span style="color: var(--ink2)">Lands as</span><span class="tok" style="color: var(--ink)">6.4s &#183; the join costs 22f</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; padding: 7px 0; border-top: 1px solid var(--rule)">
+            <span style="color: var(--ink2)">Style</span><span class="tok">MysticX 0.5</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; padding: 7px 0; border-top: 1px solid var(--rule)">
+            <span style="color: var(--ink2)">Costs</span><span class="tok">one scene &#183; ~1:35</span>
+          </div>
+        </div>
+
+        <div style="margin-top: 20px; border-left: 2px solid var(--rule2); padding: 2px 0 2px 12px">
+          <div class="tok" style="line-height: 1.7">
+            Scenes 1&#8211;4 come back from disk untouched. Only scene 5 is sampled &#8212; the film is rebuilt around it.
+          </div>
+        </div>
+      </div>
+
+      <div style="flex: 0 0 auto; padding: 0 24px 22px">
+        <span class="btn pri" style="width: 100%; justify-content: center; padding: 11px 13px">Render scene 5</span>
+      </div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

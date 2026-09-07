@@ -1,0 +1,180 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+    :root {
+      --paper: oklch(0.973 0.008 88); --panel: oklch(0.946 0.011 85); --sunk: oklch(0.930 0.013 85);
+      --ink: oklch(0.255 0.016 62); --ink2: oklch(0.435 0.014 62); --ink3: oklch(0.605 0.013 65);
+      --rule: oklch(0.875 0.012 78); --rule2: oklch(0.815 0.016 78);
+      --ox: oklch(0.470 0.135 27); --ox-soft: oklch(0.930 0.030 30);
+      --grn: oklch(0.480 0.090 152); --grn-soft: oklch(0.930 0.045 152);
+      --amb: oklch(0.560 0.110 72); --amb-soft: oklch(0.940 0.050 80);
+      --serif: 'Instrument Serif', Georgia, serif;
+      --sans: 'IBM Plex Sans', system-ui, sans-serif;
+      --mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: var(--sans); font-size: 12px; background: var(--paper); color: var(--ink); -webkit-font-smoothing: antialiased; }
+    a { color: var(--ox); text-decoration: none; } a:hover { color: var(--ink); text-decoration: underline; }
+    .lbl { font-size: 9.5px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink3); }
+    .tok { font-family: var(--mono); font-size: 10.5px; color: var(--ink3); font-variant-numeric: tabular-nums; }
+    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 13px; font-size: 11.5px; font-weight: 500; border: 1px solid var(--rule2); background: var(--paper); color: var(--ink2); border-radius: 0; }
+    .btn.pri { background: var(--ox); border-color: var(--ox); color: oklch(0.98 0.01 30); font-weight: 600; }
+    .chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; font-size: 11px; border: 1px solid var(--rule2); background: var(--paper); color: var(--ink2); border-radius: 0; white-space: nowrap; }
+    .chip.on { border-color: var(--ox); background: var(--ox-soft); color: var(--ox); font-weight: 500; }
+    .dot { width: 5px; height: 5px; border-radius: 50%; flex: 0 0 auto; }
+    .dot.ok { background: var(--grn); } .dot.warn { background: var(--amb); } .dot.idle { background: var(--rule2); }
+    .door { border: 1px solid var(--rule2); background: var(--paper); padding: 20px 21px 21px; display: flex; flex-direction: column; }
+    .door.on { border-color: var(--ox); background: var(--ox-soft); }
+  </style>
+</helmet>
+
+<div style="width: 1440px; height: 940px; display: flex; flex-direction: column; background: var(--paper); overflow: hidden">
+
+  <div style="flex: 0 0 auto; padding: 13px 30px 11px; border-bottom: 1px solid var(--rule2); display: flex; align-items: baseline; gap: 15px">
+    <span style="font-family: var(--serif); font-size: 21px; letter-spacing: -0.01em">H3 Prompt Studio</span>
+    <span style="flex-grow: 1"></span>
+    <span class="tok">thinkingcap-27b</span>
+    <span style="display: inline-flex; align-items: center; gap: 6px" class="tok"><span class="dot ok"></span>ready to render</span>
+    <span class="tok">Skills 3</span>
+    <span class="tok">Settings</span>
+  </div>
+
+  <!-- READY LINE: the one thing that used to be discovered last, said first -->
+  <div style="flex: 0 0 auto; padding: 9px 30px; background: var(--grn-soft); border-bottom: 1px solid var(--rule); display: flex; align-items: center; gap: 10px">
+    <span class="dot ok"></span>
+    <span style="color: var(--ink)">Everything needed is in place</span>
+    <span class="tok">Contex-Loop workflow loaded &#183; 5090.tail3cca41.ts.net reachable &#183; 1216&#215;672 &#183; 6 steps</span>
+    <span style="flex-grow: 1"></span>
+    <span class="tok">change</span>
+  </div>
+
+  <div style="flex: 1 1 auto; min-height: 0; padding: 34px 30px; overflow: hidden">
+
+    <div style="max-width: 1180px">
+      <div style="font-family: var(--serif); font-size: 30px; line-height: 1.15; letter-spacing: -0.01em">What are you starting from?</div>
+      <div style="color: var(--ink2); line-height: 1.7; margin-top: 8px; max-width: 720px">
+        Every render is scene 1 of a chain, and the film grows one scene at a time. The only thing that differs at the
+        start is what you already have in hand.
+      </div>
+    </div>
+
+    <!-- THE THREE DOORS — equal weight, video included -->
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin-top: 26px">
+
+      <div class="door on">
+        <div style="display: flex; align-items: center; gap: 9px; margin-bottom: 11px">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="oklch(0.470 0.135 27)" stroke-width="1.3" stroke-linecap="round">
+            <path d="M12 3v2M12 19v2M5 12H3M21 12h-2M6.5 6.5 5 5M17.5 6.5 19 5M6.5 17.5 5 19M17.5 17.5 19 19"></path>
+            <circle cx="12" cy="12" r="4"></circle>
+          </svg>
+          <span style="font-family: var(--serif); font-size: 20px; color: var(--ox)">An idea</span>
+        </div>
+        <div style="color: var(--ink2); line-height: 1.7; min-height: 76px">
+          A sentence, a beat, a situation. The studio writes the H3 prompt for scene 1 against your loaded craft
+          documents, then you watch it and say what happens next.
+        </div>
+        <div style="border-top: 1px solid var(--rule2); margin-top: 15px; padding-top: 13px">
+          <div class="lbl" style="margin-bottom: 7px">How much to plan first</div>
+          <div style="display: flex; gap: 6px">
+            <span class="chip on">Just scene 1</span>
+            <span class="chip">Plan the whole arc</span>
+          </div>
+          <div class="tok" style="margin-top: 8px; line-height: 1.6">
+            Planning up front writes every scene&#8217;s prompt before any render. You can still change your mind at
+            scene 3.
+          </div>
+        </div>
+      </div>
+
+      <div class="door">
+        <div style="display: flex; align-items: center; gap: 9px; margin-bottom: 11px">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="oklch(0.435 0.014 62)" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6 3h9l4 4v14H6z"></path><path d="M15 3v4h4"></path><path d="M9 12h7M9 15.5h7M9 19h4"></path>
+          </svg>
+          <span style="font-family: var(--serif); font-size: 20px">A prompt</span>
+        </div>
+        <div style="color: var(--ink2); line-height: 1.7; min-height: 76px">
+          You already have an H3 prompt, rough or finished. It gets audited against the craft documents and corrected
+          &#8212; nothing else is touched &#8212; then rendered as scene 1.
+        </div>
+        <div style="border-top: 1px solid var(--rule2); margin-top: 15px; padding-top: 13px">
+          <div class="tok" style="line-height: 1.6">
+            Paste it and the six H3 fields are read out of it. Missing fields are named before you render, not after.
+          </div>
+        </div>
+      </div>
+
+      <!-- the door that used to be an 11px optional label -->
+      <div class="door">
+        <div style="display: flex; align-items: center; gap: 9px; margin-bottom: 11px">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="oklch(0.435 0.014 62)" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="6" width="13" height="12"></rect><path d="M16 10.5 21 8v8l-5-2.5z"></path>
+          </svg>
+          <span style="font-family: var(--serif); font-size: 20px">A video</span>
+        </div>
+        <div style="color: var(--ink2); line-height: 1.7; min-height: 76px">
+          Footage you already have &#8212; yours or an earlier render. H3 continues from its last moment. Length costs
+          nothing: only the tail is read, and the original is never regenerated.
+        </div>
+        <div style="border-top: 1px solid var(--rule2); margin-top: 15px; padding-top: 13px">
+          <div style="display: flex; gap: 6px">
+            <span class="chip">Choose a file</span>
+            <span class="chip">Pick from the box</span>
+          </div>
+          <div class="tok" style="margin-top: 8px; line-height: 1.6">
+            A 20-second clip and a 20-minute one take the same time to continue.
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- one composer, whichever door you came through -->
+    <div style="margin-top: 30px; border-top: 1px solid var(--rule); padding-top: 22px; display: flex; gap: 26px">
+      <div style="flex: 1 1 auto; min-width: 0">
+        <div style="display: flex; align-items: baseline; gap: 11px; margin-bottom: 8px">
+          <span class="lbl">Scene 1</span>
+          <span class="tok">what happens</span>
+        </div>
+        <div style="border: 1px solid var(--rule2); background: var(--paper); padding: 12px 13px; height: 108px; color: var(--ink3); line-height: 1.7">
+          A woman crosses an empty stone courtyard before dawn, a brass lamp held low at her side&#8230;
+        </div>
+        <div style="display: flex; align-items: center; gap: 9px; margin-top: 12px">
+          <span class="btn pri" style="padding: 9px 17px">Write the prompt</span>
+          <span class="tok">then you review it before anything renders</span>
+        </div>
+      </div>
+
+      <div style="flex: 0 0 372px">
+        <div class="lbl" style="margin-bottom: 8px">This scene</div>
+        <div style="border: 1px solid var(--rule2); background: var(--panel)">
+          <div style="display: flex; justify-content: space-between; padding: 9px 12px; border-bottom: 1px solid var(--rule)">
+            <span style="color: var(--ink2)">Length</span><span class="tok" style="color: var(--ink)">10.1s &#183; 243f</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; padding: 9px 12px; border-bottom: 1px solid var(--rule)">
+            <span style="color: var(--ink2)">Render time</span><span class="tok" style="color: var(--ink)">~2:40</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; padding: 9px 12px">
+            <span style="color: var(--ink2)">References</span><span class="tok">none &#183; optional</span>
+          </div>
+        </div>
+        <div class="tok" style="margin-top: 10px; line-height: 1.7">
+          Without a reference image H3 re-invents faces each scene, because only 22 frames carry across a join. Add one
+          if a person has to stay the same person.
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

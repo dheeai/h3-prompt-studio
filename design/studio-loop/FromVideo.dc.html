@@ -1,0 +1,145 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+    :root {
+      --paper: oklch(0.973 0.008 88); --panel: oklch(0.946 0.011 85); --sunk: oklch(0.930 0.013 85);
+      --ink: oklch(0.255 0.016 62); --ink2: oklch(0.435 0.014 62); --ink3: oklch(0.605 0.013 65);
+      --rule: oklch(0.875 0.012 78); --rule2: oklch(0.815 0.016 78);
+      --ox: oklch(0.470 0.135 27); --ox-soft: oklch(0.930 0.030 30);
+      --grn: oklch(0.480 0.090 152); --grn-soft: oklch(0.930 0.045 152);
+      --amb: oklch(0.560 0.110 72); --amb-soft: oklch(0.940 0.050 80);
+      --serif: 'Instrument Serif', Georgia, serif;
+      --sans: 'IBM Plex Sans', system-ui, sans-serif;
+      --mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: var(--sans); font-size: 12px; background: var(--paper); color: var(--ink); -webkit-font-smoothing: antialiased; }
+    a { color: var(--ox); text-decoration: none; } a:hover { color: var(--ink); text-decoration: underline; }
+    .lbl { font-size: 9.5px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink3); }
+    .tok { font-family: var(--mono); font-size: 10.5px; color: var(--ink3); font-variant-numeric: tabular-nums; }
+    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 13px; font-size: 11.5px; font-weight: 500; border: 1px solid var(--rule2); background: var(--paper); color: var(--ink2); border-radius: 0; }
+    .btn.pri { background: var(--ox); border-color: var(--ox); color: oklch(0.98 0.01 30); font-weight: 600; }
+    .btn.sm { padding: 3px 9px; font-size: 10.5px; }
+    .chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; font-size: 11px; border: 1px solid var(--rule2); background: var(--paper); color: var(--ink2); border-radius: 0; white-space: nowrap; }
+    .chip.on { border-color: var(--ox); background: var(--ox-soft); color: var(--ox); font-weight: 500; }
+    .dot { width: 5px; height: 5px; border-radius: 50%; flex: 0 0 auto; }
+    .dot.ok { background: var(--grn); } .dot.warn { background: var(--amb); } .dot.idle { background: var(--rule2); }
+  </style>
+</helmet>
+
+<div style="width: 1440px; height: 940px; display: flex; flex-direction: column; background: var(--paper); overflow: hidden">
+
+  <div style="flex: 0 0 auto; padding: 13px 30px 11px; border-bottom: 1px solid var(--rule2); display: flex; align-items: baseline; gap: 15px">
+    <span style="font-family: var(--serif); font-size: 21px; letter-spacing: -0.01em">H3 Prompt Studio</span>
+    <span class="tok">starting from a video</span>
+    <span style="flex-grow: 1"></span>
+    <span style="display: inline-flex; align-items: center; gap: 6px" class="tok"><span class="dot ok"></span>ready to render</span>
+  </div>
+
+  <div style="flex: 1 1 auto; min-height: 0; padding: 30px; display: flex; gap: 28px; overflow: hidden">
+
+    <!-- what you brought -->
+    <div style="flex: 1 1 auto; min-width: 0">
+      <div style="font-family: var(--serif); font-size: 26px; letter-spacing: -0.01em">Continue from your footage</div>
+      <div style="color: var(--ink2); line-height: 1.7; margin-top: 7px; max-width: 640px">
+        H3 reads the last moment of what you give it and carries the motion forward. The footage itself is never
+        regenerated, so its length costs nothing.
+      </div>
+
+      <div style="display: flex; gap: 9px; margin-top: 20px">
+        <span class="chip on">dhee_src.mp4</span>
+        <span class="chip">Choose another file</span>
+        <span class="chip">Pick from the box</span>
+      </div>
+
+      <div style="margin-top: 18px; border: 1px solid var(--rule2); background: var(--sunk); height: 330px; display: flex; align-items: center; justify-content: center; position: relative">
+        <svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="oklch(0.605 0.013 65)" stroke-width="1.1">
+          <circle cx="12" cy="12" r="9.2"></circle><path d="M10.2 8.6 L15.6 12 L10.2 15.4 Z" stroke-linejoin="round"></path>
+        </svg>
+        <div style="position: absolute; right: 12px; bottom: 12px">
+          <span class="chip" style="background: var(--paper); font-size: 10px; padding: 3px 8px">the last second becomes scene 1&#8217;s starting point</span>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 26px; margin-top: 15px">
+        <div><div class="lbl" style="margin-bottom: 4px">Your file</div><div class="tok" style="line-height: 1.6">960&#215;544 &#183; 24fps<br>1365f &#183; 56.9s</div></div>
+        <div><div class="lbl" style="margin-bottom: 4px">Rendered at</div><div class="tok" style="line-height: 1.6">1216&#215;672 &#183; 24fps<br>your footage is resized to match</div></div>
+        <div><div class="lbl" style="margin-bottom: 4px">Audio</div><div class="tok" style="line-height: 1.6">kept<br>stereo, carried through</div></div>
+      </div>
+    </div>
+
+    <!-- the one real decision, and what it produces -->
+    <div style="flex: 0 0 466px; display: flex; flex-direction: column">
+
+      <div class="lbl" style="margin-bottom: 9px">What the film should contain</div>
+
+      <div style="border: 1px solid var(--ox); background: var(--ox-soft); padding: 14px 15px">
+        <div style="display: flex; align-items: baseline; gap: 8px">
+          <span class="dot ok" style="margin-bottom: 2px"></span>
+          <div>
+            <div style="color: var(--ox); font-weight: 500">Your video, then the new scenes</div>
+            <div style="color: var(--ink2); line-height: 1.65; margin-top: 3px">
+              All 56.9s of your footage, followed by everything you add. One file, rebuilt each time a scene lands.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="border: 1px solid var(--rule2); background: var(--paper); padding: 14px 15px; margin-top: 10px">
+        <div style="display: flex; align-items: baseline; gap: 8px">
+          <span class="dot idle" style="margin-bottom: 2px"></span>
+          <div>
+            <div style="color: var(--ink)">Only the new scenes</div>
+            <div style="color: var(--ink2); line-height: 1.65; margin-top: 3px">
+              Your footage is used as the starting point but left out of the result &#8212; useful when you already
+              have the original elsewhere.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="border-top: 1px solid var(--rule); margin-top: 20px; padding-top: 17px">
+        <div class="lbl" style="margin-bottom: 9px">What you will get</div>
+        <div style="border: 1px solid var(--rule2); background: var(--panel)">
+          <div style="display: flex; justify-content: space-between; padding: 9px 12px; border-bottom: 1px solid var(--rule)">
+            <span style="color: var(--ink2)">Your footage</span><span class="tok" style="color: var(--ink)">56.9s</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; padding: 9px 12px; border-bottom: 1px solid var(--rule)">
+            <span style="color: var(--ink2)">Scene 1, asked for</span><span class="tok">5.2s</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; padding: 9px 12px; border-bottom: 1px solid var(--rule)">
+            <span style="color: var(--ink2)">Scene 1, lands as</span><span class="tok" style="color: var(--ink)">4.3s</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; padding: 9px 12px; background: var(--paper)">
+            <span style="color: var(--ink); font-weight: 500">Film</span><span class="tok" style="color: var(--ox)">61.2s</span>
+          </div>
+        </div>
+        <div class="tok" style="margin-top: 9px; line-height: 1.7">
+          The join overlaps the last 22 frames of your footage, so a scene lands slightly shorter than you ask for.
+        </div>
+      </div>
+
+      <div style="flex-grow: 1"></div>
+
+      <div class="lbl" style="margin: 18px 0 8px">Scene 1</div>
+      <div style="border: 1px solid var(--rule2); background: var(--paper); padding: 11px 12px; min-height: 62px; color: var(--ink3); line-height: 1.7">
+        What happens after your footage ends&#8230;
+      </div>
+      <div style="margin-top: 13px">
+        <span class="btn pri" style="width: 100%; justify-content: center; padding: 10px 13px">Write the prompt</span>
+      </div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

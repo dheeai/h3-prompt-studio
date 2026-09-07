@@ -1,5 +1,5 @@
 import { estTokens } from './tokens'
-import type { EntryModeId } from './entry'
+import type { AuthoringMode } from './entry'
 import type { Selection, Skill } from './types'
 
 /**
@@ -63,7 +63,7 @@ internally consistent; do not place explanations, critique, or markdown fences
 inside the canonical prompt. Return any explanation or change log in its own
 response block required by the current stage template.`
 
-const H3_STUDIO_MODE_RULES: Record<EntryModeId, string> = {
+const H3_STUDIO_MODE_RULES: Record<AuthoringMode, string> = {
   story: `SCENE (MULTI-SHOT) MODE — NARRATIVE PLANNER AND CLIP AUTHOR
 
 Treat the source as a film brief, story, beat sheet, or script whose narrative
@@ -141,7 +141,7 @@ and do not expand one idea into a multi-clip plan unless asked.` ,
  * rules and the mode process follow it. Internal stages provide their own
  * mechanics in the user message; the visible Studio surface stays bounded.
  */
-export function buildStudioSystemPrompt(context: BuiltContext | null | undefined, mode: EntryModeId): string {
+export function buildStudioSystemPrompt(context: BuiltContext | null | undefined, mode: AuthoringMode): string {
   const selectedSkills = context?.text || '# No selected H3 skills\n\nNo skill files are currently selected.'
   return `${selectedSkills}\n\n${H3_STUDIO_SYSTEM_RULES}\n\n${H3_STUDIO_MODE_RULES[mode]}`
 }
@@ -163,7 +163,7 @@ meaningful operation and report its result briefly.`
  * `BuiltContext.text` already contains the complete selected skill files in a
  * stable order, so it is inserted as one contiguous block exactly once.
  */
-export function buildH3SystemPrompt(context: BuiltContext | null | undefined, surface: H3PromptSurface, studioMode?: EntryModeId): string {
+export function buildH3SystemPrompt(context: BuiltContext | null | undefined, surface: H3PromptSurface, studioMode?: AuthoringMode): string {
   if (surface === 'studio' && studioMode) return buildStudioSystemPrompt(context, studioMode)
   const selectedSkills = context?.text || '# No selected H3 skills\n\nNo skill files are currently selected.'
   const rules = surface === 'agent' ? H3_AGENT_SYSTEM_RULES : H3_STUDIO_SYSTEM_RULES

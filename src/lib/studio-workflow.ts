@@ -1,4 +1,4 @@
-import type { EntryModeId } from './entry'
+import type { AuthoringMode } from './entry'
 import type { StageId } from './types'
 
 // The parser lives with the stage templates, but re-exporting the strict
@@ -21,7 +21,7 @@ export interface StudioAction {
  * multiple internal quality passes, but those passes are not user-facing
  * stages. Prompt edits are deliberately single calls.
  */
-export function studioActions(mode: EntryModeId, hasPlan: boolean): StudioAction[] {
+export function studioActions(mode: AuthoringMode, hasPlan: boolean): StudioAction[] {
   if (mode === 'story') {
     return hasPlan
       ? [

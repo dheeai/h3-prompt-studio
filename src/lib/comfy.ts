@@ -104,6 +104,28 @@ export async function uploadImage(
   return { filename: j.name, subfolder: j.subfolder ?? '' }
 }
 
+/**
+ * Upload one video and return the name the graph must cite.
+ *
+ * Same endpoint ComfyUI's own image upload uses (`/upload/image`) — measured
+ * live on this box 2026-09-07 that it takes a video's bytes unchanged (the
+ * handler is content-agnostic) and the file is immediately selectable by
+ * `LoadVideo`/`VHS_LoadVideo`'s own folder-listing combo. Named separately
+ * from `uploadImage`, and takes the `File` directly rather than a data URL —
+ * a plate's data-URL contract exists so it survives a reload without the box,
+ * which a video picked fresh off disk for one chain start never needs, and a
+ * 20s+ video is commonly tens to hundreds of MB, not worth serializing twice.
+ */
+export async function uploadVideo(ep: ComfyEndpoint, file: File): Promise<{ filename: string; subfolder: string }> {
+  const form = new FormData()
+  form.append('image', file, file.name)
+  form.append('overwrite', 'true')
+  const r = await fetch(`${trim(ep.baseUrl)}/upload/image`, { method: 'POST', body: form })
+  if (!r.ok) throw new Error(`Upload failed (${r.status}): ${(await r.text()).slice(0, 200)}`)
+  const j = (await r.json()) as { name: string; subfolder?: string }
+  return { filename: j.name, subfolder: j.subfolder ?? '' }
+}
+
 export async function submit(ep: ComfyEndpoint, graph: Record<string, ComfyNode>): Promise<string> {
   const r = await fetch(`${trim(ep.baseUrl)}/prompt`, {
     method: 'POST',
@@ -295,6 +317,52 @@ export function lastFrameOf(src: string, signal?: AbortSignal): Promise<string> 
   })
 }
 
+export interface VideoMetadata {
+  durationSeconds: number
+  width: number
+  height: number
+}
+
+/**
+ * Read a video's own duration/geometry in the browser, without downloading
+ * it — `preload="metadata"` asks for just the container header. This is what
+ * lets the video door's "what you will get" table state a source's real
+ * length (56.928s for `dhee_src.mp4`, measured live 2026-09-07) instead of
+ * asking the operator to already know it.
+ */
+export function videoMetadata(src: string, signal?: AbortSignal): Promise<VideoMetadata> {
+  return new Promise((resolve, reject) => {
+    const v = document.createElement('video')
+    let settled = false
+    const cleanup = () => signal?.removeEventListener('abort', onAbort)
+    const finish = (value: VideoMetadata) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      resolve(value)
+    }
+    const fail = (e: Error) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      reject(e)
+    }
+    const onAbort = () => {
+      v.pause()
+      v.removeAttribute('src')
+      v.load()
+      fail(new DOMException('The operation was aborted.', 'AbortError'))
+    }
+    if (signal?.aborted) return onAbort()
+    signal?.addEventListener('abort', onAbort, { once: true })
+    v.preload = 'metadata'
+    v.muted = true
+    v.src = src
+    v.onerror = () => fail(new Error('Could not read that video.'))
+    v.onloadedmetadata = () => finish({ durationSeconds: v.duration || 0, width: v.videoWidth, height: v.videoHeight })
+  })
+}
+
 /** ComfyUI rejected the request for carrying an Origin header. */
 export class OriginRefused extends Error {
   constructor() {
@@ -363,3 +431,27 @@ export function inputUrl(ep: ComfyEndpoint, filename: string, preview?: string):
 
 /** Byte-cheapest re-encode that still reads fine in a 92px tile. */
 export const THUMB_PREVIEW = 'webp;60'
+
+/**
+ * Every LoRA filename ComfyUI's `LoraLoaderModelOnly` node offers — the
+ * box's whole LoRA folder, unfiltered. Filtering out the accelerator family
+ * and gating explicit-content ones is a UI-layer decision (`chain.ts`'s
+ * `selectableStyleLoras`), not this fetch's job.
+ *
+ * On the `light_paths` list alongside `/queue` and `/object_info`, so this is
+ * safe to call any time — it never forces a GPU backend switch.
+ *
+ * Filenames may be percent-encoded (`HMBreasts%20-%20...`); never decode or
+ * re-encode them here or anywhere downstream, or ComfyUI will not find the
+ * file on disk.
+ */
+export async function listLoraNames(ep: ComfyEndpoint): Promise<string[]> {
+  const base = trim(ep.baseUrl)
+  const r = await fetch(`${base}/object_info/LoraLoaderModelOnly`)
+  if (r.status === 403) throw new OriginRefused()
+  if (!r.ok) return []
+  const j = (await r.json()) as Record<string, { input?: { required?: Record<string, unknown[]> } }>
+  const spec = j.LoraLoaderModelOnly?.input?.required?.lora_name
+  const list = Array.isArray(spec) ? spec[0] : null
+  return Array.isArray(list) ? (list as string[]).filter((x) => typeof x === 'string') : []
+}

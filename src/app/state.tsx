@@ -6,10 +6,13 @@ import { classifyInput, findingsToText, lint, looksLikePrompt, standingToText } 
 import { continuationBudgetFor, streamChatComplete } from '../lib/llm'
 import { DEFAULT_PROVIDERS, loadProviders, probe, saveProviders } from '../lib/providers'
 import { STAGE_LABEL, fillTemplate, filmBlock, hasPromptBlock, nextRole, parseBreakdown, splitHandoff, splitPromptReplacement, splitReply, templateFor } from '../lib/stages'
-import { DEFAULT_ENDPOINTS, lastFrameOf, poll, probeComfy, submit, uploadImage, viewUrl } from '../lib/comfy'
+import { DEFAULT_ENDPOINTS, lastFrameOf, poll, pollChain, probeComfy, submit, uploadImage, viewUrl } from '../lib/comfy'
+import type { PollResult } from '../lib/comfy'
 import { applyRecipe, framesForSeconds, oomRisk, recipeIssues } from '../lib/recipe'
 import { buildMulticlipGraph, multiclipIssues, multiclipWarnings, overlapFramesOf, padForOverlap, schedulerStepsOf } from '../lib/multiclip'
 import type { MulticlipClip, PaddedClip } from '../lib/multiclip'
+import { CHAIN_MIN_STEPS, ChainError, buildChainGraph, chainIssues } from '../lib/chain'
+import type { ChainPlate, ChainShot } from '../lib/chain'
 import { fetchBundledSkills, loadSkills, removeSkill, saveSkill } from '../lib/skills'
 import { estTokens } from '../lib/tokens'
 import { appendContinuationHistory, authorContinuation, clearDraftContext, continuationContextOverride, continuationPlateIsFresh, continuationSource, interruptedReasoningText, previousPromptForClip, promptSourceForEntryMode } from '../lib/entry'
@@ -17,7 +20,7 @@ import type { EntryModeId } from '../lib/entry'
 import { isSingleRequestStage, type StudioRunPhase } from '../lib/studio-workflow'
 import { normalizeThinkingBudgets, resolveThinkingBudget } from '../lib/thinking'
 import type {
-  Breakdown, ChatTurn, Clip, ComfyEndpoint, FilmContext, Finding, Plate, ProbeResult, Provider,
+  Breakdown, ChatTurn, Clip, ClipChainInfo, ComfyEndpoint, FilmContext, Finding, Plate, ProbeResult, Provider,
   Recipe, Selection, Settings, Skill, StageId, Version,
 } from '../lib/types'
 
@@ -58,10 +61,15 @@ function plateFilename(p: Plate): string {
  * Poll a submitted render to completion or failure.
  *
  * Poll rather than hold a websocket: a dropped link must not lose a render the
- * box is still perfectly happily producing. Shared by the single-clip and
- * multiclip render paths — the retry/deadline behaviour is the same either way.
+ * box is still perfectly happily producing. Shared by every render path —
+ * `pollFn` is `poll` for single-clip/Long Media and `pollChain` (chain.ts-aware,
+ * so it never mistakes a scene checkpoint for the assembled film) for chain.
  */
-async function pollToDone(ep: ComfyEndpoint, promptId: string): Promise<Clip['output']> {
+async function pollToDone(
+  ep: ComfyEndpoint,
+  promptId: string,
+  pollFn: (ep: ComfyEndpoint, promptId: string) => Promise<PollResult> = poll,
+): Promise<Clip['output']> {
   const deadline = Date.now() + 60 * 60 * 1000
   let misses = 0
   for (;;) {
@@ -69,7 +77,7 @@ async function pollToDone(ep: ComfyEndpoint, promptId: string): Promise<Clip['ou
     if (Date.now() > deadline) throw new Error('Gave up waiting after an hour.')
     let res
     try {
-      res = await poll(ep, promptId)
+      res = await pollFn(ep, promptId)
       misses = 0
     } catch {
       // The box can drop off a network and come back. Only give up when it
@@ -210,12 +218,18 @@ export interface Api {
   recipe: Recipe | null
   /** The Long Media (multiclip) workflow — a DIFFERENT stored recipe from `recipe`. */
   multiclipRecipe: Recipe | null
+  /** The Contex-Loop (chain) workflow — a third, separate stored recipe. */
+  chainRecipe: Recipe | null
   endpoints: ComfyEndpoint[]
   endpoint: ComfyEndpoint | null
   comfyProbes: Record<string, ProbeResult>
   clips: Clip[]
   clip: Clip | null
   rendering: Clip | null
+  /** The GPU mutex: whether the box is currently held by an LLM call or a
+   * render. Both `run()` and every render path refuse to start while the
+   * other holds it — see the module comment beside `gpuBusyRef`. */
+  gpuBusy: 'idle' | 'llm' | 'render'
   /** Why a render cannot start yet — empty when it can. */
   blockers: string[]
   /** Non-blocking — an OOM risk at the chosen geometry for the single-clip render. */
@@ -238,6 +252,10 @@ export interface Api {
   renderMulticlip: () => Promise<void>
   /** Build the multiclip graph and copy it to the clipboard — no submit, no render. */
   copyMulticlipGraph: () => Promise<void>
+  /** Render the current prompt as one Contex-Loop chain scene — see the
+   * module comment beside `renderChain`'s definition for which chain it
+   * joins and what gets resent for append-only resume verification. */
+  renderChain: () => Promise<void>
   selectClip: (id: string) => void
   /** Author the next prompt from a landed clip; rendering remains a separate action. */
   continueFrom: (clipId: string, note?: string) => Promise<void>
@@ -251,6 +269,12 @@ export interface Api {
   selectVersion: (id: string) => void
   clearError: () => void
   reset: () => Promise<void>
+  /** Claim the GPU mutex for a caller OUTSIDE `run()`/the render paths — the
+   * Agent's own LLM loop, which does not go through `run()`. Returns false
+   * (and sets `error`) when the box is already held by the other side.
+   * Always release with `endGpuUse`. */
+  beginGpuUse: (kind: 'llm' | 'render') => boolean
+  endGpuUse: () => void
 }
 
 const Ctx = createContext<Api | null>(null)
@@ -291,6 +315,38 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [renderingId, setRenderingId] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const continuationAbortRef = useRef<AbortController | null>(null)
+  // ── the GPU mutex ──────────────────────────────────────────────────────
+  //
+  // The gateway single-flights the GPU, and the two directions are NOT
+  // symmetric in cost: llama evicts cleanly (`unload`), but ComfyUI evicts via
+  // a `free` request it cannot honour mid-sample, and the supervisor hard-
+  // kills it at its timeout. So a model call fired while a render is in
+  // flight can destroy tens of minutes of GPU work — measured to actually
+  // happen. `gpuBusyRef` is the single guard both directions check before
+  // starting: an LLM stage (`run()`, below) refuses to start while a render
+  // holds it, and every render path refuses to start while an LLM call holds
+  // it. The ref is read synchronously inside async closures (same pattern as
+  // `sessionRef`); `gpuBusy` is its state mirror, for the UI to show why a
+  // button is disabled.
+  const [gpuBusy, setGpuBusyState] = useState<'idle' | 'llm' | 'render'>('idle')
+  const gpuBusyRef = useRef<'idle' | 'llm' | 'render'>('idle')
+  const beginGpuUse = useCallback((kind: 'llm' | 'render'): boolean => {
+    if (gpuBusyRef.current !== 'idle') {
+      setError(
+        gpuBusyRef.current === 'render'
+          ? 'A render is in flight on the box — wait for it to finish before calling the model. A chat completion fired mid-render gets ComfyUI hard-killed by the gateway (it cannot honour a mid-sample unload cleanly).'
+          : 'A model call is in flight — wait for it to finish before starting a render. The gateway single-flights the GPU; starting a render now is refused rather than racing the drain.',
+      )
+      return false
+    }
+    gpuBusyRef.current = kind
+    setGpuBusyState(kind)
+    return true
+  }, [])
+  const endGpuUse = useCallback(() => {
+    gpuBusyRef.current = 'idle'
+    setGpuBusyState('idle')
+  }, [])
   // run() closes over session, so chaining two stages in one turn would read
   // state from before the first one finished. The ref always holds the latest.
   const sessionRef = useRef(session)
@@ -642,6 +698,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         standing: standingToText(classifyInput(snap.story)),
       })
 
+      if (!beginGpuUse('llm')) return null
+
       const ac = new AbortController()
       abortRef.current = ac
       setFailedReasoning(null)
@@ -855,9 +913,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       } finally {
         abortRef.current = null
         setStreaming(null)
+        endGpuUse()
       }
     },
-    [providers, settings, context, skills, findings, studioMode],
+    [providers, settings, context, skills, findings, studioMode, beginGpuUse, endGpuUse],
   )
 
   const rebuild = useCallback(async (mode?: EntryModeId) => {
@@ -919,6 +978,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const multiclipRecipe = useMemo(
     () => recipes.find((r) => r.id === settings.multiclipRecipeId) ?? null,
     [recipes, settings.multiclipRecipeId],
+  )
+  // Same reasoning as `multiclipRecipe`: no fallback to any other stored
+  // recipe. A workflow that is not the Contex-Loop graph has none of the
+  // MiniMaxH3Chain* nodes `buildChainGraph` requires, and `chainIssues`
+  // reports that plainly rather than this silently guessing.
+  const chainRecipe = useMemo(
+    () => recipes.find((r) => r.id === settings.chainRecipeId) ?? null,
+    [recipes, settings.chainRecipeId],
   )
   const endpoint = useMemo(
     () => endpoints.find((e) => e.id === settings.comfyEndpointId) ?? endpoints[0] ?? null,
@@ -1142,6 +1209,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setError('Nothing to render — there is no prompt yet.')
       return
     }
+    if (!beginGpuUse('render')) return
 
     const id = `c${Date.now().toString(36)}`
     const index = clipsRef.current.length + 1
@@ -1212,10 +1280,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setError(msg)
     } finally {
       setRenderingId(null)
+      endGpuUse()
     }
   }, [
     endpoint, recipe, lastPromptText, settings.lockSeed, settings.seed, settings.seconds, settings.steps,
-    settings.width, settings.height, patchClip, savePlate,
+    settings.width, settings.height, patchClip, savePlate, beginGpuUse, endGpuUse,
   ])
 
   /**
@@ -1277,6 +1346,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const renderMulticlip = useCallback(async () => {
     setError(null)
+    if (!beginGpuUse('render')) return
     const id = `c${Date.now().toString(36)}`
     const t0 = Date.now()
 
@@ -1285,6 +1355,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       payload = await buildMulticlipPayload()
     } catch (e) {
       setError(String((e as Error).message || e))
+      endGpuUse()
       return
     }
     const { plan, built, seed } = payload
@@ -1326,8 +1397,144 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setError(msg)
     } finally {
       setRenderingId(null)
+      endGpuUse()
     }
-  }, [buildMulticlipPayload, endpoint, multiclipRecipe, patchClip])
+  }, [buildMulticlipPayload, endpoint, multiclipRecipe, patchClip, beginGpuUse, endGpuUse])
+
+  /**
+   * Render the current canonical prompt as ONE Contex-Loop chain scene —
+   * resuming every earlier scene from its ComfyUI checkpoint and sampling
+   * only this one, so a chain of N clips costs only the last one's render.
+   *
+   * Which chain this joins: the parent clip's `.chain` (set by an earlier
+   * `renderChain` call) when the current session continues from one via
+   * `continueFrom`/`prepareContinuation`; otherwise this STARTS a fresh
+   * chain at scene 1. `verify_resume_history` on the ComfyUI side hashes
+   * every earlier scene's prompt/frames/steps/seed, so the prior scenes are
+   * always resent from what was actually recorded on their `Clip`s — never
+   * re-derived from current settings, which may have since changed.
+   */
+  const renderChain = useCallback(async () => {
+    if (!endpoint || !chainRecipe) {
+      setError('Pick an endpoint and a Contex-Loop (chain) recipe first.')
+      return
+    }
+    const prompt = lastPromptText
+    if (!prompt.trim()) {
+      setError('Nothing to render — there is no prompt yet.')
+      return
+    }
+
+    const parentId = sessionRef.current.parentClipId ?? null
+    const parent = parentId ? clipsRef.current.find((c) => c.id === parentId) : undefined
+    const runName = parent?.chain?.runName ?? `chain_${Date.now().toString(36)}`
+    const sceneIndex = (parent?.chain?.sceneIndex ?? 0) + 1
+
+    const width = settings.width ?? chainRecipe.defaults.width
+    const height = settings.height ?? chainRecipe.defaults.height
+    const steps = settings.steps ?? CHAIN_MIN_STEPS
+    const seed = settings.lockSeed ? settings.seed : Math.floor(Math.random() * 2 ** 31)
+    const frames = framesForSeconds(settings.seconds, 24)
+
+    // Append-only: every scene before this one is resent exactly as it was
+    // recorded when IT rendered — never re-derived from whatever settings
+    // happen to be current now, which is exactly the drift
+    // `verify_resume_history` exists to catch.
+    const priorShots: ChainShot[] = parent?.chain
+      ? clipsRef.current
+          .filter((c): c is Clip & { chain: ClipChainInfo } => c.chain?.runName === runName)
+          .sort((a, b) => a.chain.sceneIndex - b.chain.sceneIndex)
+          .map((c) => ({
+            index: c.chain.sceneIndex,
+            prompt: c.prompt,
+            frames: c.frames ?? 0,
+            steps: c.steps ?? steps,
+            seed: c.seed ?? 0,
+          }))
+      : []
+    const shots: ChainShot[] = [...priorShots, { index: sceneIndex, prompt, frames, steps, seed }]
+
+    const imagePlates = platesRef.current.filter((p) => p.kind === 'image')
+
+    const issues = chainIssues({
+      graph: chainRecipe.graph,
+      shots: shots.map((s) => ({ index: s.index, prompt: s.prompt })),
+      plateCount: imagePlates.length,
+      steps,
+    })
+    if (issues.length) {
+      setError(issues.join(' '))
+      return
+    }
+    if (!beginGpuUse('render')) return
+
+    const id = `c${Date.now().toString(36)}`
+    const t0 = Date.now()
+
+    const draft: Clip = {
+      id,
+      index: clipsRef.current.length + 1,
+      parentId,
+      state: 'queued',
+      prompt,
+      film: sessionRef.current.film,
+      plateIds: imagePlates.map((p) => p.id),
+      recipeId: chainRecipe.id,
+      endpointId: endpoint.id,
+      seed,
+      frames,
+      fps: 24,
+      steps,
+      chain: { runName, sceneIndex },
+      at: Date.now(),
+    }
+    setClips((prev) => [...prev, draft])
+    setCurrentClipId(id)
+    setRenderingId(id)
+
+    try {
+      // Same upload contract as `render()`/`buildMulticlipPayload`: a plate
+      // already on THIS box (picked, or uploaded by an earlier clip) is
+      // cited by name and never sent back.
+      const plates: ChainPlate[] = []
+      for (const p of imagePlates) {
+        if (p.boxFile?.endpointId === endpoint.id) {
+          plates.push({ id: p.id, filename: p.boxFile.filename, subfolder: p.boxFile.subfolder })
+          continue
+        }
+        if (p.uploaded?.endpointId === endpoint.id) {
+          plates.push({ id: p.id, filename: p.uploaded.filename, subfolder: p.uploaded.subfolder })
+          continue
+        }
+        if (!p.dataUrl) throw new Error(`Plate “${p.name}” has no file on this box and nothing to upload.`)
+        const up = await uploadImage(endpoint, p.dataUrl, plateFilename(p))
+        plates.push({ id: p.id, filename: up.filename, subfolder: up.subfolder })
+        await savePlate({ ...p, uploaded: { endpointId: endpoint.id, ...up } })
+      }
+
+      const built = buildChainGraph({
+        graph: chainRecipe.graph,
+        shots,
+        plates,
+        opts: { runName, width, height, steps, sceneRange: String(sceneIndex) },
+      })
+
+      const promptId = await submit(endpoint, built.graph)
+      patchClip(id, { state: 'rendering', promptId })
+      const output = await pollToDone(endpoint, promptId, (e, p) => pollChain(e, p, runName))
+      patchClip(id, { state: 'done', output, ms: Date.now() - t0 })
+    } catch (e) {
+      const msg = e instanceof ChainError ? e.message : String((e as Error).message || e)
+      patchClip(id, { state: 'failed', error: msg, ms: Date.now() - t0 })
+      setError(msg)
+    } finally {
+      setRenderingId(null)
+      endGpuUse()
+    }
+  }, [
+    endpoint, chainRecipe, lastPromptText, settings.width, settings.height, settings.steps,
+    settings.lockSeed, settings.seed, settings.seconds, patchClip, savePlate, beginGpuUse, endGpuUse,
+  ])
 
   const copyMulticlipGraph = useCallback(async () => {
     setError(null)
@@ -1576,12 +1783,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     recipes,
     recipe,
     multiclipRecipe,
+    chainRecipe,
     endpoints,
     endpoint,
     comfyProbes,
     clips,
     clip,
     rendering,
+    gpuBusy,
     blockers,
     warnings,
     multiclipPreview,
@@ -1597,6 +1806,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     render,
     renderMulticlip,
     copyMulticlipGraph,
+    renderChain,
     selectClip,
     continueFrom,
     appendPromptVersion,
@@ -1610,6 +1820,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setInterruptedReasoning(null)
     },
     reset,
+    beginGpuUse,
+    endGpuUse,
   }
 
   return <Ctx.Provider value={api}>{children}</Ctx.Provider>

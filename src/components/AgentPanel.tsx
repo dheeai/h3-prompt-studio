@@ -86,6 +86,11 @@ export function AgentPanel({ onOpenStudio }: AgentPanelProps) {
       if (outcome) {
         setRunning(false)
         setStatus(outcome.message)
+        // The GPU mutex was claimed for the whole prompt() call in send()
+        // below, whatever the agent did with it in the meantime (tool calls,
+        // several model turns) — release it here, the same terminal point
+        // that already clears `running`. Idempotent if already released.
+        app.endGpuUse()
       }
     })
     agentRef.current = agent
@@ -111,6 +116,17 @@ export function AgentPanel({ onOpenStudio }: AgentPanelProps) {
     const prompt = text.trim()
     const agent = agentRef.current
     if (!prompt || !agent || running) return
+    // The Agent's own loop calls the model directly (not through Studio's
+    // `run()`), so it must claim the same GPU mutex Studio's render paths
+    // check — otherwise a render started elsewhere could be killed by a
+    // chat completion fired from here. Held for the whole prompt() call,
+    // however many turns/tool calls it takes; released at every terminal
+    // point (the agent_end/agent_error subscription above, the catch below,
+    // and Stop).
+    if (!app.beginGpuUse('llm')) {
+      setStatus('A render is in flight on the box — wait for it to finish before asking the Agent.')
+      return
+    }
     const id = `user-${Date.now().toString(36)}`
     setItems((previous) => [...previous, { id, kind: 'user', text: prompt }])
     setInput('')
@@ -127,6 +143,7 @@ export function AgentPanel({ onOpenStudio }: AgentPanelProps) {
         setStatus(`The agent stopped with an error: ${message}`)
       }
       setRunning(false)
+      app.endGpuUse()
     }
   }
 
@@ -134,6 +151,7 @@ export function AgentPanel({ onOpenStudio }: AgentPanelProps) {
     agentRef.current?.abort()
     setRunning(false)
     setStatus('Stopped. Partial thinking remains in this transcript.')
+    app.endGpuUse()
   }
 
   const confirm = async () => {
@@ -164,7 +182,7 @@ export function AgentPanel({ onOpenStudio }: AgentPanelProps) {
           ))}
           {running && <div className="agent-running"><span className="spin" />{status}</div>}
         </div>
-        <div className="agent-compose"><textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} placeholder={provider && app.settings.model ? 'Ask the Agent to inspect, improve, or prepare…' : 'Connect a model to start the Agent'} disabled={!provider || !app.settings.model || running} rows={3} aria-label="Agent instruction" /><div className="agent-compose-row"><span>{status}</span>{running ? <button className="btn" onClick={stop}>Stop</button> : <button className="btn pri" onClick={() => void send()} disabled={!input.trim() || !provider || !app.settings.model}>Send to Agent</button>}</div></div>
+        <div className="agent-compose"><textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} placeholder={provider && app.settings.model ? 'Ask the Agent to inspect, improve, or prepare…' : 'Connect a model to start the Agent'} disabled={!provider || !app.settings.model || running || app.gpuBusy === 'render'} rows={3} aria-label="Agent instruction" /><div className="agent-compose-row"><span>{app.gpuBusy === 'render' && !running ? 'A render is in flight on the box — the Agent will refuse until it finishes.' : status}</span>{running ? <button className="btn" onClick={stop}>Stop</button> : <button className="btn pri" onClick={() => void send()} disabled={!input.trim() || !provider || !app.settings.model || app.gpuBusy === 'render'}>Send to Agent</button>}</div></div>
       </section>
       <aside className="agent-context"><div className="studio-kicker">SHARED CONTEXT</div><h2>Studio stays the source of truth</h2><div className="agent-context-card"><span>Canonical prompt</span><strong>{app.current && isCanonicalPromptStage(app.current.stage) ? `v${app.versions.findIndex((version) => version.id === app.current?.id) + 1}` : 'not written yet'}</strong></div><div className="agent-context-card"><span>Clip plan</span><strong>{app.breakdown ? `${app.breakdown.clips.length} clips` : 'not set'}</strong></div><div className="agent-context-card"><span>Skills</span><strong>{app.skills.filter((skill) => app.settings.selection[skill.id]?.length).length} loaded</strong></div><div className="agent-context-card"><span>ComfyUI</span><strong>{app.endpoint?.label || 'configure in Studio'}</strong></div><div className="agent-context-note">Render and multiclip submission always pause for confirmation. The Agent never calls Studio stages recursively.</div><button className="btn" onClick={onOpenStudio}>Open full Studio</button></aside>
     </main>

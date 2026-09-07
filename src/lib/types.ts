@@ -223,6 +223,16 @@ export interface Settings {
    * transient miss.
    */
   chainRecipeAutoBound?: boolean
+  /** Which shipped-variant SET this profile has been offered — see
+   * `SHIPPED_SET_VERSION`. Lets a profile bound before a new variant existed
+   * be topped up once, without re-binding. */
+  shippedRecipeSetVersion?: number
+  /** Shipped recipes the operator DELETED. Recorded because "top up an older
+   * profile with a newly shipped variant" and "never resurrect a deliberate
+   * deletion" otherwise collide: with only a version counter, a profile that
+   * had deleted a shipped recipe is indistinguishable from one that never
+   * received it. An id in here is never re-added. */
+  dismissedShippedRecipes?: string[]
   /** UNET stamped onto every chain graph. Unset means `SINGULARITY_UNET` — the
    * model the 27-clip film of 2026-09-06 shipped on. Set it to override. */
   chainUnetName?: string

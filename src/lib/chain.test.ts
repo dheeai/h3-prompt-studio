@@ -5,9 +5,10 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   buildChainGraph, chainIssues, chainShotsForPlan, citeToTag, pickAssembledVideo, snapUp, ChainError,
-  CHAIN_MIN_STEPS, CANONICAL_UNET, CANONICAL_TURBO_LORA, SINGULARITY_UNET,
+  chainMinSteps, CHAIN_MIN_STEPS_SLA, CHAIN_MIN_STEPS_VSA, CHAIN_MIN_STEPS_DEFAULT,
+  CANONICAL_UNET, CANONICAL_TURBO_LORA, SINGULARITY_UNET,
   ACCELERATOR_LORA_RE, EXPLICIT_LORA_RE, selectableStyleLoras, serializeLoraStack, readBakedLoraStack,
-  loraStackKey, planNeedsPerSceneLoraSplit,
+  loraStackKey, planNeedsPerSceneLoraSplit, localLoraStackOverride,
 } from './chain'
 import { padForOverlap } from './frames'
 import type { ChainPlate, ChainPlanClip, ChainShot } from './chain'
@@ -152,10 +153,92 @@ test('buildChainGraph refuses steps below the accelerator LoRA floor', () => {
         graph: workflow,
         shots: scaffoldShots(),
         plates: scaffoldPlates,
-        opts: { runName: 'probe', width: 864, height: 480, steps: CHAIN_MIN_STEPS - 1 },
+        opts: { runName: 'probe', width: 864, height: 480, steps: chainMinSteps(workflow) - 1 },
       }),
     ChainError,
   )
+})
+
+/**
+ * The floor is a property of the GRAPH's own attention/gate config, never a
+ * single app-wide constant — this is what makes the two shipped chain
+ * variants (`recipe.ts`'s SLA default and VSA gate) safe to switch between.
+ * `contexloop_workflow.json` is the real SLA fixture (`H3SLAAttention`);
+ * `contexloop_vsa_workflow.json` is the VSA-gated one (`Ref2VAVSAGatePatch`).
+ */
+test('chainMinSteps derives the floor from the graph itself, and moves when the bound variant switches', () => {
+  const sla = loadFixture('contexloop_workflow.json')
+  const vsa = loadFixture('contexloop_vsa_workflow.json')
+
+  assert.equal(chainMinSteps(sla), CHAIN_MIN_STEPS_SLA)
+  assert.equal(chainMinSteps(sla), 6, 'a 4-step production render came back corrupted on this config, 2026-08-23')
+  assert.equal(chainMinSteps(vsa), CHAIN_MIN_STEPS_VSA)
+  assert.equal(chainMinSteps(vsa), 4, 'validated clean at 4 steps once the VSA gate replaced SLA attention, 2026-09-07')
+  assert.notEqual(chainMinSteps(sla), chainMinSteps(vsa), 'switching the bound recipe must move the floor')
+
+  // Neither node class present (unknown/foreign graph, or null/no recipe
+  // loaded yet) — falls back to the conservative SLA-tier floor, never the
+  // lower VSA one.
+  assert.equal(chainMinSteps(null), CHAIN_MIN_STEPS_DEFAULT)
+  assert.equal(chainMinSteps({}), CHAIN_MIN_STEPS_DEFAULT)
+})
+
+test('an SLA recipe cannot be submitted at 4 steps — the exact corruption this floor exists to prevent', () => {
+  const sla = loadFixture('contexloop_workflow.json')
+  assert.throws(
+    () =>
+      buildChainGraph({
+        graph: sla,
+        shots: scaffoldShots(),
+        plates: scaffoldPlates,
+        opts: { runName: 'probe', width: 864, height: 480, steps: CHAIN_MIN_STEPS_VSA },
+      }),
+    ChainError,
+  )
+  // 6 (the SLA floor) succeeds on the same graph.
+  const ok = buildChainGraph({
+    graph: sla,
+    shots: scaffoldShots(),
+    plates: scaffoldPlates,
+    opts: { runName: 'probe', width: 864, height: 480, steps: CHAIN_MIN_STEPS_SLA },
+  })
+  assert.ok(ok.graph)
+})
+
+test('a VSA recipe builds cleanly at exactly its own floor of 4 steps', () => {
+  const vsa = loadFixture('contexloop_vsa_workflow.json')
+  const result = buildChainGraph({
+    graph: vsa,
+    shots: scaffoldShots(),
+    plates: scaffoldPlates,
+    opts: { runName: 'probe', width: 864, height: 480, steps: CHAIN_MIN_STEPS_VSA },
+  })
+  assert.ok(result.graph, 'a 4-step build must not throw on the VSA-gated graph')
+})
+
+test('the model path runs the Ref2VAVSAGatePatch gate, not SLA attention (VSA variant)', () => {
+  const workflow = loadFixture('contexloop_vsa_workflow.json')
+  const result = buildChainGraph({
+    graph: workflow,
+    shots: scaffoldShots(),
+    plates: scaffoldPlates,
+    opts: { runName: 'probe', width: 864, height: 480, steps: CHAIN_MIN_STEPS_VSA },
+  })
+
+  const nodes = Object.values(result.graph)
+  const gate = nodes.find((n) => n.class_type === 'Ref2VAVSAGatePatch')
+  assert.ok(gate, 'expected a Ref2VAVSAGatePatch node in the model path')
+  assert.equal(gate!.inputs.gate_file, 'fasth3_vsa_gate.safetensors')
+  assert.equal(gate!.inputs.sparsity, 0.75)
+
+  assert.ok(!nodes.some((n) => n.class_type === 'H3SLAAttention'), 'SLA attention must be gone')
+  assert.ok(!nodes.some((n) => n.class_type === 'ModelAttentionBackend'), 'the SLA attention backend selector must be gone')
+
+  // The gate sits between the style stack and the sigma shift, same position
+  // SLA attention used to occupy — never floating disconnected from the model path.
+  const shift = nodes.find((n) => n.class_type === 'MiniMaxH3SigmaShift')!
+  const shiftModelSrc = (shift.inputs.model as [string, number])[0]
+  assert.equal(result.graph[shiftModelSrc]?.class_type, 'Ref2VAVSAGatePatch')
 })
 
 test('buildChainGraph refuses a citation past the end of the plate list', () => {
@@ -544,6 +627,24 @@ test('readBakedLoraStack never throws — no node, and malformed JSON, both read
   )
 })
 
+test('localLoraStackOverride: absent/empty/malformed all read as empty — the public build gets nothing', () => {
+  assert.deepStrictEqual(localLoraStackOverride(undefined), [])
+  assert.deepStrictEqual(localLoraStackOverride(''), [])
+  assert.deepStrictEqual(localLoraStackOverride('not json'), [])
+})
+
+test('localLoraStackOverride: parses VITE_LOCAL_LORA_STACK the same shape serializeLoraStack writes', () => {
+  const stack: LoraStackEntry[] = [
+    { lora: 'MysticXXX_MMH3-V4.safetensors', strength: 0.5, on: true },
+    {
+      lora: 'Torpedo%20Tits%20T2V%20-%20MinimaxH3%20-%20torpedo%20tits%2Ca%2020%20year%20old%20woman%2Cwearing%20nothing%20shows%20off%20her%20medium%20sized%20torpedo%20tit%20breasts.safetensors',
+      strength: 1,
+      on: true,
+    },
+  ]
+  assert.deepStrictEqual(localLoraStackOverride(serializeLoraStack(stack)), stack)
+})
+
 test('ACCELERATOR_LORA_RE catches the canonical turbo LoRA and the fl2v/lightx2v family, never a style LoRA', () => {
   assert.ok(ACCELERATOR_LORA_RE.test(CANONICAL_TURBO_LORA))
   assert.ok(ACCELERATOR_LORA_RE.test('minimax_h3_fl2v_turbo_4step_v1.1_768p_comfyui_bf16.safetensors'))
@@ -551,19 +652,20 @@ test('ACCELERATOR_LORA_RE catches the canonical turbo LoRA and the fl2v/lightx2v
   assert.ok(!ACCELERATOR_LORA_RE.test('MysticXXX_MMH3-V4.safetensors'))
 })
 
-test('EXPLICIT_LORA_RE catches exactly the four gated LoRAs, never an ordinary style LoRA', () => {
+test('EXPLICIT_LORA_RE catches exactly the five gated LoRAs, never an ordinary style LoRA', () => {
   for (const name of [
     'HMBreasts%20-%20Breasts-Areoles%20-%20MinimaxH3%20-%20HMBreasts.safetensors',
     'HMPenis%20-%20Penis-Cock%20-%20MinimaxH3.safetensors',
     'Torpedo%20Tits%20T2V%20-%20MinimaxH3.safetensors',
     'Vagina%20v0.2%20T2V-I2V%20-%20MinimaxH3.safetensors',
+    'MysticXXX_MMH3-V4.safetensors',
   ]) {
     assert.ok(EXPLICIT_LORA_RE.test(name), `${name} should be gated`)
   }
-  assert.ok(!EXPLICIT_LORA_RE.test('MysticXXX_MMH3-V4.safetensors'))
+  assert.ok(!EXPLICIT_LORA_RE.test('PlagueKind-tiddies-realismslider.safetensors'))
 })
 
-test('selectableStyleLoras excludes the accelerator family always, and the explicit four unless opted in', () => {
+test('selectableStyleLoras excludes the accelerator family always, and the explicit five (incl. MysticX) unless opted in', () => {
   const all = [
     'MysticXXX_MMH3-V4.safetensors',
     CANONICAL_TURBO_LORA,
@@ -572,7 +674,6 @@ test('selectableStyleLoras excludes the accelerator family always, and the expli
     'PlagueKind-tiddies-realismslider.safetensors',
   ]
   assert.deepStrictEqual(selectableStyleLoras(all, { allowExplicit: false }), [
-    'MysticXXX_MMH3-V4.safetensors',
     'PlagueKind-tiddies-realismslider.safetensors',
   ])
   assert.deepStrictEqual(selectableStyleLoras(all, { allowExplicit: true }), [

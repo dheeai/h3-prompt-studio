@@ -335,19 +335,6 @@
       "title": "Load Image"
     }
   },
-  "76": {
-    "inputs": {
-      "attention": "comfy kitchen attention",
-      "model": [
-        "98",
-        0
-      ]
-    },
-    "class_type": "ModelAttentionBackend",
-    "_meta": {
-      "title": "ModelAttentionBackend"
-    }
-  },
   "80": {
     "inputs": {
       "plan_json": "{\n  \"shots\": [\n    {\n      \"id\": \"shot_1\",\n      \"prompt\": \"Describe this shot.\",\n      \"length\": 124\n    }\n  ]\n}",
@@ -716,30 +703,26 @@
   },
   "77": {
     "inputs": {
-      "sparsity_ratio": 0.9,
-      "block_size": "64",
-      "min_seq_len": 8192,
-      "dense_last_steps": 0,
-      "protect_audio": true,
-      "enabled": true,
+      "gate_file": "fasth3_vsa_gate.safetensors",
+      "sparsity": 0.75,
       "model": [
-        "76",
+        "98",
         0
       ]
     },
-    "class_type": "H3SLAAttention",
+    "class_type": "Ref2VAVSAGatePatch",
     "_meta": {
-      "title": "H3 SLA Attention"
+      "title": "Ref2VA VSA Gate Transplant (EXPERIMENTAL)"
     }
   },
   "98": {
     "class_type": "LTX_lora_loader",
     "_meta": {
-      "title": "MysticXXX LoRA (0.5)"
+      "title": "Style LoRA stack (empty by default)"
     },
     "inputs": {
       "mode": "minimax",
-      "stack_data": "[{\"on\": true, \"lora\": \"MysticXXX_MMH3-V4.safetensors\", \"str\": 0.5, \"v\": 1, \"a\": 1, \"t\": 1}]",
+      "stack_data": "[]",
       "model": [
         "66",
         0

@@ -398,7 +398,7 @@ criterion, then fix that one thing.
 
 **Run the critique on the local model.** Per the model policy, this is a
 reasoning-bound judgement call with a rubric, so it is `thinkingcap-27b` on the
-5090 llama gateway (`http://5090.tail3cca41.ts.net:9000/llama/v1/chat/completions`,
+5090 llama gateway (`http://YOUR_GATEWAY_HOST:9000/llama/v1/chat/completions`,
 no API key). thinkingcap is multimodal, so the *same* model grades the direction
 sheet as text and the rendered frames as images — no author↔critic model swap,
 no GPU thrash. For video-modality critique specifically, that is the one case

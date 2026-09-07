@@ -43,7 +43,7 @@
 - RED: run `node scripts/selftest.mjs` after adding the tests but before production implementation; record the expected missing-contract failures.
 - GREEN unit/regression: run `node scripts/selftest.mjs` and require zero failures.
 - Type/build: run `npm run build` and require a successful Vite production build.
-- Real E2E: use the browser against default model endpoint `https://5090.tail3cca41.ts.net/llama/v1` and ComfyUI `https://5090.tail3cca41.ts.net/comfyui`, using the smallest valid existing recipe/reference/geometry fixture and restoring any temporary settings.
+- Real E2E: use the browser against default model endpoint `https://YOUR_GATEWAY_HOST/llama/v1` and ComfyUI `https://YOUR_GATEWAY_HOST/comfyui`, using the smallest valid existing recipe/reference/geometry fixture and restoring any temporary settings.
 - Scene E2E: source → clip plan → generate selected prompt → generate all prompts → multiclip submission/render; verify canonical prompts, request termination/counts, job acceptance/status/output, and Stop behavior.
 - Clip E2E: idea → canonical prompt → ComfyUI render; verify one bounded internal authoring sequence, canonical prompt as submission payload, job acceptance/status/output, and Stop-retained thinking.
 - Prompt E2E: existing prompt → Revise and existing prompt → Rebuild; verify each is exactly one LLM request with zero continuations (especially h3-acting), exactly two output blocks, canonical replacement history, then ComfyUI render with that canonical prompt; verify job acceptance/status/output and Stop-retained thinking.

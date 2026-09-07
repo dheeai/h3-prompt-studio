@@ -19,7 +19,7 @@ export interface RunOptions {
   arms?: readonly boolean[]
 }
 
-const DEFAULT_BASE_URL = 'https://5090.tail3cca41.ts.net/llama/v1'
+const DEFAULT_BASE_URL = 'https://YOUR_GATEWAY_HOST/llama/v1'
 const DEFAULT_OUTPUT_DIR = 'eval/out/2026-09-03-thinking-toggle'
 const SELECTED_SKILLS = ['h3-acting', 'h3-direction', 'h3-prompting']
 

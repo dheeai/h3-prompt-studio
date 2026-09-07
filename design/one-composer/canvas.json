@@ -1,0 +1,30 @@
+{
+  "artboards": [
+    { "file": "Empty.dc.html", "x": 0, "y": 0, "w": 1440, "h": 940, "title": "1 · First run — one composer, no modes" },
+    { "file": "Main.dc.html", "x": 1560, "y": 0, "w": 1440, "h": 940, "title": "2 · Mid-film — film, scenes, composer" }
+  ],
+  "annotations": [
+    {
+      "id": "why-one-path",
+      "x": 0,
+      "y": -330,
+      "w": 700,
+      "text": "THE THREE PATHS ARE GONE, NOT RENAMED\n\nThe founder's argument, which is correct: the system takes TEXT. Whether you typed an idea, pasted a rough prompt, pasted a finished H3 prompt, or pasted a whole scene changes nothing about what happens next — it all becomes one prompt, rendered as one scene, continued one scene at a time.\n\nThe only genuine variable is how many scenes the text is worth. So that is one control ON the composer — 'One scene' / 'Break into scenes' — not a mode you pick before you have written anything. Break-into-scenes still renders them one at a time; it only pre-writes the prompts.\n\nMy previous pass renamed the three modes into three 'doors'. That was the same mistake with better labels."
+    },
+    {
+      "id": "four-places",
+      "x": 1560,
+      "y": -330,
+      "w": 700,
+      "text": "EVERY THING HAS EXACTLY ONE PLACE\n\nThe old layout scattered work across four numbered columns plus a bottom strip, so nothing had an obvious home. This is a vertical stack with four regions and no numbering:\n\n1. THE FILM — top. The artifact. Player plus a scene-ticked scrubber.\n2. THE SCENES — a strip beneath it. Selecting one puts its actions ON it: Replace, Continue from here, Prompt.\n3. THE COMPOSER — the same place every time, always the next thing. Text, attachments, length, one button.\n4. SETUP — one line in the bar. Model, endpoint, geometry, LoRAs, skills all live behind it.\n\nAttachments (footage to continue from, reference images) sit INSIDE the composer, because they are part of what you are asking for — not a separate panel. That is what buried video upload before."
+    },
+    {
+      "id": "gaps-closed",
+      "x": 1560,
+      "y": 1000,
+      "w": 700,
+      "text": "THE TWO GAPS THE FOUNDER HIT, CLOSED BY THE STRUCTURE RATHER THAN BOLTED ON\n\n'No way to discard the continuation and regen it' — every scene carries Replace. On the newest scene it is free; on an earlier one it must say how many later scenes get re-rendered, because Contex-Loop is append-only. A replace of scene 1 in a video-started chain must re-pass the footage or it silently loses it.\n\n'No way to continue with newer prompts' — there is only ever the composer, and it is editable. Nothing gates rendering behind an authoring pass; 'Draft it for me' is an offer, not a required step. That gating was an artifact of the old shell."
+    }
+  ],
+  "launch": { "view": "canvas" }
+}

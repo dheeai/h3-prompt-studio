@@ -131,10 +131,54 @@ export const CANONICAL_UNET = 'minimax_h3_fastvideo_vsa_datafree_1300step_4step_
  */
 export const SINGULARITY_UNET = 'Minimax-h3_Singularity_ref2va_Pruned_v1.3_int8.safetensors'
 
-/** Below this the accelerator LoRA samples above its distilled step count — a
- * 4-step production render came back looking corrupted (founder, 2026-08-23).
- * No override: this is a browser app, not a script with an env-var escape hatch. */
-export const CHAIN_MIN_STEPS = 6
+/**
+ * Below its floor the accelerator LoRA samples above its distilled step
+ * count — and the floor is a property of the graph's OWN attention/gate
+ * config, not of the app, because the two shipped chain variants
+ * (`recipe.ts`'s `SHIPPED_CHAIN_RECIPE_SLA_ID` / `_VSA_ID`) were measured at
+ * different floors:
+ *
+ * History: a 4-step production render came back looking corrupted
+ * (founder, 2026-08-23) on the SLA-attention front end (`H3SLAAttention` +
+ * `ModelAttentionBackend`), so the floor for that config is 6 — safely
+ * inside the distilled step count.
+ *
+ * The floor is 4 only where the model path runs the `Ref2VAVSAGatePatch`
+ * gate (`fasth3_vsa_gate.safetensors`, sparsity 0.75) instead of SLA
+ * attention (founder, 2026-09-07) — 4 steps is validated clean on THAT
+ * config specifically. This is a deliberate departure from the
+ * SLA-attention recipe, made because the VSA gate is faster — not a
+ * relaxation of the original 2026-08-23 finding, which still holds for any
+ * graph still running SLA attention. If the founder switches the bound
+ * chain recipe from VSA back to SLA, submitting at 4 steps must be refused
+ * again — that is exactly what `chainMinSteps` deriving from the graph
+ * (rather than a single global) exists to guarantee.
+ *
+ * No override: this is a browser app, not a script with an env-var escape hatch.
+ */
+export const CHAIN_MIN_STEPS_SLA = 6
+export const CHAIN_MIN_STEPS_VSA = 4
+/** Neither node class found (an unknown/foreign graph) — same conservative
+ * floor as SLA, never the lower VSA one, since the corruption risk is on
+ * under-stepping, not on being overly cautious. */
+export const CHAIN_MIN_STEPS_DEFAULT = 6
+
+const SLA_ATTENTION_CLASS = 'H3SLAAttention'
+const VSA_GATE_CLASS = 'Ref2VAVSAGatePatch'
+
+/**
+ * The step floor for THIS graph's own attention/gate config — read from the
+ * graph itself (never a setting, never a single app-wide constant), so
+ * switching the bound chain recipe between the shipped SLA and VSA variants
+ * (or dropping in any other workflow) moves the floor with it.
+ */
+export function chainMinSteps(graph: Record<string, ComfyNode> | null | undefined): number {
+  if (!graph) return CHAIN_MIN_STEPS_DEFAULT
+  const classes = new Set(Object.values(graph).map((n) => n.class_type))
+  if (classes.has(SLA_ATTENTION_CLASS)) return CHAIN_MIN_STEPS_SLA
+  if (classes.has(VSA_GATE_CLASS)) return CHAIN_MIN_STEPS_VSA
+  return CHAIN_MIN_STEPS_DEFAULT
+}
 
 export class ChainError extends Error {}
 
@@ -200,7 +244,7 @@ function applyUnetOverride(g: Record<string, ComfyNode>, name: string): void {
  * Every LoRA name matching this is an ACCELERATOR — distilled-step or
  * turbo-family — never a style choice. Offering one of these in the
  * selectable style stack invites the corrupted-render failure
- * `CHAIN_MIN_STEPS` exists for (an accelerator LoRA sampled at the wrong step
+ * `chainMinSteps` exists for (an accelerator LoRA sampled at the wrong step
  * count), so this is checked both at the UI layer (`selectableStyleLoras`)
  * and defensively at build time (`buildChainGraph` refuses one here even if
  * something upstream let it through).
@@ -210,8 +254,11 @@ export const ACCELERATOR_LORA_RE = /turbo|lightx2v/i
 /** Explicit-content style LoRAs — gated behind an opt-in toggle, off by
  * default, same shape as h3-shots' `H3_NO_TORPEDO`/`H3_NO_VAGINA`/`H3_NO_PENIS`
  * env gates (this is a browser app with no env vars, so the gate is a UI
- * toggle instead). */
-export const EXPLICIT_LORA_RE = /HMBreasts|HMPenis|Torpedo|Vagina/i
+ * toggle instead). MysticX joined this list 2026-09-07 — it is the NSFW LoRA
+ * the shipped workflow used to bake in by default (see `stack_data` on the
+ * shipped `LTX_lora_loader`, now empty); it must not be offered by default
+ * either. */
+export const EXPLICIT_LORA_RE = /HMBreasts|HMPenis|Torpedo|Vagina|MysticX/i
 
 /** The style LoRAs worth offering in the picker: never an accelerator, and
  * explicit-content ones only when the operator has opted in. */
@@ -227,6 +274,23 @@ export function serializeLoraStack(stack: LoraStackEntry[]): string {
   return JSON.stringify(stack.map((e) => ({ on: e.on, lora: e.lora, str: e.strength, v: 1, a: 1, t: 1 })))
 }
 
+/** Parse a `stack_data`-shaped JSON string (`serializeLoraStack`'s own output,
+ * or whatever a workflow file / env var already carries) into `LoraStackEntry[]`.
+ * Never throws: anything malformed, or not an array, just reads as empty. Shared
+ * by `readBakedLoraStack` (a graph's own baked default) and `localLoraStackOverride`
+ * (the operator's own machine-local default). */
+function parseLoraStackData(raw: string): LoraStackEntry[] {
+  try {
+    const parsed = JSON.parse(raw) as Array<{ on?: unknown; lora?: unknown; str?: unknown }>
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .filter((e) => typeof e.lora === 'string')
+      .map((e) => ({ lora: e.lora as string, strength: typeof e.str === 'number' ? e.str : 0.5, on: e.on !== false }))
+  } catch {
+    return []
+  }
+}
+
 /** The inverse of `serializeLoraStack` — read back whatever a graph's
  * `LTX_lora_loader.stack_data` already carries (the workflow file's OWN
  * baked default, e.g. MysticX @ 0.5), so the studio can show and seed an
@@ -237,15 +301,25 @@ export function readBakedLoraStack(graph: Record<string, ComfyNode> | null | und
   if (!graph) return []
   const id = byClass(graph, LORA_STYLE_STACK_CLASS)
   if (!id) return []
-  try {
-    const parsed = JSON.parse(String(graph[id].inputs.stack_data ?? '[]')) as Array<{ on?: unknown; lora?: unknown; str?: unknown }>
-    if (!Array.isArray(parsed)) return []
-    return parsed
-      .filter((e) => typeof e.lora === 'string')
-      .map((e) => ({ lora: e.lora as string, strength: typeof e.str === 'number' ? e.str : 0.5, on: e.on !== false }))
-  } catch {
-    return []
-  }
+  return parseLoraStackData(String(graph[id].inputs.stack_data ?? '[]'))
+}
+
+/**
+ * The operator's OWN machine-local default style stack — sourced from
+ * `VITE_LOCAL_LORA_STACK` in a gitignored `.env.local`, never from the
+ * shipped workflow.
+ *
+ * Vite inlines `VITE_*` vars at BUILD time, and the GitHub Pages build runs
+ * from a fresh checkout with no `.env.local` present, so this is empty on the
+ * public site regardless of what any operator's own machine has configured —
+ * the shipped `LTX_lora_loader.stack_data` (empty, see `EXPLICIT_LORA_RE`'s
+ * module comment) is what every visitor actually gets. `raw` is
+ * `import.meta.env.VITE_LOCAL_LORA_STACK` — passed in rather than read
+ * directly so this stays testable outside Vite.
+ */
+export function localLoraStackOverride(raw: string | undefined): LoraStackEntry[] {
+  if (!raw) return []
+  return parseLoraStackData(raw)
 }
 
 /**
@@ -385,7 +459,7 @@ export interface ChainBuildOpts {
   runName: string
   width: number
   height: number
-  /** Floored at `CHAIN_MIN_STEPS`; never forced down to it. */
+  /** Floored at `chainMinSteps(graph)` for THIS graph; never forced down to it. */
   steps: number
   baseSeed?: number
   /** Chain's own resume knob: the scheduler's 1-based comma/colon list
@@ -479,10 +553,11 @@ export function buildChainGraph(args: BuildChainArgs): BuildChainResult {
         'the imported video would be silently ignored.',
     )
   }
-  if (steps < CHAIN_MIN_STEPS) {
+  const minSteps = chainMinSteps(source)
+  if (steps < minSteps) {
     throw new ChainError(
-      `${steps} steps is below the floor of ${CHAIN_MIN_STEPS} — the accelerator LoRA samples above its ` +
-        'distilled step count; under-stepped renders come back looking corrupted.',
+      `${steps} steps is below the floor of ${minSteps} for this workflow's attention/gate config — the ` +
+        'accelerator LoRA samples above its distilled step count; under-stepped renders come back looking corrupted.',
     )
   }
   // Guard against a LoRA/steps combination already measured to look
@@ -780,9 +855,10 @@ export function chainIssues(input: ChainIssuesInput): string[] {
   // module comment. H3's reference cap is what actually blocks.
   if (plateCount > REF_CAPS.image) out.push(`${plateCount} plates exceeds H3's ${REF_CAPS.image}-reference cap.`)
 
-  if (steps < CHAIN_MIN_STEPS) {
+  const minSteps = chainMinSteps(graph)
+  if (steps < minSteps) {
     out.push(
-      `${steps} steps is below the floor of ${CHAIN_MIN_STEPS} — the accelerator LoRA samples above its distilled step count; under-stepped renders come back looking corrupted.`,
+      `${steps} steps is below the floor of ${minSteps} for this workflow's attention/gate config — the accelerator LoRA samples above its distilled step count; under-stepped renders come back looking corrupted.`,
     )
   }
 

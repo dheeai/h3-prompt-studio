@@ -103,7 +103,7 @@ check('Qwen thinking control: an explicit per-model budget replaces the default'
 
 check('Qwen thinking control: named Qwen models are recognized only on local llama endpoints', (() => {
   if (!thinkingControl) return false
-  return thinkingControl.isQwenFamilyModel({ id: 'llamacpp', baseUrl: 'https://5090.tail3cca41.ts.net:9000/llama/v1' }, 'Qwen/Qwen3-30B') &&
+  return thinkingControl.isQwenFamilyModel({ id: 'llamacpp', baseUrl: 'https://gpubox.example.ts.net:9000/llama/v1' }, 'Qwen/Qwen3-30B') &&
     thinkingControl.isQwenFamilyModel({ id: 'llamacpp', baseUrl: 'http://localhost:8080/v1' }, 'thinkingcap-27b') &&
     !thinkingControl.isQwenFamilyModel({ id: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1' }, 'qwen/qwen3-30b') &&
     !thinkingControl.isQwenFamilyModel({ id: 'custom', baseUrl: 'https://models.example/v1' }, 'default')
@@ -124,7 +124,7 @@ check('Qwen thinking control: llama markers require a concrete local or llama ro
   return !thinkingControl.isQwenFamilyModel({ id: 'llamacpp', baseUrl: 'https://openrouter.ai/api/v1', sendCachePrompt: true }, qwen) &&
     !thinkingControl.isQwenFamilyModel({ id: 'llamacpp', baseUrl: 'https://models.example/v1', sendCachePrompt: true }, qwen) &&
     thinkingControl.isQwenFamilyModel({ id: 'llamacpp', baseUrl: 'http://192.168.1.50:8080/v1' }, qwen) &&
-    thinkingControl.isQwenFamilyModel({ id: 'llamacpp', baseUrl: 'https://5090.tail3cca41.ts.net/v1' }, qwen) &&
+    thinkingControl.isQwenFamilyModel({ id: 'llamacpp', baseUrl: 'https://gpubox.example.ts.net/v1' }, qwen) &&
     thinkingControl.isQwenFamilyModel({ id: 'llamacpp', baseUrl: 'http://render-box.local/v1' }, qwen) &&
     thinkingControl.isQwenFamilyModel({ id: 'custom', baseUrl: 'https://models.example/llama/v1' }, qwen) &&
     !thinkingControl.isQwenFamilyModel({ id: 'llamacpp', baseUrl: 'https://openrouter.ai/llama/v1', sendCachePrompt: true }, qwen)
@@ -885,15 +885,15 @@ check('cancelled thinking: partial reasoning is retained, empty reasoning is not
   check('agent tools: render is confirmation-gated', pending.details.requiresConfirmation === 'render_current' && !calls.some((call) => call[0] === 'render'))
   const model = buildAgentModel({ id: 'ollama', baseUrl: 'http://localhost:11434/v1' }, 'test-model')
   check('agent model: reuses the configured provider endpoint', model.api === 'openai-completions' && model.baseUrl.endsWith('/v1') && model.id === 'test-model')
-  check('agent model: keyless local/LAN providers receive a non-secret compatibility key', agentApiKey({ baseUrl: 'http://localhost:11434/v1' }) === 'local-browser-runtime' && agentApiKey({ baseUrl: 'http://5090.tail3cca41.ts.net:9000/v1' }) === 'local-browser-runtime' && agentApiKey({ baseUrl: 'https://custom-model.example/v1' }) === 'local-browser-runtime' && agentApiKey({ baseUrl: 'https://openrouter.ai/api/v1' }) === undefined)
-  const agentQwen = agentRequestPayload({ id: 'llamacpp', baseUrl: 'https://5090.tail3cca41.ts.net:9000/llama/v1' }, 'thinkingcap-27b', { model: 'thinkingcap-27b', stream: true })
+  check('agent model: keyless local/LAN providers receive a non-secret compatibility key', agentApiKey({ baseUrl: 'http://localhost:11434/v1' }) === 'local-browser-runtime' && agentApiKey({ baseUrl: 'http://gpubox.example.ts.net:9000/v1' }) === 'local-browser-runtime' && agentApiKey({ baseUrl: 'https://custom-model.example/v1' }) === 'local-browser-runtime' && agentApiKey({ baseUrl: 'https://openrouter.ai/api/v1' }) === undefined)
+  const agentQwen = agentRequestPayload({ id: 'llamacpp', baseUrl: 'https://gpubox.example.ts.net:9000/llama/v1' }, 'thinkingcap-27b', { model: 'thinkingcap-27b', stream: true })
   const agentHosted = agentRequestPayload({ id: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1' }, 'qwen/qwen3-30b', { model: 'qwen/qwen3-30b', stream: true })
   const agentRepointed = agentRequestPayload({ id: 'llamacpp', baseUrl: 'https://openrouter.ai/api/v1', sendCachePrompt: true }, 'qwen/qwen3-30b', { model: 'qwen/qwen3-30b', stream: true })
 check('agent request adapter: Pi payload gets the same paired Qwen budget while hosted payload stays unchanged',
     agentQwen.reasoning_budget_tokens === 8192 && agentQwen.reasoning_budget_message === 'Time to stop thinking. Give the final answer.' &&
     agentHosted.reasoning_budget_tokens === undefined && agentRepointed.reasoning_budget_tokens === undefined)
 
-  const agentCustom = agentRequestPayload({ id: 'llamacpp', baseUrl: 'https://5090.tail3cca41.ts.net:9000/llama/v1' }, 'thinkingcap-27b', { model: 'thinkingcap-27b', stream: true }, 0)
+  const agentCustom = agentRequestPayload({ id: 'llamacpp', baseUrl: 'https://gpubox.example.ts.net:9000/llama/v1' }, 'thinkingcap-27b', { model: 'thinkingcap-27b', stream: true }, 0)
   check('agent request adapter: Pi payload sends an explicitly selected zero budget', agentCustom.reasoning_budget_tokens === 0 && agentCustom.reasoning_budget_message === 'Time to stop thinking. Give the final answer.')
 }
 

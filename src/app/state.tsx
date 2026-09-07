@@ -8,7 +8,7 @@ import { DEFAULT_PROVIDERS, loadProviders, probe, saveProviders, LOCAL_LLM_URL, 
 import { STAGE_LABEL, fillTemplate, filmBlock, hasPromptBlock, nextRole, parseBreakdown, splitHandoff, splitPromptReplacement, splitReply, templateFor } from '../lib/stages'
 import { DEFAULT_ENDPOINTS, lastFrameOf, poll, pollChain, probeComfy, submit, uploadImage, viewUrl } from '../lib/comfy'
 import type { PollResult } from '../lib/comfy'
-import { applyRecipe, fetchShippedChainRecipes, framesForSeconds, oomRisk, recipeIssues, resolveChainRecipeAutoBind } from '../lib/recipe'
+import { applyRecipe, fetchShippedChainRecipes, framesForSeconds, oomRisk, recipeIssues, resolveChainRecipeAutoBind, SHIPPED_SET_VERSION, SHIPPED_CHAIN_IDS} from '../lib/recipe'
 import { padForOverlap } from '../lib/frames'
 import type { PaddedClip } from '../lib/frames'
 import { CHAIN_CONTEXT_LENGTH, ChainError, SINGULARITY_UNET, buildChainGraph, chainIssues, chainMinSteps, chainShotsForPlan, planNeedsPerSceneLoraSplit } from '../lib/chain'
@@ -99,6 +99,13 @@ async function pollToDone(
 }
 
 interface Session {
+  /** Style LoRAs for the NEXT scene the composer will render.
+   *
+   * The plan path stores this per `BreakdownClip`; the composer path had no
+   * equivalent, so per-scene LoRAs were unreachable when rendering one scene
+   * at a time — which is the whole primary loop. Unset means "whatever the
+   * bound graph bakes in, or the operator's machine-local default". */
+  loraStack?: LoraStackEntry[]
   story: string
   versions: Version[]
   currentId: string | null
@@ -370,7 +377,13 @@ export interface Api {
   isFreshChainStart: boolean
   /** This session's "continue from an existing video" choice, or null. */
   externalVideo: { endpointId: string; filename: string; prependOriginal: boolean } | null
+  /** Style LoRAs chosen for the next composer render; undefined = leave the
+   * bound graph's baked stack alone. */
+  loraStack: LoraStackEntry[] | undefined
   setExternalVideo: (v: { endpointId: string; filename: string; prependOriginal: boolean } | null) => void
+  /** Style LoRAs for the next composer render. Undefined = leave the bound
+   * graph's baked stack alone. */
+  setLoraStack: (stack: LoraStackEntry[] | undefined) => void
   /** Select a clip and stage its deterministic continuation context. */
   prepareContinuation: (clipId: string) => PreparedContinuation | null
   cancel: () => void
@@ -567,6 +580,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (bind) {
         merged.chainRecipeId = bind.chainRecipeId
         merged.chainRecipeAutoBound = bind.chainRecipeAutoBound
+        // Recorded whether or not anything was added, so a profile is topped
+        // up with a new shipped variant exactly once.
+        merged.shippedRecipeSetVersion = SHIPPED_SET_VERSION
         recipesForState = bind.recipes
         for (const r of bind.added) await idb.set('recipes', r.id, r)
       }
@@ -745,6 +761,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   /** Set (or clear, with `null`) this session's "continue from an existing
    * video" choice — see `Session.externalVideo`'s module comment. Only ever
    * consumed by `renderChain` while `parentClipId` is unset. */
+  const setLoraStack = useCallback((stack: LoraStackEntry[] | undefined) => {
+    const next = { ...sessionRef.current, loraStack: stack }
+    sessionRef.current = next
+    setSession(next)
+  }, [])
+
   const setExternalVideo = useCallback((v: { endpointId: string; filename: string; prependOriginal: boolean } | null) => {
     const next = { ...sessionRef.current, externalVideo: v }
     setSession(next)
@@ -1430,7 +1452,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const deleteRecipe = useCallback(async (id: string) => {
     await idb.del('recipes', id)
     setRecipes((prev) => prev.filter((r) => r.id !== id))
-  }, [])
+    // Remember a deleted SHIPPED recipe, so the shipped-set top-up never puts
+    // it back — see `dismissedShippedRecipes`. Deleting one of our own is the
+    // only signal we get that the operator does not want it.
+    if (SHIPPED_CHAIN_IDS.includes(id)) {
+      patchSettings({ dismissedShippedRecipes: [...(settings.dismissedShippedRecipes ?? []), id] })
+    }
+  }, [settings.dismissedShippedRecipes, patchSettings])
 
   const setEndpoints = useCallback(async (next: ComfyEndpoint[]) => {
     setEndpointsState(next)
@@ -1540,7 +1568,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const promptId = await submit(endpoint, graph)
       patchClip(id, { state: 'rendering', promptId })
       const output = await pollToDone(endpoint, promptId)
-      patchClip(id, { state: 'done', output, ms: Date.now() - t0 })
+      patchClip(id, { state: 'done', output, ms: Date.now() - t0, loraStack: sessionRef.current.loraStack })
     } catch (e) {
       const msg = String((e as Error).message || e)
       patchClip(id, { state: 'failed', error: msg, ms: Date.now() - t0 })
@@ -1912,6 +1940,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           runName, width, height, steps, sceneRange: sceneRangeFor(sceneIndex),
           unetName: settings.chainUnetName || SINGULARITY_UNET,
           externalVideo,
+          // Undefined leaves the bound graph's own baked stack alone; the
+          // composer only stamps one once the operator has actually chosen.
+          loraStack: sessionRef.current.loraStack,
         },
       })
 
@@ -2255,7 +2286,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setClipLoraStack,
     isFreshChainStart: !session.parentClipId,
     externalVideo: session.externalVideo ?? null,
+    loraStack: session.loraStack,
     setExternalVideo,
+    setLoraStack,
     prepareContinuation,
     cancel,
     selectVersion,

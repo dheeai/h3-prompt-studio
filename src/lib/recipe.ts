@@ -262,10 +262,19 @@ export async function fetchShippedChainRecipes(): Promise<Recipe[]> {
   return out
 }
 
+/** Bump when the shipped variant SET changes, so existing profiles are topped
+ * up once with anything new. 1 = single Contex-Loop; 2 = SLA + VSA gate. */
+export const SHIPPED_SET_VERSION = 2
+
+/** Every shipped chain recipe id, for callers that need to tell one of ours
+ * from an operator's own. */
+export const SHIPPED_CHAIN_IDS: string[] = SHIPPED_CHAIN_SPECS.map((s) => s.id)
+
 export interface ChainAutoBindResult {
   recipes: Recipe[]
   chainRecipeId: string
   chainRecipeAutoBound: true
+  shippedRecipeSetVersion?: number
   /** The recipes actually stored this call — empty when nothing new was
    * added (an already-bound recipe, or every shipped variant already present
    * in `recipes`). */
@@ -292,14 +301,41 @@ export interface ChainAutoBindResult {
  */
 export async function resolveChainRecipeAutoBind(
   recipes: Recipe[],
-  settings: Pick<Settings, 'chainRecipeId' | 'chainRecipeAutoBound'>,
+  settings: Pick<Settings, 'chainRecipeId' | 'chainRecipeAutoBound' | 'shippedRecipeSetVersion' | 'dismissedShippedRecipes'>,
   fetchShipped: () => Promise<Recipe[]>,
 ): Promise<ChainAutoBindResult | null> {
-  if (settings.chainRecipeAutoBound) return null
+  const alreadyPresent = (id: string) => recipes.some((r) => r.id === id)
+
+  // A profile that auto-bound when only ONE variant shipped has the flag set,
+  // so a plain boolean gate would never offer the second one — the operator
+  // ends up with a single chip and nothing to switch to. `SHIPPED_SET_VERSION`
+  // bumps whenever the shipped SET changes, so such a profile is topped up
+  // exactly once: the MISSING variants are added and the existing binding is
+  // left alone. A variant the operator later deletes stays deleted, because
+  // the version is recorded whether or not anything was added.
+  const offeredVersion = settings.shippedRecipeSetVersion ?? (settings.chainRecipeAutoBound ? 1 : 0)
+  if (offeredVersion >= SHIPPED_SET_VERSION) return null
+
+  if (settings.chainRecipeAutoBound) {
+    // A deletion is remembered, so topping up never resurrects one.
+    const dismissed = new Set(settings.dismissedShippedRecipes ?? [])
+    const missing = SHIPPED_CHAIN_SPECS.map((sp) => sp.id).filter((id) => !alreadyPresent(id) && !dismissed.has(id))
+    if (!missing.length) {
+      return { recipes, chainRecipeId: settings.chainRecipeId ?? '', chainRecipeAutoBound: true, added: [] }
+    }
+    const topUp = (await fetchShipped()).filter((r) => !alreadyPresent(r.id))
+    // Binding untouched: this only makes the other variant selectable.
+    return {
+      recipes: topUp.length ? [...recipes, ...topUp] : recipes,
+      chainRecipeId: settings.chainRecipeId ?? SHIPPED_CHAIN_RECIPE_SLA_ID,
+      chainRecipeAutoBound: true,
+      added: topUp,
+    }
+  }
+
   if (settings.chainRecipeId && recipes.some((r) => r.id === settings.chainRecipeId)) {
     return { recipes, chainRecipeId: settings.chainRecipeId, chainRecipeAutoBound: true, added: [] }
   }
-  const alreadyPresent = (id: string) => recipes.some((r) => r.id === id)
   const missingIds = SHIPPED_CHAIN_SPECS.map((s) => s.id).filter((id) => !alreadyPresent(id))
   const fetched = missingIds.length ? await fetchShipped() : []
   const added = fetched.filter((r) => !alreadyPresent(r.id))

@@ -6,8 +6,7 @@ import { fileURLToPath } from 'node:url'
 import {
   FALLBACK_HEIGHT, FALLBACK_WIDTH, GEOMETRY_PRESETS, OOM_HEIGHT, OOM_WIDTH,
   SHIPPED_CHAIN_RECIPE_SLA_ID, SHIPPED_CHAIN_RECIPE_VSA_ID,
-  makeRecipe, oomRisk, parseWorkflow, resolveChainRecipeAutoBind,
-} from './recipe'
+  makeRecipe, oomRisk, parseWorkflow, resolveChainRecipeAutoBind, SHIPPED_SET_VERSION } from './recipe'
 import type { ComfyNode, Recipe } from './types'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -176,9 +175,47 @@ const fetchThrows = async (): Promise<Recipe[]> => {
 }
 const fetchFails = async (): Promise<Recipe[]> => []
 
-test('resolveChainRecipeAutoBind: no-op once chainRecipeAutoBound is already set', async () => {
-  const result = await resolveChainRecipeAutoBind([], { chainRecipeId: undefined, chainRecipeAutoBound: true }, fetchThrows)
-  assert.equal(result, null)
+test('resolveChainRecipeAutoBind: no-op once the CURRENT shipped set has been offered', async () => {
+  const result = await resolveChainRecipeAutoBind(
+    [],
+    { chainRecipeId: undefined, chainRecipeAutoBound: true, shippedRecipeSetVersion: SHIPPED_SET_VERSION },
+    fetchThrows,
+  )
+  assert.equal(result, null, 'nothing is fetched once this profile has seen the current set')
+})
+
+/**
+ * A profile that auto-bound when only ONE variant shipped has the boolean flag
+ * set but no set-version, so a plain boolean gate would never offer the second
+ * variant — the operator gets a single chip and nothing to switch to. That was
+ * a real report. It is topped up exactly once, and the BINDING is not touched.
+ */
+test('resolveChainRecipeAutoBind: an older profile is topped up with the newly shipped variant', async () => {
+  const slaOnly = [fixtureShippedSla()]
+  const result = await resolveChainRecipeAutoBind(
+    slaOnly,
+    { chainRecipeId: SHIPPED_CHAIN_RECIPE_SLA_ID, chainRecipeAutoBound: true },
+    fetchBoth,
+  )
+  assert.ok(result, 'an older profile is not a no-op')
+  assert.deepStrictEqual(
+    result.added.map((r) => r.id),
+    [SHIPPED_CHAIN_RECIPE_VSA_ID],
+    'only the MISSING variant is added',
+  )
+  assert.equal(result.chainRecipeId, SHIPPED_CHAIN_RECIPE_SLA_ID, 'the existing binding is left alone')
+  assert.equal(result.recipes.length, 2, 'both variants are now selectable')
+})
+
+test('resolveChainRecipeAutoBind: a topped-up profile does not re-add on the next load', async () => {
+  const both = [fixtureShippedSla(), fixtureShippedVsa()]
+  const result = await resolveChainRecipeAutoBind(
+    both,
+    { chainRecipeId: SHIPPED_CHAIN_RECIPE_SLA_ID, chainRecipeAutoBound: true },
+    fetchThrows,
+  )
+  assert.ok(result)
+  assert.deepStrictEqual(result.added, [], 'nothing added when every variant is already present')
 })
 
 test('resolveChainRecipeAutoBind: an already-bound chain recipe is left alone (just marks the flag)', async () => {
@@ -240,16 +277,22 @@ test('resolveChainRecipeAutoBind: VSA alone (SLA unavailable) still binds — fa
   assert.equal(result!.recipes.length, 1)
 })
 
-test('resolveChainRecipeAutoBind: a deliberate delete is never resurrected — chainRecipeAutoBound stays the only gate', async () => {
-  // After a successful auto-bind, the operator deletes both shipped recipes.
-  // chainRecipeId is now dangling (points at nothing), but the flag from the
-  // first bind survived in settings — that flag alone must stop a rebind.
+test('resolveChainRecipeAutoBind: a deliberate delete is never resurrected, even by a set top-up', async () => {
+  // Deleting a shipped recipe records its id (see `dismissedShippedRecipes`),
+  // which is the only thing that distinguishes "the operator threw this away"
+  // from "this profile predates the variant" — the two are otherwise
+  // identical, and a version counter alone would resurrect the deletion.
   const result = await resolveChainRecipeAutoBind(
     [],
-    { chainRecipeId: SHIPPED_CHAIN_RECIPE_SLA_ID, chainRecipeAutoBound: true },
+    {
+      chainRecipeId: undefined,
+      chainRecipeAutoBound: true,
+      dismissedShippedRecipes: [SHIPPED_CHAIN_RECIPE_SLA_ID, SHIPPED_CHAIN_RECIPE_VSA_ID],
+    },
     fetchThrows,
   )
-  assert.equal(result, null)
+  assert.ok(result)
+  assert.deepStrictEqual(result.added, [], 'a dismissed variant is never re-added')
 })
 
 test('resolveChainRecipeAutoBind: a fetch/parse failure on both variants changes nothing, so the caller retries next reload', async () => {

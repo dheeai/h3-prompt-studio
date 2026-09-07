@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { useApp } from '../app/state'
 import { classifyInput } from '../lib/lint'
 import { SCENE_LENGTH_CHIPS, secondsLabel } from '../lib/chainDisplay'
+import { LoraStackEditor } from './LoraStackEditor'
+import { listLoraNames } from '../lib/comfy'
+import { localLoraStackOverride, readBakedLoraStack } from '../lib/chain'
 import { framesForSeconds } from '../lib/recipe'
 
 function autosize(el: HTMLTextAreaElement | null) {
@@ -48,10 +51,20 @@ export function Composer({
   onOpenCheck: () => void
 }) {
   const app = useApp()
-  const { story, setStory, settings, patchSettings, breakIntoScenes, setBreakIntoScenes, streaming, providers, probes, clip, isFreshChainStart, externalVideo, plates, chainBlockers, rendering, gpuBusy, findings, scenesFrom } = app
+  const { story, setStory, settings, patchSettings, breakIntoScenes, setBreakIntoScenes, streaming, providers, probes, clip, isFreshChainStart, externalVideo, plates, chainBlockers, rendering, gpuBusy, findings, scenesFrom, setLoraStack, chainRecipe, endpoint, loraStack } = app
   const ref = useRef<HTMLTextAreaElement>(null)
+  // The box's own LoRA folder — `/object_info` is on ComfyUI's light paths, so
+  // listing it never forces a GPU backend switch.
+  useEffect(() => {
+    if (!endpoint) return
+    let live = true
+    listLoraNames(endpoint).then((n) => { if (live) setLoraNames(n) }).catch(() => {})
+    return () => { live = false }
+  }, [endpoint])
   const [authoring, setAuthoring] = useState(false)
   const [confirmingRender, setConfirmingRender] = useState(false)
+  const [loraNames, setLoraNames] = useState<string[]>([])
+  const [allowExplicit, setAllowExplicit] = useState(false)
 
   useEffect(() => autosize(ref.current), [story])
   useEffect(() => setConfirmingRender(false), [clip?.id])
@@ -163,6 +176,22 @@ export function Composer({
             ))}
           </div>
           <div className="tok composer-controls-note">5.2s is the shortest H3 makes.</div>
+        </div>
+        <div>
+          <LoraStackEditor
+            label="this scene"
+            stack={loraStack}
+            defaultStack={localLoraStackOverride(import.meta.env?.VITE_LOCAL_LORA_STACK) .length
+              ? localLoraStackOverride(import.meta.env?.VITE_LOCAL_LORA_STACK)
+              : readBakedLoraStack(chainRecipe?.graph ?? null)}
+            available={loraNames}
+            allowExplicit={allowExplicit}
+            onChange={setLoraStack}
+          />
+          <label className="tok composer-controls-note" style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
+            <input type="checkbox" checked={allowExplicit} onChange={(e) => setAllowExplicit(e.target.checked)} />
+            show explicit-content LoRAs
+          </label>
         </div>
         <div style={{ textAlign: 'right', marginLeft: 'auto', flex: '0 0 auto' }}>
           {confirmingRender && laterDiscarded > 0 && (

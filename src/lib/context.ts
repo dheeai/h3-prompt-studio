@@ -235,8 +235,11 @@ const STAGE_SKILLS: Partial<Record<StageId, readonly string[]>> = {
   // Deciding what to show, and how it is performed.
   direct: ['h3-direction', 'h3-acting', 'h3-two-hander', 'h3-lira'],
   breakdown: ['h3-direction'],
-  // Rendering a decision into the official field structure.
-  draft: ['h3-prompting'],
+  // `draft` now DIRECTS and WRITES in one pass, so it needs the directing and
+  // performance documents as well as the format one. That is the whole skill
+  // payload — but paid ONCE instead of twice, and without the direction sheet
+  // being generated only to be sent straight back in.
+  draft: ['h3-prompting', 'h3-direction', 'h3-acting', 'h3-two-hander', 'h3-lira'],
   revise: ['h3-prompting'],
   rebuild: ['h3-prompting'],
   freeform: ['h3-prompting'],

@@ -155,35 +155,41 @@ non-diegetic music or a score in this pass. Output the direction sheet only.
 SOURCE
 {{story}}`,
 
-  draft: `Write the {{mode}} prompt now.
+  draft: `Direct this, then write the {{mode}} prompt. One pass, both jobs — but in
+that order, and the order is not optional.
 
-The loaded documents govern this. Follow their field structure literally —
-field names, order and formatting exactly as specified there, not a paraphrase.
-Apply every craft rule they state about shot construction, camera, performance,
-sound and suppressed modalities, including any failure mode they record from
-real measurements.
+DECIDE FIRST, IN YOUR HEAD. Before a single line of prompt prose, work the
+loaded directing document's gates through: name the scene formula (desire,
+obstacle, geometry, gaze, rhythm) in a sentence each; give every shot a job;
+lay out the beat grid with a duration and a change per beat. If the formula
+cannot be named, the scene is not ready and no amount of prompt craft rescues
+it — say so in one line and direct the requested action anyway.
 
-This is a rebuild of the WRITING, not of the scene.
+Do NOT output that working. It is how you arrive at the prompt, not something
+to hand back.
 
-Write the prompt from the direction sheet rather than from any earlier prompt:
-that prompt's wording, ordering and structure are superseded. What is NOT
-superseded is the subject — the people, the place, the action and its outcome,
-the named objects, and any dialogue, which stay exactly as the brief asked for
-them. The sheet's WHAT THE BRIEF FIXES block is the authority on that.
+THEN WRITE. Follow the format document literally — field names, order and
+formatting exactly as specified there, not a paraphrase. Apply every craft
+rule it states about shot construction, camera, performance, sound and
+suppressed modalities, including any failure mode it records from real
+measurement.
 
-Render the direction sheet; do not re-direct it, and do not invent beats it
-does not contain. If the sheet itself has drifted from the fixed elements,
-follow the fixed elements and note the discrepancy in one line at the end.
+WHAT YOU MAY NOT CHANGE. The people, the place, the action and its outcome,
+the named objects, and any dialogue are fixed exactly as the brief asked for
+them. You are deciding HOW that is shot and performed, never WHAT happens. "A
+woman enters a shop" does not become a woman on a lane because a lane is more
+interesting — that is a different film.
 
-A DETERMINISTIC READ OF THE SOURCE, computed before either pass looked at it.
-It is context for the explanation you are about to write, not something to
-reproduce:
+{{film}}
+
+PREVIOUS CLIP PROMPT (continuity reference only — do not recreate its action)
+{{previous}}
+
+A DETERMINISTIC READ OF THE SOURCE, computed before you looked at it — treat
+it as context, not as something to reproduce:
 {{standing}}
 
-DIRECTION SHEET
-{{current}}
-
-SOURCE (for reference only)
+SOURCE
 {{story}}
 
 Now write your reply. Output exactly one block, with no heading of your own
@@ -193,9 +199,7 @@ before or after it:
 the complete prompt — and nothing else in it: no preamble, no explanation, no
 fences
 
-Write the prompt and stop. Do not explain what you did, what the source was,
-or which document governed a choice: nothing downstream reads an explanation,
-and writing one is a second, analytical task competing with the writing.`,
+Write the prompt and stop.`,
 
   critique: `Audit the prompt below against the loaded documents.
 

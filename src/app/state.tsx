@@ -1132,8 +1132,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       await run('rebuild', undefined, { studioMode: 'prompt' })
       return
     }
-    const sheet = await run('direct', undefined, { studioMode: studioModeOverride })
-    if (sheet) await run('draft', undefined, { studioMode: studioModeOverride, current: sheet.text })
+    // ONE pass. `draft` now works the directing gates internally and writes the
+    // prompt from them, so the sheet is no longer generated, returned, and sent
+    // straight back in — which cost a second reasoning warm-up, a second round
+    // trip, and the sheet's own tokens twice. `direct` remains its own stage
+    // for anyone who wants the sheet itself.
+    await run('draft', undefined, { studioMode: studioModeOverride })
   }, [run, breakIntoScenes])
 
   const reset = useCallback(async () => {

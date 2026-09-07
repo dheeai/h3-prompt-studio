@@ -8,23 +8,25 @@ import { DEFAULT_PROVIDERS, loadProviders, probe, saveProviders } from '../lib/p
 import { STAGE_LABEL, fillTemplate, filmBlock, hasPromptBlock, nextRole, parseBreakdown, splitHandoff, splitPromptReplacement, splitReply, templateFor } from '../lib/stages'
 import { DEFAULT_ENDPOINTS, lastFrameOf, poll, pollChain, probeComfy, submit, uploadImage, viewUrl } from '../lib/comfy'
 import type { PollResult } from '../lib/comfy'
-import { applyRecipe, framesForSeconds, oomRisk, recipeIssues } from '../lib/recipe'
+import { applyRecipe, fetchShippedChainRecipe, framesForSeconds, oomRisk, recipeIssues, resolveChainRecipeAutoBind } from '../lib/recipe'
 import { padForOverlap } from '../lib/frames'
 import type { PaddedClip } from '../lib/frames'
-import { CHAIN_CONTEXT_LENGTH, CHAIN_MIN_STEPS, ChainError, SINGULARITY_UNET, buildChainGraph, chainIssues, chainShotsForPlan } from '../lib/chain'
+import { CHAIN_CONTEXT_LENGTH, CHAIN_MIN_STEPS, ChainError, SINGULARITY_UNET, buildChainGraph, chainIssues, chainShotsForPlan, planNeedsPerSceneLoraSplit } from '../lib/chain'
 import type { ChainPlate, ChainShot } from '../lib/chain'
+import { cumulativeFilm, sceneWorkLabel } from '../lib/chainDisplay'
+import type { SceneWorkLabel } from '../lib/chainDisplay'
 import { fetchBundledSkills, loadSkills, removeSkill, saveSkill } from '../lib/skills'
 import { estTokens } from '../lib/tokens'
-import { appendContinuationHistory, authorContinuation, clearDraftContext, continuationContextOverride, continuationPlateIsFresh, continuationSource, interruptedReasoningText, previousPromptForClip, promptSourceForEntryMode } from '../lib/entry'
-import type { EntryModeId } from '../lib/entry'
+import { appendContinuationHistory, authoringModeFor, authorContinuation, clearDraftContext, continuationContextOverride, continuationPlateIsFresh, continuationSource, interruptedReasoningText, migrateEntryMode, previousPromptForClip, promptSourceForEntryMode } from '../lib/entry'
+import type { AuthoringMode, EntryModeId } from '../lib/entry'
 import { isSingleRequestStage, type StudioRunPhase } from '../lib/studio-workflow'
 import { normalizeThinkingBudgets, resolveThinkingBudget } from '../lib/thinking'
 import type {
-  Breakdown, ChatTurn, Clip, ClipChainInfo, ComfyEndpoint, FilmContext, Finding, Plate, ProbeResult, Provider,
-  Recipe, Selection, Settings, Skill, StageId, Version,
+  Breakdown, ChatTurn, Clip, ClipChainInfo, ComfyEndpoint, FilmContext, Finding, LoraStackEntry, Plate, ProbeResult,
+  Provider, Recipe, Selection, Settings, Skill, StageId, Version,
 } from '../lib/types'
 
-const SETTINGS_SCHEMA = 5
+const SETTINGS_SCHEMA = 6
 
 const DEFAULT_FILM: FilmContext = { role: 'standalone', spine: '', precedes: '', follows: '' }
 
@@ -49,6 +51,8 @@ const DEFAULT_SETTINGS: Settings = {
   seconds: 7.3,
   lockSeed: true,
   seed: 42,
+  studioMode: 'idea',
+  planFirst: false,
 }
 
 /** The deterministic name a plate uploads under — shared so a chain build
@@ -105,6 +109,13 @@ interface Session {
   parentPrompt?: string
   /** The last Break down pass, if the story has been split into clips. */
   breakdown?: Breakdown
+  /**
+   * Continue an EXISTING video into this session's chain, instead of starting
+   * one from nothing — only meaningful while `parentClipId` is unset (a fresh
+   * scene 1); a continuation (`prepareContinuation`/`continueFrom`) always
+   * starts its own new `Session` object, so this never carries over into one.
+   */
+  externalVideo?: { endpointId: string; filename: string; prependOriginal: boolean } | null
 }
 
 type ContinuationPhase = 'frame' | 'handoff' | 'direct' | 'draft' | 'ready'
@@ -127,8 +138,8 @@ interface RunContextOverride {
   previous?: string
   /** Attribute the pass to the selected clip's position in the film. */
   clipIndex?: number
-  /** Explicit Studio entry contract for this pass. */
-  studioMode?: EntryModeId
+  /** Explicit Studio authoring contract for this pass. */
+  studioMode?: AuthoringMode
 }
 
 /** A prompt version written by a deterministic surface such as Agent. */
@@ -171,6 +182,41 @@ interface ChainPlanPreview {
   warnings: string[]
 }
 
+/**
+ * One scene of a MANUALLY-continued chain (`renderChain`'s Continue-from-a-
+ * clip flow, as opposed to the clip-plan's whole-job submit), as the chain
+ * flow UI actually shows it: what it delivered against what it was asked for,
+ * and what its card should say about its own work state right now.
+ */
+export interface ChainSceneRow extends PaddedClip {
+  clip: Clip
+  sceneIndex: number
+  label: SceneWorkLabel
+}
+
+/**
+ * The chain's OWN identity — never a clip's. Fixes the defect measured live
+ * 2026-09-06: `renderChain`/`pollChain` store the assembled film as the
+ * NEWEST clip's `output` (`studio_chain_smoke.mp4` at 124 frames, then
+ * `studio_chain_smoke_001.mp4` at 260 once scene 2 landed), so a clip's OWN
+ * card silently plays a cumulative cut that has nothing to do with that one
+ * scene. `filmClip` is that same underlying Clip record (its `.output` really
+ * is the whole-chain assemble node's output, for every chain job this studio
+ * submits — see the module comment on `chainFilm`, below) but the UI must
+ * present it as the CHAIN's film, never as scene N's own clip.
+ */
+export interface ChainFilmInfo {
+  runName: string
+  /** Ordered by scene, 1-based. */
+  scenes: ChainSceneRow[]
+  /** The Clip record whose `.output` currently holds the assembled film —
+   * the newest scene's, since every render/redo of this chain reassembles
+   * the whole thing. Never render this per-scene; it belongs to the chain. */
+  filmClip: Clip | null
+  totalFrames: number
+  totalSeconds: number
+}
+
 export interface Api {
   ready: boolean
   skills: Skill[]
@@ -199,11 +245,16 @@ export interface Api {
   interruptedReasoning: string | null
   findings: Finding[]
   context: BuiltContext | null
-  /** Current Studio entry mode; Agent has its own fixed contract. */
+  /** Which of the three starting points is selected; Agent has its own fixed
+   * contract. */
   studioMode: EntryModeId
+  /** Within the 'idea' door: plan the whole arc first, vs just scene 1 — see
+   * `authoringModeFor`. */
+  planFirst: boolean
 
   setStory: (s: string) => void
   setStudioMode: (mode: EntryModeId) => void
+  setPlanFirst: (v: boolean) => void
   setFilm: (f: Partial<FilmContext>) => void
   patchSettings: (p: Partial<Settings>) => void
   toggleSkill: (skill: Skill) => void
@@ -214,7 +265,7 @@ export interface Api {
   refreshProbe: (id: string) => Promise<void>
   run: (stage: StageId, note?: string, override?: RunContextOverride) => Promise<Version | null>
   /** Bounded generation for Scene/Clip; Prompt Rebuild is one LLM request. */
-  rebuild: (studioMode?: EntryModeId) => Promise<void>
+  rebuild: (mode?: AuthoringMode) => Promise<void>
 
   // ── the render loop ─────────────────────────────────────────────────
   plates: Plate[]
@@ -238,8 +289,23 @@ export interface Api {
   blockers: string[]
   /** Non-blocking — an OOM risk at the chosen geometry for the single-clip render. */
   warnings: string[]
+  /** Why the primary "Render scene N" action cannot start yet — the chain
+   * equivalent of `blockers`, which gates the plain single-clip `render()`
+   * path this button no longer uses. Empty when it can render. */
+  chainBlockers: string[]
   /** The current clip plan's chain accounting and gate, or null with no plan yet. */
   chainPlanPreview: ChainPlanPreview | null
+  /** Delivered/rendered/authored frame accounting for every clip that is part
+   * of SOME chain, keyed by `Clip.id` — the one place "how long did this scene
+   * actually turn out" is computed, so every place a length is shown (the
+   * scene spine, the old clip rail, a clip's own info line) reads the same
+   * number. A clip with no `.chain` (the Agent's plain single-clip render)
+   * has no entry — its own `frames` already IS what it delivered. */
+  sceneAccounting: Record<string, PaddedClip>
+  /** The active chain's own identity, scenes and assembled film — see
+   * `ChainFilmInfo`'s module comment for the defect this exists to fix. Null
+   * until some clip in this session has rendered as part of a chain. */
+  chainFilm: ChainFilmInfo | null
   /** End-to-end continuation progress, retained as a receipt once ready or failed. */
   continuation: ContinuationStatus | null
   addPlate: (p: Omit<Plate, 'id' | 'addedAt'>) => Promise<void>
@@ -272,6 +338,17 @@ export interface Api {
   appendPromptVersion: (input: PromptVersionInput) => Version | null
   /** Save the clip plan without invoking an LLM stage. */
   setBreakdown: (breakdown: Breakdown) => void
+  /** Set (or clear, with `undefined`) one plan clip's style-stack selection.
+   * Clearing returns it to "whatever the bound Contex-Loop workflow already
+   * carries" — see `BreakdownClip.loraStack`'s module comment. */
+  setClipLoraStack: (clipIndex: number, stack: LoraStackEntry[] | undefined) => void
+  /** Whether the session is about to start a fresh chain at scene 1 — the
+   * only time "continue from an existing video" means anything (a
+   * continuation always carries its own `parentClipId`). */
+  isFreshChainStart: boolean
+  /** This session's "continue from an existing video" choice, or null. */
+  externalVideo: { endpointId: string; filename: string; prependOriginal: boolean } | null
+  setExternalVideo: (v: { endpointId: string; filename: string; prependOriginal: boolean } | null) => void
   /** Select a clip and stage its deterministic continuation context. */
   prepareContinuation: (clipId: string) => PreparedContinuation | null
   cancel: () => void
@@ -298,7 +375,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false)
   const [skills, setSkills] = useState<Skill[]>([])
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
-  const [studioMode, setStudioMode] = useState<EntryModeId>('story')
+  // The selected starting point (door) and the 'idea' door's plan-first
+  // toggle are sticky preferences, unlike the draft itself — see
+  // `Settings.studioMode`'s module comment — so they live in `settings`
+  // rather than their own state, and round-trip through the same
+  // load/migrate/persist path every other setting does.
+  const studioMode: EntryModeId = settings.studioMode ?? 'idea'
+  const planFirst: boolean = settings.planFirst ?? false
   const [providers, setProvidersState] = useState<Provider[]>(DEFAULT_PROVIDERS)
   const [probes, setProbes] = useState<Record<string, ProbeResult>>({})
   const [session, setSession] = useState<Session>({ story: '', versions: [], currentId: null, chat: [] })
@@ -411,6 +494,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
         seenBundled: [...new Set([...(savedSettings?.seenBundled ?? []), ...bundledIds])],
       }
 
+      // A profile from before this redesign may carry the pre-redesign
+      // 'story' door (or nothing at all) — migrate on every load, not just
+      // once behind the schema gate: cheap, and a no-op on an already-current
+      // value, so this never needs its own version bump to keep working.
+      const migratedMode = migrateEntryMode(savedSettings?.studioMode, savedSettings?.planFirst)
+      merged.studioMode = migratedMode.studioMode
+      merged.planFirst = migratedMode.planFirst
+
       // Settings persist per browser, so raising a default only reaches people
       // who have never opened the app. Anyone already carrying the old 4096
       // ceiling needs it lifted explicitly — once, without stamping on a limit
@@ -442,7 +533,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
         idb.all<Recipe>('recipes'),
         idb.get<ComfyEndpoint[]>('settings', 'comfyEndpoints'),
       ])
-      setRecipes(savedRecipes.sort((a, b) => a.addedAt - b.addedAt))
+
+      // Bind the shipped Contex-Loop chain recipe so a fresh profile can
+      // render before an operator ever drops a workflow of their own — see
+      // `resolveChainRecipeAutoBind` for why this is gated on
+      // `chainRecipeAutoBound` rather than on whether `chainRecipeId` itself
+      // resolves.
+      let recipesForState = savedRecipes
+      const bind = await resolveChainRecipeAutoBind(savedRecipes, merged, fetchShippedChainRecipe)
+      if (bind) {
+        merged.chainRecipeId = bind.chainRecipeId
+        merged.chainRecipeAutoBound = bind.chainRecipeAutoBound
+        recipesForState = bind.recipes
+        if (bind.added) await idb.set('recipes', bind.added.id, bind.added)
+      }
+      setRecipes(recipesForState.sort((a, b) => a.addedAt - b.addedAt))
       if (savedEndpoints?.length) setEndpointsState(savedEndpoints)
 
       // A refresh starts clean. The draft, its passes, the film context, the
@@ -520,6 +625,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ── actions ───────────────────────────────────────────────────────────
   const patchSettings = useCallback((p: Partial<Settings>) => setSettings((s) => ({ ...s, ...p })), [])
+  const setStudioMode = useCallback((mode: EntryModeId) => patchSettings({ studioMode: mode }), [patchSettings])
+  const setPlanFirst = useCallback((v: boolean) => patchSettings({ planFirst: v }), [patchSettings])
 
   const setStory = useCallback((story: string) => setSession((s) => ({ ...s, story })), [])
 
@@ -613,6 +720,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
     sessionRef.current = next
   }, [])
 
+  /** Set (or clear, with `null`) this session's "continue from an existing
+   * video" choice — see `Session.externalVideo`'s module comment. Only ever
+   * consumed by `renderChain` while `parentClipId` is unset. */
+  const setExternalVideo = useCallback((v: { endpointId: string; filename: string; prependOriginal: boolean } | null) => {
+    const next = { ...sessionRef.current, externalVideo: v }
+    setSession(next)
+    sessionRef.current = next
+  }, [])
+
+  const setClipLoraStack = useCallback((clipIndex: number, stack: LoraStackEntry[] | undefined) => {
+    const b = sessionRef.current.breakdown
+    if (!b) return
+    setBreakdown({ ...b, clips: b.clips.map((c) => (c.index === clipIndex ? { ...c, loraStack: stack } : c)) })
+  }, [setBreakdown])
+
+  /** A fresh Break down pass builds entirely new BreakdownClip objects
+   * (`parseBreakdown`), which would otherwise silently discard any
+   * style-stack an operator had already set on a clip at that index — the
+   * same "never silently discard a recorded choice" contract this file
+   * already keeps for a rendered scene's prompt/frames/steps/seed. */
+  const carryLoraStacksInto = useCallback((fresh: Breakdown | null, prior: Breakdown | undefined): Breakdown | null => {
+    if (!fresh || !prior) return fresh
+    return { ...fresh, clips: fresh.clips.map((c) => ({ ...c, loraStack: prior.clips.find((p) => p.index === c.index)?.loraStack })) }
+  }, [])
+
   const selectVersion = useCallback((id: string) => setSession((s) => ({ ...s, currentId: id })), [])
 
   const cancel = useCallback(() => {
@@ -669,7 +801,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         // Critique, Revise, Rebuild and a freeform note all operate on the prompt.
         const authoredPrompt = (cur && PROMPT_STAGES.has(cur.stage) ? cur.text : lastPrompt()?.text) ?? ''
         working = promptSourceForEntryMode(
-          override?.studioMode ?? studioMode,
+          override?.studioMode ?? authoringModeFor(studioMode, planFirst),
           sourceStory,
           authoredPrompt,
           looksLikePrompt(sourceStory),
@@ -731,7 +863,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           // the frame and the thread follow, which is what makes a composer
           // turn a continuation rather than a cold single-shot request.
           messages: [
-            { role: 'system', content: buildH3SystemPrompt(ctx, 'studio', override?.studioMode ?? studioMode) },
+            { role: 'system', content: buildH3SystemPrompt(ctx, 'studio', override?.studioMode ?? authoringModeFor(studioMode, planFirst)) },
             { role: 'user', content: user },
             ...(stage === 'freeform'
               ? [
@@ -801,17 +933,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
             truncated: result.truncated || undefined,
             clipIndex,
           }
+          const carriedBreakdown = carryLoraStacksInto(parsed, sessionRef.current.breakdown) ?? sessionRef.current.breakdown
           const nextSession = {
             ...sessionRef.current,
             versions: [...sessionRef.current.versions, version],
             currentId: version.id,
-            breakdown: parsed ?? sessionRef.current.breakdown,
+            breakdown: carriedBreakdown,
           }
           setSession((s) => ({
             ...s,
             versions: [...s.versions, version],
             currentId: version.id,
-            breakdown: parsed ?? s.breakdown,
+            breakdown: carriedBreakdown,
           }))
           // A caller may start the next planned clip immediately after this
           // promise resolves, before React has committed the functional state
@@ -925,11 +1058,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         endGpuUse()
       }
     },
-    [providers, settings, context, skills, findings, studioMode, beginGpuUse, endGpuUse],
+    [providers, settings, context, skills, findings, studioMode, planFirst, beginGpuUse, endGpuUse],
   )
 
-  const rebuild = useCallback(async (mode?: EntryModeId) => {
-    const studioModeOverride = mode ?? studioMode
+  const rebuild = useCallback(async (mode?: AuthoringMode) => {
+    const studioModeOverride = mode ?? authoringModeFor(studioMode, planFirst)
     if (studioModeOverride === 'prompt') {
       // Prompt Rebuild is its own finite operation. It deliberately does not
       // route through the Scene/Clip Direct → Draft quality sequence.
@@ -938,7 +1071,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     const sheet = await run('direct', undefined, { studioMode: studioModeOverride })
     if (sheet) await run('draft', undefined, { studioMode: studioModeOverride, current: sheet.text })
-  }, [run, studioMode])
+  }, [run, studioMode, planFirst])
 
   const reset = useCallback(async () => {
     abortRef.current?.abort()
@@ -1014,6 +1147,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       film: preparedFilm,
       parentClipId: source.id,
       parentPrompt: source.prompt,
+      // A continuation is never scene 1 — see `Session.externalVideo`'s module comment.
+      externalVideo: null,
     }
     setSession(next)
     sessionRef.current = next
@@ -1052,9 +1187,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const warnings = useMemo(() => {
     const out: string[] = []
-    if (recipe) {
-      const width = settings.width ?? recipe.defaults.width
-      const height = settings.height ?? recipe.defaults.height
+    // Every render now goes through `renderChain`, which builds against
+    // `chainRecipe` — never the plain single-clip `recipe` — so the risk
+    // check has to read the SAME geometry that would actually be submitted.
+    // Checking `recipe` here left this silent for the studio's one real
+    // render path whenever no single-clip recipe happened to be bound.
+    if (chainRecipe) {
+      const width = settings.width ?? chainRecipe.defaults.width
+      const height = settings.height ?? chainRecipe.defaults.height
       const frames = framesForSeconds(settings.seconds, 24)
       if (oomRisk(width, height, frames)) {
         out.push(
@@ -1065,7 +1205,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     }
     return out
-  }, [recipe, settings.width, settings.height, settings.seconds])
+  }, [chainRecipe, settings.width, settings.height, settings.seconds])
+
+  /**
+   * Gates the primary "Render scene N" action — the chain equivalent of
+   * `blockers`, above. Every render now goes through `renderChain`, so this
+   * checks `chainRecipe`, never the plain single-clip `recipe`.
+   */
+  const chainBlockers = useMemo(() => {
+    const out: string[] = []
+    if (!endpoint) out.push('No ComfyUI endpoint. Add one under “Where it renders”.')
+    else if (comfyProbes[endpoint.id] && comfyProbes[endpoint.id].state !== 'ok') {
+      out.push(`${endpoint.label} is not reachable — ${comfyProbes[endpoint.id].detail}`)
+    }
+    if (!chainRecipe) out.push('No Contex-Loop (chain) recipe loaded — drop the chain ComfyUI workflow saved in API format.')
+    if (!lastPromptText.trim()) out.push('No prompt to render yet. Run Draft, or paste one.')
+    const jobless = plates.filter((p) => !p.job.trim())
+    if (jobless.length) out.push(`${jobless.length} plate(s) have no job written. An unexplained reference drifts.`)
+    if (!session.parentClipId && session.externalVideo && endpoint && session.externalVideo.endpointId !== endpoint.id) {
+      out.push(`“Continue from a video” was picked on a different endpoint — switch back to it, or pick the video again on ${endpoint.label}.`)
+    }
+    return out
+  }, [endpoint, comfyProbes, chainRecipe, lastPromptText, plates, session.parentClipId, session.externalVideo])
 
   /**
    * The clip plan's chain accounting and gate, recomputed on every prompt,
@@ -1109,6 +1270,72 @@ export function AppProvider({ children }: { children: ReactNode }) {
       warnings: warn,
     }
   }, [session.breakdown, session.versions, plates, chainRecipe, settings.steps, settings.width, settings.height])
+
+  /**
+   * Delivered/rendered/authored accounting for every RENDERED chain scene,
+   * keyed by `Clip.id` — grouped by `chain.runName` (a session can hold more
+   * than one chain; `New draft` clears the draft, not `clips`) and run
+   * through `padForOverlap` in scene order, exactly the arithmetic
+   * `buildChainGraph` itself applies before submit (its own `padded` result is
+   * never stored back onto a `Clip` — see the module comment on `renderChain`
+   * — so this recomputes it from what actually got recorded, rather than
+   * needing a second write path into `Clip`).
+   */
+  const sceneAccounting = useMemo(() => {
+    const byRun = new Map<string, Array<Clip & { chain: ClipChainInfo }>>()
+    for (const c of clips) {
+      if (!c.chain) continue
+      const withChain = c as Clip & { chain: ClipChainInfo }
+      const arr = byRun.get(c.chain.runName) ?? []
+      arr.push(withChain)
+      byRun.set(c.chain.runName, arr)
+    }
+    const out: Record<string, PaddedClip> = {}
+    for (const group of byRun.values()) {
+      const ordered = [...group].sort((a, b) => a.chain.sceneIndex - b.chain.sceneIndex)
+      // Scene 1 of a chain that continued an external video pays the same
+      // overlap tax any other continuation's first sampled scene pays — see
+      // `padForOverlap`'s `firstHasPredecessor` and `ClipChainInfo.continuesExternalVideo`.
+      const padded = padForOverlap(ordered.map((c) => ({ frames: c.frames ?? 0 })), CHAIN_CONTEXT_LENGTH, {
+        firstHasPredecessor: !!ordered[0]?.chain.continuesExternalVideo,
+      })
+      ordered.forEach((c, i) => {
+        out[c.id] = padded[i]
+      })
+    }
+    return out
+  }, [clips])
+
+  /**
+   * The ACTIVE chain — the one the currently selected clip belongs to, or
+   * else the most recently touched chain in this session — as the chain-flow
+   * UI shows it: the film so far belongs to the CHAIN (`filmClip`), never
+   * presented as one scene's own clip; each scene's card gets its own
+   * work-state label. See `ChainFilmInfo`'s module comment for the defect
+   * this fixes.
+   */
+  const chainFilm = useMemo<ChainFilmInfo | null>(() => {
+    const runName = clip?.chain?.runName ?? [...clips].reverse().find((c) => c.chain)?.chain?.runName
+    if (!runName) return null
+    const inChain = clips.filter((c): c is Clip & { chain: ClipChainInfo } => c.chain?.runName === runName)
+    if (!inChain.length) return null
+    const ordered = [...inChain].sort((a, b) => a.chain.sceneIndex - b.chain.sceneIndex)
+    const chainIsRendering = rendering?.chain?.runName === runName
+    const scenes: ChainSceneRow[] = ordered.map((c) => ({
+      ...(sceneAccounting[c.id] ?? { authored: c.frames ?? 0, rendered: c.frames ?? 0, delivered: c.frames ?? 0 }),
+      clip: c,
+      sceneIndex: c.chain.sceneIndex,
+      label: sceneWorkLabel(c.state, chainIsRendering),
+    }))
+    const totals = cumulativeFilm(scenes, 24)
+    return {
+      runName,
+      scenes,
+      filmClip: ordered[ordered.length - 1] ?? null,
+      totalFrames: totals.frames,
+      totalSeconds: totals.seconds,
+    }
+  }, [clips, clip, rendering, sceneAccounting])
 
   const savePlate = useCallback(async (p: Plate) => {
     setPlates((prev) => {
@@ -1294,16 +1521,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
    * render path ("everything should be chainable through context loop,"
    * founder 2026-09-07, replacing the removed Long Media multiclip path).
    *
-   * With no `sceneIndex`: every plan clip is submitted fresh, in ONE job, with
-   * `scene_range` left blank — the fast path h3-shots itself uses for a whole
-   * block (no per-clip resume cost, since nothing has rendered yet).
+   * With no `sceneIndex`: every plan clip is submitted fresh. When every plan
+   * clip wants the SAME style-stack (`BreakdownClip.loraStack` — unset counts
+   * as its own value, see `planNeedsPerSceneLoraSplit`), that goes out as ONE
+   * job with `scene_range` left blank — the fast path h3-shots itself uses for
+   * a whole block (no per-clip resume cost, since nothing has rendered yet).
+   * The moment two clips want DIFFERENT stacks, one job can no longer honour
+   * both — a single ComfyUI job builds one graph with one
+   * `LTX_lora_loader.stack_data`, sampled by every shot in it — so this
+   * auto-splits into one job PER SCENE instead, submitted in order 1..N under
+   * ONE held GPU claim (never parallel; see `beginGpuUse`/`endGpuUse` below).
+   * Each such job is otherwise identical to a manual "redo this scene": every
+   * OTHER clip resends exactly what was recorded for it earlier in this same
+   * submit, so the chain resumes correctly scene to scene. Measured cost of
+   * doing this instead of refusing: ~1.6% slower across a 5-clip chain.
    *
-   * With a `sceneIndex`: redoes JUST that one plan clip. Every OTHER clip
-   * resends EXACTLY what was recorded for it on an earlier submit of this
-   * SAME plan — never re-derived from current settings/prompts, which is
-   * exactly the drift `verify_resume_history` exists to catch (the same
-   * append-only contract `renderChain` already keeps for manual continuation)
-   * — and `scene_range` limits sampling to the redone scene alone.
+   * With a `sceneIndex`: redoes JUST that one plan clip, with that clip's own
+   * style-stack. Every OTHER clip resends EXACTLY what was recorded for it on
+   * an earlier submit of this SAME plan — never re-derived from current
+   * settings/prompts, which is exactly the drift `verify_resume_history`
+   * exists to catch (the same append-only contract `renderChain` already
+   * keeps for manual continuation) — and `scene_range` limits sampling to the
+   * redone scene alone. A style-stack change is safe on a redo: Contex-Loop's
+   * own `_scene_dependency_record` hashes audio policy, context length, blend
+   * frames, continuation mode, spatial proxy and visual source — no model or
+   * LoRA field — so a differing stack never trips `verify_resume_history`.
    *
    * The plan's chain identity (`runName`) is derived from the breakdown's own
    * timestamp (`chainPlanPreview.runName`), so the first whole-plan submit
@@ -1325,7 +1567,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const vs = sessionRef.current.versions
     const plan = b.clips.map((c) => {
       const v = [...vs].reverse().find((x) => x.clipIndex === c.index && PROMPT_STAGES.has(x.stage))
-      return { index: c.index, seconds: c.seconds, prompt: v?.text ?? '' }
+      return { index: c.index, seconds: c.seconds, prompt: v?.text ?? '', loraStack: c.loraStack }
     })
 
     const runName = `plan_${b.at.toString(36)}`
@@ -1333,113 +1575,138 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const height = settings.height ?? chainRecipe.defaults.height
     const steps = settings.steps ?? CHAIN_MIN_STEPS
 
-    // A clip NOT being (re)sampled this submit must resend exactly what was
-    // recorded when IT last rendered as part of THIS plan — see
-    // `chainShotsForPlan`'s own module comment. A clip with no prior render
-    // (the whole-plan fast path, or a scene added to the plan after the fact)
-    // falls back to its current prompt/settings, same as a fresh submit.
-    const priorOf = (index: number) => {
-      const c = clipsRef.current
-        .filter((x) => x.chain?.runName === runName && x.chain.sceneIndex === index)
-        .sort((a, b) => b.at - a.at)[0]
-      return c ? { prompt: c.prompt, frames: c.frames ?? 0, steps: c.steps, seed: c.seed } : undefined
-    }
-    const shots: ChainShot[] = chainShotsForPlan(plan, {
-      sceneIndex,
-      steps,
-      nextSeed: () => (settings.lockSeed ? settings.seed : Math.floor(Math.random() * 2 ** 31)),
-      priorOf,
-    })
-
-    const imagePlates = platesRef.current.filter((p) => p.kind === 'image')
-
     const issues = chainIssues({
       graph: chainRecipe.graph,
-      shots: shots.map((s) => ({ index: s.index, prompt: s.prompt })),
-      plateCount: imagePlates.length,
+      shots: plan.map((p) => ({ index: p.index, prompt: p.prompt })),
+      plateCount: platesRef.current.filter((p) => p.kind === 'image').length,
       steps,
     })
     if (issues.length) {
       setError(issues.join(' '))
       return
     }
-    if (!beginGpuUse('render')) return
 
-    const jobId = `c${Date.now().toString(36)}`
-    const t0 = Date.now()
+    // A clip NOT being (re)sampled THIS job must resend exactly what was
+    // recorded when IT last rendered as part of THIS plan — see
+    // `chainShotsForPlan`'s own module comment. A clip with no prior render
+    // (the whole-plan fast path, or a scene added to the plan after the fact)
+    // falls back to its current prompt/settings, same as a fresh submit.
+    const priorClipFor = (index: number) =>
+      clipsRef.current.filter((x) => x.chain?.runName === runName && x.chain.sceneIndex === index).sort((a, b) => b.at - a.at)[0]
+    const priorOf = (index: number) => {
+      const c = priorClipFor(index)
+      return c ? { prompt: c.prompt, frames: c.frames ?? 0, steps: c.steps, seed: c.seed } : undefined
+    }
 
-    // One Clip record per plan clip, all sharing this job's promptId/output
-    // once it lands — the same one-Clip-per-scene model `renderChain` uses
-    // for manual continuation, so a later single-scene redo can read every
-    // other scene's recorded prompt/frames/steps/seed straight off these.
-    // A redo REPLACES the plan's earlier records rather than appending
-    // beside them — the plan has exactly one Clip per index at a time.
-    const draftClips: Clip[] = shots.map((s) => ({
-      id: `${jobId}_${s.index}`,
-      index: s.index,
-      parentId: null,
-      state: 'queued',
-      prompt: s.prompt,
-      film: sessionRef.current.film,
-      plateIds: imagePlates.map((p) => p.id),
-      recipeId: chainRecipe.id,
-      endpointId: endpoint.id,
-      seed: s.seed,
-      frames: s.frames,
-      fps: 24,
-      steps: s.steps ?? steps,
-      chain: { runName, sceneIndex: s.index },
-      at: Date.now(),
-    }))
-    const draftIds = new Set(draftClips.map((c) => c.id))
-    const patchPlanClips = (patch: Partial<Clip>) =>
-      setClips((prev) => prev.map((c) => (draftIds.has(c.id) ? { ...c, ...patch } : c)))
-
-    setClips((prev) => [...prev.filter((c) => c.chain?.runName !== runName), ...draftClips])
-    setCurrentClipId(draftClips[draftClips.length - 1]?.id ?? null)
-    setRenderingId(draftClips[0]?.id ?? null)
-
-    try {
-      // Same upload contract as `render()`/`renderChain`: a plate already on
-      // THIS box (picked, or uploaded by an earlier submit) is cited by name
-      // and never sent back.
-      const chainPlates: ChainPlate[] = []
-      for (const p of imagePlates) {
-        if (p.boxFile?.endpointId === endpoint.id) {
-          chainPlates.push({ id: p.id, filename: p.boxFile.filename, subfolder: p.boxFile.subfolder })
-          continue
-        }
-        if (p.uploaded?.endpointId === endpoint.id) {
-          chainPlates.push({ id: p.id, filename: p.uploaded.filename, subfolder: p.uploaded.subfolder })
-          continue
-        }
-        if (!p.dataUrl) throw new Error(`Plate “${p.name}” has no file on this box and nothing to upload.`)
-        const up = await uploadImage(endpoint, p.dataUrl, plateFilename(p))
-        chainPlates.push({ id: p.id, filename: up.filename, subfolder: up.subfolder })
-        await savePlate({ ...p, uploaded: { endpointId: endpoint.id, ...up } })
-      }
-
-      const built = buildChainGraph({
-        graph: chainRecipe.graph,
-        shots,
-        plates: chainPlates,
-        opts: {
-          runName, width, height, steps,
-          sceneRange: sceneIndex !== undefined ? String(sceneIndex) : '',
-          unetName: settings.chainUnetName || SINGULARITY_UNET,
-        },
+    // Build, submit, poll and record ONE job — either the whole plan fresh
+    // (`targetIndex` undefined, `scene_range` blank) or one scene of it
+    // (`targetIndex` given, `scene_range` limited to it). `loraStackForJob` is
+    // the ONE style-stack this job's graph gets stamped with.
+    const submitOne = async (targetIndex: number | undefined, loraStackForJob: LoraStackEntry[] | undefined) => {
+      const shots: ChainShot[] = chainShotsForPlan(plan, {
+        sceneIndex: targetIndex,
+        steps,
+        nextSeed: () => (settings.lockSeed ? settings.seed : Math.floor(Math.random() * 2 ** 31)),
+        priorOf,
       })
 
-      const promptId = await submit(endpoint, built.graph)
-      patchPlanClips({ state: 'rendering', promptId })
-      const output = await pollToDone(endpoint, promptId, (e, p) => pollChain(e, p, runName))
-      patchPlanClips({ state: 'done', output, ms: Date.now() - t0 })
+      const imagePlates = platesRef.current.filter((p) => p.kind === 'image')
+      const jobId = `c${Date.now().toString(36)}`
+      const t0 = Date.now()
+
+      // One Clip record per plan clip, all sharing this job's promptId/output
+      // once it lands — the same one-Clip-per-scene model `renderChain` uses
+      // for manual continuation, so a later single-scene redo can read every
+      // other scene's recorded prompt/frames/steps/seed straight off these.
+      // A redo REPLACES the plan's earlier records rather than appending
+      // beside them — the plan has exactly one Clip per index at a time. Only
+      // the scene(s) THIS job actually sampled recorded `loraStackForJob`;
+      // every other scene keeps whatever it was last recorded with.
+      const draftClips: Clip[] = shots.map((s) => ({
+        id: `${jobId}_${s.index}`,
+        index: s.index,
+        parentId: null,
+        state: 'queued',
+        prompt: s.prompt,
+        film: sessionRef.current.film,
+        plateIds: imagePlates.map((p) => p.id),
+        recipeId: chainRecipe.id,
+        endpointId: endpoint.id,
+        seed: s.seed,
+        frames: s.frames,
+        fps: 24,
+        steps: s.steps ?? steps,
+        loraStack: targetIndex === undefined || s.index === targetIndex ? loraStackForJob : priorClipFor(s.index)?.loraStack,
+        chain: { runName, sceneIndex: s.index },
+        at: Date.now(),
+      }))
+      const draftIds = new Set(draftClips.map((c) => c.id))
+      const patchPlanClips = (patch: Partial<Clip>) =>
+        setClips((prev) => prev.map((c) => (draftIds.has(c.id) ? { ...c, ...patch } : c)))
+
+      setClips((prev) => [...prev.filter((c) => c.chain?.runName !== runName), ...draftClips])
+      setCurrentClipId(draftClips[draftClips.length - 1]?.id ?? null)
+      setRenderingId(draftClips[0]?.id ?? null)
+
+      try {
+        // Same upload contract as `render()`/`renderChain`: a plate already on
+        // THIS box (picked, or uploaded by an earlier submit) is cited by name
+        // and never sent back.
+        const chainPlates: ChainPlate[] = []
+        for (const p of imagePlates) {
+          if (p.boxFile?.endpointId === endpoint.id) {
+            chainPlates.push({ id: p.id, filename: p.boxFile.filename, subfolder: p.boxFile.subfolder })
+            continue
+          }
+          if (p.uploaded?.endpointId === endpoint.id) {
+            chainPlates.push({ id: p.id, filename: p.uploaded.filename, subfolder: p.uploaded.subfolder })
+            continue
+          }
+          if (!p.dataUrl) throw new Error(`Plate “${p.name}” has no file on this box and nothing to upload.`)
+          const up = await uploadImage(endpoint, p.dataUrl, plateFilename(p))
+          chainPlates.push({ id: p.id, filename: up.filename, subfolder: up.subfolder })
+          await savePlate({ ...p, uploaded: { endpointId: endpoint.id, ...up } })
+        }
+
+        const built = buildChainGraph({
+          graph: chainRecipe.graph,
+          shots,
+          plates: chainPlates,
+          opts: {
+            runName, width, height, steps,
+            sceneRange: targetIndex !== undefined ? String(targetIndex) : '',
+            unetName: settings.chainUnetName || SINGULARITY_UNET,
+            loraStack: loraStackForJob,
+          },
+        })
+
+        const promptId = await submit(endpoint, built.graph)
+        patchPlanClips({ state: 'rendering', promptId })
+        const output = await pollToDone(endpoint, promptId, (e, p) => pollChain(e, p, runName))
+        patchPlanClips({ state: 'done', output, ms: Date.now() - t0 })
+      } catch (e) {
+        const msg = e instanceof ChainError ? e.message : String((e as Error).message || e)
+        patchPlanClips({ state: 'failed', error: msg, ms: Date.now() - t0 })
+        throw e
+      } finally {
+        setRenderingId(null)
+      }
+    }
+
+    if (!beginGpuUse('render')) return
+    try {
+      if (sceneIndex !== undefined) {
+        await submitOne(sceneIndex, plan.find((p) => p.index === sceneIndex)?.loraStack)
+      } else if (!planNeedsPerSceneLoraSplit(plan.map((p) => p.loraStack))) {
+        // Uniform (including "nobody customized anything") — the fast, single-job path.
+        await submitOne(undefined, plan[0]?.loraStack)
+      } else {
+        // Differing stacks — one job per scene, in order, still one held GPU claim.
+        for (const p of plan) await submitOne(p.index, p.loraStack)
+      }
     } catch (e) {
-      const msg = e instanceof ChainError ? e.message : String((e as Error).message || e)
-      patchPlanClips({ state: 'failed', error: msg, ms: Date.now() - t0 })
-      setError(msg)
+      setError(e instanceof ChainError ? e.message : String((e as Error).message || e))
     } finally {
-      setRenderingId(null)
       endGpuUse()
     }
   }, [
@@ -1475,6 +1742,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const parent = parentId ? clipsRef.current.find((c) => c.id === parentId) : undefined
     const runName = parent?.chain?.runName ?? `chain_${Date.now().toString(36)}`
     const sceneIndex = (parent?.chain?.sceneIndex ?? 0) + 1
+
+    // Only meaningful on a fresh scene-1 chain — `_initial_state` only reads
+    // `external_context` when the range starts there (see `buildChainGraph`'s
+    // own guard), and only when it is still bound to THIS endpoint (a picked
+    // box file, or an earlier upload, means nothing on a different box).
+    const ev = sessionRef.current.externalVideo
+    const externalVideo =
+      !parentId && ev && ev.endpointId === endpoint.id
+        ? { filename: ev.filename, prependOriginal: ev.prependOriginal }
+        : undefined
 
     const width = settings.width ?? chainRecipe.defaults.width
     const height = settings.height ?? chainRecipe.defaults.height
@@ -1531,7 +1808,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       frames,
       fps: 24,
       steps,
-      chain: { runName, sceneIndex },
+      chain: { runName, sceneIndex, continuesExternalVideo: !!externalVideo },
       at: Date.now(),
     }
     setClips((prev) => [...prev, draft])
@@ -1565,6 +1842,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         opts: {
           runName, width, height, steps, sceneRange: String(sceneIndex),
           unetName: settings.chainUnetName || SINGULARITY_UNET,
+          externalVideo,
         },
       })
 
@@ -1806,8 +2084,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     findings,
     context,
     studioMode,
+    planFirst,
     setStory,
     setStudioMode,
+    setPlanFirst,
     setFilm,
     patchSettings,
     toggleSkill,
@@ -1831,7 +2111,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     gpuBusy,
     blockers,
     warnings,
+    chainBlockers,
     chainPlanPreview,
+    sceneAccounting,
+    chainFilm,
     addPlate,
     updatePlate,
     deletePlate,
@@ -1848,6 +2131,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     continueFrom,
     appendPromptVersion,
     setBreakdown,
+    setClipLoraStack,
+    isFreshChainStart: !session.parentClipId,
+    externalVideo: session.externalVideo ?? null,
+    setExternalVideo,
     prepareContinuation,
     cancel,
     selectVersion,

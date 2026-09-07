@@ -36,9 +36,41 @@ export interface PaddedClip {
  * on every clip but the first, so the trim has something to remove without
  * eating into the prose the clip was written for.
  */
-export function padForOverlap(clips: Array<{ frames: number }>, overlap: number): PaddedClip[] {
+export function padForOverlap(
+  clips: Array<{ frames: number }>,
+  overlap: number,
+  opts: {
+    /**
+     * The chain's scene 1 has an external video as its predecessor
+     * (`ChainBuildOpts.externalVideo`), rather than starting from nothing.
+     *
+     * This is NOT the same case as clip 2+ below, and deliberately does not
+     * share its formula: `buildChainGraph` pads a continued CLIP's own
+     * request (+overlap) specifically so the join's trim has something to
+     * remove without eating into the authored length — but it has no
+     * equivalent compensation for an external video predecessor, because
+     * `shots[0]` carries no signal that one exists. Contex-Loop still trims
+     * the join's `overlap` frames off the front regardless, so this scene
+     * genuinely delivers `overlap` frames LESS than authored, not the same
+     * as authored. Measured live 2026-09-07: a 56.928s source plus a 124f
+     * scene asked for landed at 61.167s — 56.928 + (124-22)/24 predicts
+     * 61.178s, matching within encoding rounding; a compensated 136f
+     * delivery would have predicted 62.7s instead.
+     *
+     * This is a real, measured gap (the render is not padding-compensated
+     * the way any other continuation already is), not a design choice —
+     * flagged in the redesign report rather than silently fixed here, since
+     * fixing it would change `buildChainGraph`'s output.
+     */
+    firstHasPredecessor?: boolean
+  } = {},
+): PaddedClip[] {
   return clips.map((c, i) => {
     const authored = c.frames
+    if (i === 0 && opts.firstHasPredecessor) {
+      const rendered = snapUp(authored)
+      return { authored, rendered, delivered: rendered - overlap }
+    }
     // The FIRST clip is snapped too, which h3-shots does not need to do: there
     // the frame count comes from a project file already authored onto the grid,
     // whereas here it is derived from a plan's seconds and carries no floor.

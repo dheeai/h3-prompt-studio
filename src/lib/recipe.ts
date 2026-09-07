@@ -1,4 +1,4 @@
-import type { Binding, BindingSlot, ComfyNode, Recipe } from './types'
+import type { Binding, BindingSlot, ComfyNode, Recipe, Settings } from './types'
 
 /**
  * Reading a user's own ComfyUI workflow, and writing only the slots we own.
@@ -151,6 +151,7 @@ export function secondsForFrames(frames: number, fps = 24): number {
  */
 export const GEOMETRY_PRESETS: Array<{ width: number; height: number; label: string; aspect: string; note: string }> = [
   { width: 960, height: 544, label: '960×544', aspect: '16:9', note: 'The safe default — carries 481 frames comfortably' },
+  { width: 1216, height: 672, label: '1216×672', aspect: '16:9', note: 'Validated — what the 27-clip film of 2026-09-06 shipped on' },
   { width: 1088, height: 608, label: '1088×608', aspect: '16:9', note: 'Larger' },
   { width: 864, height: 480, label: '864×480', aspect: '16:9', note: 'Cheaper' },
   { width: 1344, height: 768, label: '1344×768', aspect: '16:9', note: 'Largest — measured to run out of memory past 362 frames' },
@@ -176,19 +177,101 @@ export function oomRisk(width: number, height: number, frames: number): boolean 
   return width >= OOM_WIDTH && height >= OOM_HEIGHT && frames > OOM_FRAMES
 }
 
-export function makeRecipe(name: string, graph: Record<string, ComfyNode>): Recipe {
+/**
+ * Fallback geometry when a workflow's H3 node has no LITERAL width/height to
+ * read (a wired link, not a value — the shipped Contex-Loop workflow is
+ * exactly this shape). This must never be the OOM tier: `makeRecipe` used to
+ * fall back to 1344×768 — `OOM_WIDTH`/`OOM_HEIGHT` themselves — so every
+ * auto-bound recipe silently defaulted to the one geometry measured to crash
+ * ComfyUI past 362 frames, and a crashed render is indistinguishable from one
+ * never submitted (`/history` comes back empty either way). 1216×672 is the
+ * validated tier the 27-clip film of 2026-09-06 shipped on instead.
+ */
+export const FALLBACK_WIDTH = 1216
+export const FALLBACK_HEIGHT = 672
+
+export function makeRecipe(name: string, graph: Record<string, ComfyNode>, id?: string): Recipe {
   const det = detectBindings(graph)
   const h3 = byClass(graph, H3)[0]?.[1]
-  const width = Number(h3?.inputs.width) || 1344
-  const height = Number(h3?.inputs.height) || 768
+  const width = Number(h3?.inputs.width) || FALLBACK_WIDTH
+  const height = Number(h3?.inputs.height) || FALLBACK_HEIGHT
   const length = Number(h3?.inputs.length) || 124
   return {
-    id: `r${Date.now().toString(36)}`,
+    id: id ?? `r${Date.now().toString(36)}`,
     name,
     graph,
     ...det,
     defaults: { width, height, fps: 24, seconds: secondsForFrames(length) },
     addedAt: Date.now(),
+  }
+}
+
+/**
+ * The Contex-Loop chain graph the app ships with, so a fresh profile can
+ * render before an operator ever drops a workflow of their own. Served from
+ * `public/workflows/` — same bytes as `lib/__fixtures__/contexloop_workflow.json`,
+ * which the golden-graph test in `chain.test.ts` depends on staying in sync.
+ */
+export const SHIPPED_CHAIN_RECIPE_ID = 'shipped-contexloop-v1'
+const SHIPPED_CHAIN_RECIPE_PATH = 'workflows/minimax_h3_contexloop_api.json'
+
+/**
+ * Fetch and parse the shipped workflow into a Recipe with the stable id above,
+ * exactly the way a dropped file becomes one (`parseWorkflow` + `detectBindings`
+ * via `makeRecipe`). Never throws — a missing or malformed asset just yields
+ * `null`, and the caller leaves the app exactly as it was.
+ */
+export async function fetchShippedChainRecipe(): Promise<Recipe | null> {
+  try {
+    const res = await fetch(new URL(SHIPPED_CHAIN_RECIPE_PATH, document.baseURI).toString(), { cache: 'no-cache' })
+    if (!res.ok) return null
+    const graph = parseWorkflow(await res.text())
+    return makeRecipe('Contex-Loop (shipped)', graph, SHIPPED_CHAIN_RECIPE_ID)
+  } catch {
+    return null
+  }
+}
+
+export interface ChainAutoBindResult {
+  recipes: Recipe[]
+  chainRecipeId: string
+  chainRecipeAutoBound: true
+  /** The recipe actually stored this call, or `null` when nothing new was added
+   * (an already-bound recipe, or a shipped copy already present in `recipes`). */
+  added: Recipe | null
+}
+
+/**
+ * Decide whether to bind the shipped Contex-Loop recipe, and do it — pure
+ * except for the injected `fetchShipped`, so the decision is unit-testable
+ * without `fetch`/`document`.
+ *
+ * Gated on `chainRecipeAutoBound`, never on whether `chainRecipeId` currently
+ * resolves — so a deliberate later deletion of the shipped recipe (which
+ * leaves `chainRecipeId` pointing at nothing) is never silently re-bound on a
+ * later reload, and an operator's own chosen recipe is never overridden.
+ *
+ * Returns `null` only when the flag was already set (nothing to do) or the
+ * fetch/parse failed — in the failure case the caller should leave
+ * `chainRecipeAutoBound` unset so this retries fail-soft on the next reload.
+ */
+export async function resolveChainRecipeAutoBind(
+  recipes: Recipe[],
+  settings: Pick<Settings, 'chainRecipeId' | 'chainRecipeAutoBound'>,
+  fetchShipped: () => Promise<Recipe | null>,
+): Promise<ChainAutoBindResult | null> {
+  if (settings.chainRecipeAutoBound) return null
+  if (settings.chainRecipeId && recipes.some((r) => r.id === settings.chainRecipeId)) {
+    return { recipes, chainRecipeId: settings.chainRecipeId, chainRecipeAutoBound: true, added: null }
+  }
+  const existing = recipes.find((r) => r.id === SHIPPED_CHAIN_RECIPE_ID)
+  const shipped = existing ?? (await fetchShipped())
+  if (!shipped) return null
+  return {
+    recipes: existing ? recipes : [...recipes, shipped],
+    chainRecipeId: shipped.id,
+    chainRecipeAutoBound: true,
+    added: existing ? null : shipped,
   }
 }
 

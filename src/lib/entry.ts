@@ -1,7 +1,17 @@
 import type { FilmContext } from './types'
 
-/** The three ways a new operator can enter the studio. */
-export type EntryModeId = 'story' | 'prompt' | 'idea'
+/**
+ * The three STARTING POINTS a new operator can enter the studio from.
+ *
+ * These describe the starting MATERIAL, not the output shape — with
+ * Contex-Loop as the only render path, every render is scene 1 of a chain, so
+ * an output-shaped split (the old "Scene (Multi-shot)" / "Clip" / "Prompt")
+ * no longer differs in anything the operator cares about. What differs is
+ * what they already have in hand: an idea, a prompt, or footage. See
+ * `AuthoringMode` for the separate axis this is not — the LLM contract a
+ * starting point resolves to.
+ */
+export type EntryModeId = 'idea' | 'prompt' | 'video'
 
 export interface EntryMode {
   id: EntryModeId
@@ -12,32 +22,45 @@ export interface EntryMode {
   action: string
 }
 
-export type EntryWorkflow = 'story-plan' | 'prompt-revise' | 'idea-prompt'
+/**
+ * The LLM authoring CONTRACT (`H3_STUDIO_MODE_RULES` in context.ts) — a
+ * different axis from `EntryModeId`, and NOT shown to the operator as a
+ * choice of its own.
+ *
+ * 'story' is the narrative multi-shot planner: it used to be its own door
+ * ("Scene (Multi-shot)") and is now reached from the 'idea' door by turning
+ * `planFirst` on ("plan the whole arc" rather than "just scene 1") — the
+ * planning capability is unchanged, only its framing moved. 'video' has no
+ * rules of its own: continuing footage authors scene 1 exactly the way an
+ * idea does (see `authoringModeFor`), it just starts from a different
+ * material.
+ */
+export type AuthoringMode = 'story' | 'prompt' | 'idea'
 
 export const ENTRY_MODES: readonly EntryMode[] = [
   {
-    id: 'story',
-    label: 'Scene (Multi-shot)',
-    title: 'Scene (Multi-shot)',
-    description: 'Plan several connected shots',
-    placeholder: 'Paste a scene, beat sheet, or script…',
-    action: 'Create clip plan',
-  },
-  {
     id: 'idea',
-    label: 'Clip',
-    title: 'Clip',
-    description: 'Turn an idea into one H3 clip',
+    label: 'An idea',
+    title: 'An idea',
+    description: 'A sentence, a beat, a situation',
     placeholder: 'Describe the clip you want…',
-    action: 'Generate prompt',
+    action: 'Write the prompt',
   },
   {
     id: 'prompt',
-    label: 'Prompt',
-    title: 'Prompt',
-    description: 'Improve an existing prompt',
+    label: 'A prompt',
+    title: 'A prompt',
+    description: 'You already have an H3 prompt',
     placeholder: 'Paste a rough or finished H3 prompt…',
-    action: 'Revise prompt',
+    action: 'Audit and correct',
+  },
+  {
+    id: 'video',
+    label: 'A video',
+    title: 'A video',
+    description: 'Footage you already have',
+    placeholder: 'Describe what happens after your footage ends…',
+    action: 'Write the prompt',
   },
 ]
 
@@ -56,25 +79,56 @@ export function entryAction(id: EntryModeId): string {
 /** Empty-state copy kept in the same order as the visible entry tabs. */
 export function entryStartCopy(): string {
   const [first, second, third] = ENTRY_MODES
-  return `Start with a ${first.label}, ${second.label}, or ${third.label}.`
+  return `Start with ${first.label}, ${second.label}, or ${third.label}.`
 }
 
+/**
+ * Which LLM authoring contract a starting point resolves to.
+ *
+ * Only the 'idea' door has a second axis worth asking about — `planFirst`
+ * ("just scene 1" vs "plan the whole arc"). Every other door maps onto one
+ * contract regardless of `planFirst`, so passing it for 'prompt'/'video' is
+ * harmless rather than meaningful.
+ */
+export function authoringModeFor(door: EntryModeId, planFirst: boolean): AuthoringMode {
+  if (door === 'prompt') return 'prompt'
+  if (door === 'idea' && planFirst) return 'story'
+  return 'idea'
+}
+
+export type EntryWorkflow = 'story-plan' | 'prompt-revise' | 'idea-prompt'
+
 /** The canonical action behind both the visible CTA and Cmd/Ctrl+Enter. */
-export function entryWorkflow(id: EntryModeId): EntryWorkflow {
-  if (id === 'story') return 'story-plan'
-  if (id === 'prompt') return 'prompt-revise'
+export function entryWorkflow(door: EntryModeId, planFirst: boolean): EntryWorkflow {
+  if (door === 'prompt') return 'prompt-revise'
+  if (door === 'idea' && planFirst) return 'story-plan'
   return 'idea-prompt'
 }
 
 /**
+ * Migrate a starting-point preference written by a build before this
+ * redesign, when 'story' was itself a door rather than an option inside
+ * 'idea'. Applied on every settings load — cheap and a no-op on an
+ * already-current value — so a profile that persisted the old value never
+ * lands on a door that no longer exists.
+ */
+export function migrateEntryMode(rawMode: unknown, rawPlanFirst?: unknown): { studioMode: EntryModeId; planFirst: boolean } {
+  if (rawMode === 'story') return { studioMode: 'idea', planFirst: true }
+  if (rawMode === 'idea' || rawMode === 'prompt' || rawMode === 'video') {
+    return { studioMode: rawMode, planFirst: !!rawPlanFirst }
+  }
+  return { studioMode: 'idea', planFirst: !!rawPlanFirst }
+}
+
+/**
  * Choose the prompt document for a prompt-oriented stage. An authored prompt
- * is authoritative; Prompt entry mode deliberately treats its pasted source
- * as a prompt even when it is rough enough to fail the structural heuristic.
- * Other entry modes keep the heuristic so a story or idea is not accidentally
- * placed in a prompt-only stage.
+ * is authoritative; the 'prompt' contract deliberately treats its pasted
+ * source as a prompt even when it is rough enough to fail the structural
+ * heuristic. Every other contract keeps the heuristic so a story, idea or
+ * video hand-off is not accidentally placed in a prompt-only stage.
  */
 export function promptSourceForEntryMode(
-  mode: EntryModeId,
+  mode: AuthoringMode,
   source: string,
   authoredPrompt: string,
   looksLikePrompt: boolean,
@@ -152,12 +206,15 @@ export interface DraftContextState {
   parentClipId?: string | null
   parentPrompt?: string
   breakdown?: unknown
+  externalVideo?: unknown
 }
 
 /**
  * Start a clean writing context while leaving production/configuration state
  * (clips, plates, recipes, endpoints) to the caller. In particular, a new
- * standalone Clip must not inherit an earlier Scene's film or parent prompt.
+ * standalone Clip must not inherit an earlier Scene's film or parent prompt —
+ * nor an earlier chain's "continue from this video" choice, which only ever
+ * means something for the fresh scene-1 chain it was picked for.
  */
 export function clearDraftContext<T extends DraftContextState>(session: T): T {
   return {
@@ -170,6 +227,7 @@ export function clearDraftContext<T extends DraftContextState>(session: T): T {
     parentClipId: null,
     parentPrompt: undefined,
     breakdown: undefined,
+    externalVideo: null,
   }
 }
 

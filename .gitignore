@@ -4,6 +4,7 @@ dist/
 # public/skills/ is deliberately NOT ignored: whatever is in it gets served to
 # every visitor, so it should always be visible in `git status` before a push.
 
-# Seeded design-canvas payload — generated from the .dc.html sources beside it
-# (~2.5 MB of editor code). Re-seed rather than version it.
-design/**/chain-flow-redesign.html
+# Seeded design-canvas payloads — generated from the .dc.html sources beside
+# them (~2.5 MB of editor code each). Re-seed rather than version them. The
+# sources (.dc.html + canvas.json) ARE tracked; only the built canvas is not.
+design/**/*-redesign.html

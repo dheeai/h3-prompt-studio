@@ -6,7 +6,7 @@ import { classifyInput, findingsToText, lint, looksLikePrompt, standingToText } 
 import { continuationBudgetFor, streamChatComplete } from '../lib/llm'
 import { DEFAULT_PROVIDERS, loadProviders, probe, saveProviders, LOCAL_LLM_URL, LOCAL_LLM_MODEL} from '../lib/providers'
 import { STAGE_LABEL, fillTemplate, filmBlock, hasPromptBlock, nextRole, parseBreakdown, splitHandoff, splitPromptReplacement, splitReply, templateFor } from '../lib/stages'
-import { DEFAULT_ENDPOINTS, lastFrameOf, poll, pollChain, probeComfy, submit, uploadImage, viewUrl } from '../lib/comfy'
+import { DEFAULT_ENDPOINTS, poll, pollChain, probeComfy, submit, uploadImage, viewUrl } from '../lib/comfy'
 import type { PollResult } from '../lib/comfy'
 import { applyRecipe, fetchShippedChainRecipes, framesForSeconds, oomRisk, recipeIssues, resolveChainRecipeAutoBind, SHIPPED_SET_VERSION, SHIPPED_CHAIN_IDS} from '../lib/recipe'
 import { padForOverlap } from '../lib/frames'
@@ -2059,70 +2059,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
       try {
       setError(null)
       setContinuation({ clipId, phase: 'frame', state: 'running' })
-      let frameWarning: string | null = null
-
-      try {
-        if (isCancelled()) {
-          markCancelled('frame')
-          return
-        }
-
-        // Remove a replacement from an earlier clip before extraction begins.
-        // If extraction is cancelled or fails, the current session must not be
-        // able to cite a stale ending frame while continuing text-only.
-        const before = platesRef.current
-        const retained = before.filter((p) => continuationPlateIsFresh(p, clipId))
-        if (retained.length !== before.length) {
-          platesRef.current = retained
-          setPlates(retained)
-        }
-
-        const frame = c.lastFrame ?? (url ? await lastFrameOf(url, controller.signal) : '')
-        if (isCancelled()) {
-          markCancelled('frame')
-          return
-        }
-        if (!frame) throw new Error('The clip has no readable ending frame.')
-        if (!c.lastFrame) patchClip(clipId, { lastFrame: frame })
-
-        // One replaced plate at a time — otherwise every continuation adds
-        // another last frame and the nine-reference budget is gone by clip 5.
-        const previous = retained.find((p) => p.mode === 'replaced')
-        const plate: Plate = {
-          id: previous?.id ?? `p${Date.now().toString(36)}`,
-          name: `clip ${c.index} · last frame`,
-          kind: 'image',
-          job: previous?.job?.trim()
-            ? previous.job
-            : 'Use it for the room, the light and where they are standing. Do not take expression from it.',
-          dataUrl: frame,
-          mode: 'replaced',
-          fromClipId: clipId,
-          addedAt: previous?.addedAt ?? 0, // stays first, so it is <Picture 1>
-        }
-        if (isCancelled()) {
-          markCancelled('frame')
-          return
-        }
-        // Keep the ref in sync immediately; Direct/Draft and a user pressing
-        // Render as soon as the prompt is ready must see the same plate list.
-        const nextPlates = [plate, ...retained.filter((p) => p.id !== plate.id)]
-        platesRef.current = nextPlates
-        setPlates(nextPlates)
-      } catch (e) {
-        if (isCancelled() || (e as Error).name === 'AbortError') {
-          markCancelled('frame')
-          return
-        }
-        // A frame we cannot read is not fatal — the hand-off is still worth
-        // having, and the operator can drop a still in by hand. The stale
-        // replacement was already removed above, so this remains text-only.
-        clearReplacedPlates()
-        frameWarning = 'Could not take the last frame: ' + String((e as Error).message || e)
+      // NO LAST-FRAME PLATE. This used to extract the previous clip's final
+      // frame and add it as a `replaced` plate so the next clip had something
+      // to continue from. Contex-Loop makes that redundant and slightly
+      // harmful: the chain already carries 22 frames of motion context PLUS
+      // the predecessor's video and audio latents, restored from its
+      // checkpoint — a still image is a strictly weaker version of what the
+      // resume already provides, and it burned one of H3's nine reference
+      // slots on every continuation. Any earlier extracted frame is dropped
+      // here so a stale one cannot be cited by the next prompt.
+      const staleFrames = platesRef.current.filter((p) => p.mode === 'replaced')
+      if (staleFrames.length) {
+        const kept = platesRef.current.filter((p) => p.mode !== 'replaced')
+        platesRef.current = kept
+        setPlates(kept)
       }
 
       if (isCancelled()) {
-        markCancelled('frame')
+        markCancelled('handoff')
         return
       }
       setContinuation({ clipId, phase: 'handoff', state: 'running' })
@@ -2207,7 +2161,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setContinuation({ clipId, phase: failedStage, state: 'failed', source: nextSource })
         return
       }
-      if (frameWarning) setError(frameWarning)
       setContinuation({ clipId, phase: 'ready', state: 'ready', source: nextSource })
       } catch (e) {
         if (isCancelled() || (e as Error).name === 'AbortError') {

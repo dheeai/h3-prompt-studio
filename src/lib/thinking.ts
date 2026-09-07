@@ -9,7 +9,10 @@ import { localEndpoint, localNetworkTarget } from './providers'
  */
 
 export const QWEN_REASONING_BUDGET_DEFAULT = 8192
-export const QWEN_REASONING_BUDGET_MAX = 32768
+/** Hard ceiling on reasoning, everywhere. Founder, 2026-09-07: thinking must
+ * be bounded to 8k "even if the provider is openrouter". A budget above this
+ * is clamped rather than refused, so an older persisted setting still loads. */
+export const QWEN_REASONING_BUDGET_MAX = 8192
 export const QWEN_REASONING_BUDGET_MESSAGE = 'Time to stop thinking. Give the final answer.'
 
 type LlamaEndpoint = {
@@ -107,10 +110,46 @@ export function isQwenFamilyModel(provider: LlamaEndpoint, model: string): boole
  * returned by identity so callers cannot accidentally alter their body.
  */
 export function withQwenReasoningBudget<T>(provider: LlamaEndpoint, model: string, payload: T, budget = QWEN_REASONING_BUDGET_DEFAULT): T {
-  if (!isQwenFamilyModel(provider, model) || !payload || typeof payload !== 'object' || Array.isArray(payload)) return payload
-  return {
-    ...(payload as Record<string, unknown>),
-    reasoning_budget_tokens: normalizeThinkingBudget(budget),
-    reasoning_budget_message: QWEN_REASONING_BUDGET_MESSAGE,
-  } as T
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return payload
+  const tokens = normalizeThinkingBudget(budget)
+
+  // ANY model on a local llama.cpp endpoint gets the paired fields, not just
+  // the Qwen family. `reasoning_budget_tokens` is a property of the SERVER, so
+  // gating it on the model name left real local reasoning models unbounded —
+  // `huihui-thinkingcap-27b` is a slug this gateway serves and it matched
+  // neither the alias list nor the /qwen/ pattern, so it thought without any
+  // ceiling at all. llama.cpp ignores fields it does not know, so widening
+  // this cannot break a non-reasoning local model.
+  if (isLocalLlamaCppEndpoint(provider) || isQwenFamilyModel(provider, model)) {
+    return {
+      ...(payload as Record<string, unknown>),
+      reasoning_budget_tokens: tokens,
+      reasoning_budget_message: QWEN_REASONING_BUDGET_MESSAGE,
+    } as T
+  }
+
+  // OpenRouter exposes a UNIFIED reasoning control across the models it
+  // fronts, so a hosted model is no longer left to think without a ceiling —
+  // which is what "unbounded thinking" meant in practice: a reasoning model
+  // on OpenRouter could spend arbitrarily long before emitting a token, with
+  // no budget field sent at all.
+  if (isOpenRouter(provider)) {
+    return { ...(payload as Record<string, unknown>), reasoning: { max_tokens: tokens } } as T
+  }
+
+  // Anything else is returned untouched ON PURPOSE. There is no portable
+  // reasoning-budget field across OpenAI-compatible servers, and inventing one
+  // risks a 400 from a server that rejects unknown keys — the completion's own
+  // `max_tokens` is the bound that always applies.
+  return payload
+}
+
+/** OpenRouter, by endpoint rather than by provider id, so a renamed or
+ * hand-added provider pointed at it is still recognised. */
+export function isOpenRouter(provider: LlamaEndpoint): boolean {
+  try {
+    return /(?:^|\.)openrouter\.ai$/.test(new URL(provider.baseUrl).hostname.toLowerCase())
+  } catch {
+    return false
+  }
 }

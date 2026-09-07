@@ -371,10 +371,17 @@ export interface ChainPlate {
  * become the literal tag text for that plate to ride this scene at all.
  */
 export function citeToTag(text: string, plates: ChainPlate[]): string {
-  return text.replace(CITATION, (_whole, kind: string, nStr: string) => {
+  return text.replace(CITATION, (whole, kind: string, nStr: string) => {
     const n = Number(nStr)
     const p = plates[n - 1]
-    if (!p) throw new ChainError(`prose cites <${kind} ${n}> but only ${plates.length} plate(s) are bound`)
+    // An unresolvable citation is LEFT AS IT IS rather than refusing the
+    // render. `<Subject N>` is H3's own native label syntax, so a citation
+    // with no plate behind it is still meaningful prose — the model reads it
+    // as a subject the prompt's own `subject_definitions` describes. It only
+    // means no PLATE rides that scene for it, which costs identity fidelity,
+    // not validity. Blocking here refused whole prompts an authoring pass had
+    // legitimately written with more subjects than plates bound.
+    if (!p) return whole
     return `@${p.id}`
   })
 }
@@ -862,13 +869,34 @@ export function chainIssues(input: ChainIssuesInput): string[] {
     )
   }
 
+  return out
+}
+
+/**
+ * Things worth saying that must NOT stop a render.
+ *
+ * An unresolvable `<Subject N>` citation lives here rather than in
+ * `chainIssues`: `<Subject N>` is H3's own label syntax, so a citation with no
+ * plate behind it still reads as valid prose — it just means no reference
+ * image rides that scene for that subject. That costs identity fidelity, not
+ * validity, and blocking on it refused whole prompts an authoring pass had
+ * legitimately written with more subjects than plates bound.
+ */
+export function chainWarnings(input: Pick<ChainIssuesInput, 'shots' | 'plateCount'>): string[] {
+  const { shots, plateCount } = input
+  const out: string[] = []
   for (const s of shots) {
+    const unresolved = new Set<string>()
     for (const m of s.prompt.matchAll(CITATION)) {
-      const n = Number(m[2])
-      if (n > plateCount) out.push(`Clip ${s.index} cites <${m[1]} ${n}> but only ${plateCount} plate(s) are bound.`)
+      if (Number(m[2]) > plateCount) unresolved.add(`<${m[1]} ${m[2]}>`)
+    }
+    if (unresolved.size) {
+      out.push(
+        `Clip ${s.index} cites ${[...unresolved].join(', ')} with ${plateCount} plate(s) bound — ` +
+          'those subjects render from the prompt text alone, with no reference image to hold their identity.',
+      )
     }
   }
-
   return out
 }
 

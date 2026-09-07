@@ -8,8 +8,7 @@ import {
   chainMinSteps, CHAIN_MIN_STEPS_SLA, CHAIN_MIN_STEPS_VSA, CHAIN_MIN_STEPS_DEFAULT,
   CANONICAL_UNET, CANONICAL_TURBO_LORA, SINGULARITY_UNET,
   ACCELERATOR_LORA_RE, EXPLICIT_LORA_RE, selectableStyleLoras, serializeLoraStack, readBakedLoraStack,
-  loraStackKey, planNeedsPerSceneLoraSplit, localLoraStackOverride,
-} from './chain'
+  loraStackKey, planNeedsPerSceneLoraSplit, localLoraStackOverride, chainWarnings } from './chain'
 import { padForOverlap } from './frames'
 import type { ChainPlate, ChainPlanClip, ChainShot } from './chain'
 import type { ComfyNode, LoraStackEntry } from './types'
@@ -241,18 +240,24 @@ test('the model path runs the Ref2VAVSAGatePatch gate, not SLA attention (VSA va
   assert.equal(result.graph[shiftModelSrc]?.class_type, 'Ref2VAVSAGatePatch')
 })
 
-test('buildChainGraph refuses a citation past the end of the plate list', () => {
+/**
+ * An unresolvable citation used to REFUSE the render. It no longer does:
+ * `<Subject N>` is H3's own label syntax, so a citation with no plate behind
+ * it is still valid prose — it just means no reference image rides that scene
+ * for that subject. Blocking refused whole prompts an authoring pass had
+ * legitimately written with more subjects than plates bound.
+ */
+test('buildChainGraph leaves an unresolvable citation alone instead of refusing', () => {
   const workflow = loadFixture('contexloop_workflow.json')
-  assert.throws(
-    () =>
-      buildChainGraph({
-        graph: workflow,
-        shots: [{ index: 1, prompt: 'Only <Subject 2> is cited.', frames: 362, seed: 1 }],
-        plates: scaffoldPlates,
-        opts: { runName: 'probe', width: 864, height: 480, steps: 6 },
-      }),
-    ChainError,
-  )
+  const built = buildChainGraph({
+    graph: workflow,
+    shots: [{ index: 1, prompt: '<Subject 1> looks at <Subject 2>.', frames: 362, seed: 1 }],
+    plates: scaffoldPlates,
+    opts: { runName: 'probe', width: 864, height: 480, steps: 6 },
+  })
+  const plan = JSON.parse(String(built.graph['80'].inputs.plan_json)) as { shots: Array<{ prompt: string }> }
+  assert.ok(plan.shots[0].prompt.includes('@hero'), 'the resolvable citation still becomes a tag')
+  assert.ok(plan.shots[0].prompt.includes('<Subject 2>'), 'the unresolvable one is left as written')
 })
 
 test('citeToTag turns <Subject N> / <Picture N> into the plate\'s @tag', () => {
@@ -263,20 +268,30 @@ test('citeToTag turns <Subject N> / <Picture N> into the plate\'s @tag', () => {
   assert.equal(citeToTag('<Subject 1> looks at <Picture 2>.', plates), '@aarav looks at @meera.')
 })
 
-test('chainIssues reports a missing recipe and empty shots, but not zero plates', () => {
+test('chainIssues reports a missing recipe and empty shots, but neither zero plates nor a dangling citation', () => {
   assert.deepStrictEqual(chainIssues({ graph: null, shots: [], plateCount: 0, steps: 6 }), [
     'No Contex-Loop recipe loaded — drop the chain ComfyUI workflow saved in API format.',
     'No clips in the chain — nothing to submit.',
   ])
 
-  const workflow = loadFixture('contexloop_workflow.json')
-  const issues = chainIssues({
-    graph: workflow,
-    shots: [{ index: 1, prompt: '<Subject 3> is not bound.' }],
+  const graph = loadFixture('contexloop_workflow.json')
+  const dangling = chainIssues({
+    graph,
+    shots: [{ index: 1, prompt: 'Only <Subject 3> is cited.' }],
     plateCount: 1,
     steps: 6,
   })
-  assert.ok(issues.some((i) => i.includes('<Subject 3>')))
+  assert.deepStrictEqual(dangling, [], 'a dangling citation is advice, not a blocker')
+})
+
+test('chainWarnings surfaces a dangling citation once per clip, naming what it costs', () => {
+  const out = chainWarnings({
+    shots: [{ index: 1, prompt: '<Subject 2> and <Subject 3> and <Subject 2> again.' }],
+    plateCount: 1,
+  })
+  assert.equal(out.length, 1, 'one line per clip, not one per citation')
+  assert.ok(out[0].includes('<Subject 2>') && out[0].includes('<Subject 3>'))
+  assert.ok(out[0].includes('no reference image'), 'says what it actually costs')
 })
 
 /**

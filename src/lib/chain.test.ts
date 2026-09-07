@@ -3,9 +3,9 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { buildChainGraph, chainIssues, citeToTag, pickAssembledVideo, snapUp, ChainError, CHAIN_MIN_STEPS } from './chain'
-import { padForOverlap } from './multiclip'
-import type { ChainPlate, ChainShot } from './chain'
+import { buildChainGraph, chainIssues, chainShotsForPlan, citeToTag, pickAssembledVideo, snapUp, ChainError, CHAIN_MIN_STEPS, CANONICAL_UNET, SINGULARITY_UNET } from './chain'
+import { padForOverlap } from './frames'
+import type { ChainPlate, ChainPlanClip, ChainShot } from './chain'
 import type { ComfyNode } from './types'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -175,11 +175,10 @@ test('citeToTag turns <Subject N> / <Picture N> into the plate\'s @tag', () => {
   assert.equal(citeToTag('<Subject 1> looks at <Picture 2>.', plates), '@aarav looks at @meera.')
 })
 
-test('chainIssues reports a missing recipe, empty shots, and a citation past the plate list', () => {
+test('chainIssues reports a missing recipe and empty shots, but not zero plates', () => {
   assert.deepStrictEqual(chainIssues({ graph: null, shots: [], plateCount: 0, steps: 6 }), [
     'No Contex-Loop recipe loaded — drop the chain ComfyUI workflow saved in API format.',
     'No clips in the chain — nothing to submit.',
-    'A chain needs at least one plate bound — H3 conditions the chain on a reference image, and a plateless graph is refused at submit.',
   ])
 
   const workflow = loadFixture('contexloop_workflow.json')
@@ -193,20 +192,79 @@ test('chainIssues reports a missing recipe, empty shots, and a citation past the
 })
 
 /**
- * Regression: a plateless chain used to build cleanly and then 400 at the box
- * with `prompt_outputs_failed_validation` on the reference node's
- * `conditioning` input — an inner-validation error naming nothing useful.
- * Measured live 2026-09-07. The gate belongs here, before the submit.
+ * The studio renders on Singularity (founder A/B 2026-09-06, then a whole
+ * 27-clip film), while the BUILDER default stays h3-shots' canonical fastvideo
+ * UNET so the golden-graph comparison against `submit.mjs --dry` keeps meaning
+ * something. Both halves are asserted here so neither can drift silently.
  */
-test('chainIssues rejects a plateless chain, and passes once one plate is bound', () => {
+test('opts.unetName stamps the graph, and the builder default stays the h3-shots canonical', () => {
+  const shots = [{ index: 1, prompt: 'A courtyard at dawn, @p1 standing still.', frames: 124, seed: 1 }]
+  const plates = [{ id: 'p1', filename: 'p1.png', subfolder: '' }]
+  const base = { runName: 'r', width: 864, height: 480, steps: 6 }
+
+  const unetOf = (graph: Record<string, { class_type?: string; inputs?: Record<string, unknown> }>) =>
+    Object.values(graph).find((n) => n.class_type === 'UNETLoader')?.inputs?.unet_name
+
+  const dflt = buildChainGraph({ graph: loadFixture('contexloop_workflow.json'), shots, plates, opts: base })
+  assert.strictEqual(unetOf(dflt.graph), CANONICAL_UNET)
+
+  const sing = buildChainGraph({
+    graph: loadFixture('contexloop_workflow.json'), shots, plates,
+    opts: { ...base, unetName: SINGULARITY_UNET },
+  })
+  assert.strictEqual(unetOf(sing.graph), SINGULARITY_UNET)
+  assert.strictEqual(SINGULARITY_UNET, 'Minimax-h3_Singularity_ref2va_Pruned_v1.3_int8.safetensors')
+})
+
+test('chainIssues is clean on a plateless chain and on a one-plate chain alike', () => {
   const graph = loadFixture('contexloop_workflow.json')
   const shots = [{ index: 1, prompt: 'A courtyard at dawn.' }]
 
   const none = chainIssues({ graph, shots, plateCount: 0, steps: 6 })
-  assert.ok(none.some((i) => i.includes('at least one plate')), `expected a plate issue, got ${JSON.stringify(none)}`)
+  assert.deepStrictEqual(none, [], `a plateless chain should be clean, got ${JSON.stringify(none)}`)
 
   const one = chainIssues({ graph, shots, plateCount: 1, steps: 6 })
   assert.deepStrictEqual(one, [], `a one-plate chain should be clean, got ${JSON.stringify(one)}`)
+})
+
+/**
+ * Fix, not just a gate: a plateless chain used to build cleanly and then
+ * 400 at the box with `prompt_outputs_failed_validation` on the Tagged
+ * Ref2VA reference node's `conditioning` input (measured live 2026-09-07),
+ * because its `references` socket is a required custom-typed input with
+ * nothing wired to it. `buildChainGraph` now conditions a plateless scene on
+ * the stock `MiniMaxH3ReferenceToVideo` node instead, whose reference inputs
+ * are genuinely optional — proved here at the graph level, and with a real
+ * submit against the box (see the founder-facing report).
+ */
+test('buildChainGraph conditions a plateless scene on the stock ref2va node, never the Tagged wrapper', () => {
+  const workflow = loadFixture('contexloop_workflow.json')
+  const result = buildChainGraph({
+    graph: workflow,
+    shots: [{ index: 1, prompt: 'A courtyard at dawn, empty and still.', frames: 124, seed: 1 }],
+    plates: [],
+    opts: { runName: 'plateless_probe', width: 864, height: 480, steps: 6 },
+  })
+
+  const classesUsed = new Set(Object.values(result.graph).map((n) => n.class_type))
+  assert.ok(classesUsed.has('MiniMaxH3ReferenceToVideo'), 'stock ref2va node is present')
+  assert.ok(!classesUsed.has('MiniMaxH3TaggedReferenceToVideo'), 'Tagged wrapper is not built at all')
+  assert.ok(!classesUsed.has('MiniMaxH3TaggedPictureReference'), 'no picture-reference node either')
+  assert.deepStrictEqual(result.references, [])
+
+  // The stock node's own reference-image autogrow inputs are never set — an
+  // Autogrow input left absent is what makes it genuinely optional, as
+  // opposed to being connected to nothing.
+  const stock = Object.values(result.graph).find((n) => n.class_type === 'MiniMaxH3ReferenceToVideo')
+  assert.ok(stock)
+  for (const key of Object.keys(stock!.inputs)) assert.ok(!key.startsWith('ref_images'), `unexpected ${key} on the stock node`)
+
+  // Chain Context's conditioning/latent trace to the stock node, not h3lfSref.
+  const ctxNode = Object.entries(result.graph).find(([, n]) => n.class_type === 'MiniMaxH3ChainContext')?.[1]
+  assert.ok(ctxNode)
+  const stockId = Object.entries(result.graph).find(([, n]) => n.class_type === 'MiniMaxH3ReferenceToVideo')?.[0]
+  assert.deepStrictEqual(ctxNode!.inputs.conditioning, [stockId, 0])
+  assert.deepStrictEqual(ctxNode!.inputs.latent, [stockId, 1])
 })
 
 // ── padForOverlap / snapUp — the overlap tax and the frame-grid check ─────────
@@ -263,4 +321,85 @@ test('padForOverlap on a single (head-only) clip never pays the tax', () => {
   // rounding covered by the snapUp tests above.
   const padded = padForOverlap([{ frames: 192 }], 22)
   assert.deepStrictEqual(padded, [{ authored: 192, rendered: 192, delivered: 192 }])
+})
+
+// ── chainShotsForPlan — plan -> chain shots, whole-plan vs single-scene redo ──
+
+const threeClipPlan: ChainPlanClip[] = [
+  { index: 1, prompt: 'Clip one prose.', seconds: 5.2 },
+  { index: 2, prompt: 'Clip two prose.', seconds: 5.2 },
+  { index: 3, prompt: 'Clip three prose.', seconds: 5.2 },
+]
+
+test('chainShotsForPlan (whole-plan, no sceneIndex): every clip uses its current prompt/settings, in order', () => {
+  let n = 0
+  const shots = chainShotsForPlan(threeClipPlan, {
+    steps: 6,
+    nextSeed: () => ++n,
+    priorOf: () => {
+      throw new Error('a fresh whole-plan submit must never consult prior history')
+    },
+  })
+  assert.deepStrictEqual(shots, [
+    { index: 1, prompt: 'Clip one prose.', frames: 124, steps: 6, seed: 1 },
+    { index: 2, prompt: 'Clip two prose.', frames: 124, steps: 6, seed: 2 },
+    { index: 3, prompt: 'Clip three prose.', frames: 124, steps: 6, seed: 3 },
+  ])
+})
+
+test('chainShotsForPlan (single-scene redo): every OTHER clip resends its recorded prior byte-identically', () => {
+  const recorded = new Map([
+    [1, { prompt: 'Clip one, as it actually rendered.', frames: 124, steps: 6, seed: 111 }],
+    [3, { prompt: 'Clip three, as it actually rendered.', frames: 141, steps: 8, seed: 333 }],
+  ])
+  let n = 0
+  const shots = chainShotsForPlan(threeClipPlan, {
+    sceneIndex: 2,
+    steps: 6,
+    nextSeed: () => ++n,
+    priorOf: (index) => recorded.get(index),
+  })
+  assert.deepStrictEqual(shots, [
+    // Untouched: byte-identical to what was recorded, not re-derived from
+    // the plan's current prompt/seconds/steps.
+    { index: 1, prompt: 'Clip one, as it actually rendered.', frames: 124, steps: 6, seed: 111 },
+    // The redo target alone uses the plan's current prompt/settings.
+    { index: 2, prompt: 'Clip two prose.', frames: 124, steps: 6, seed: 1 },
+    { index: 3, prompt: 'Clip three, as it actually rendered.', frames: 141, steps: 8, seed: 333 },
+  ])
+})
+
+test('chainShotsForPlan: a clip with no recorded prior falls back to current settings even during a single-scene redo', () => {
+  const shots = chainShotsForPlan(threeClipPlan, {
+    sceneIndex: 2,
+    steps: 6,
+    nextSeed: () => 42,
+    priorOf: () => undefined, // nothing has ever rendered for this plan
+  })
+  assert.deepStrictEqual(shots.map((s) => s.prompt), ['Clip one prose.', 'Clip two prose.', 'Clip three prose.'])
+  assert.ok(shots.every((s) => s.seed === 42))
+})
+
+test('chainShotsForPlan output feeds buildChainGraph for both a whole-plan submit and a single-scene redo', () => {
+  const workflow = loadFixture('contexloop_workflow.json')
+  const plates: ChainPlate[] = [{ id: 'hero', filename: 'hero.png', subfolder: '' }]
+  const plan: ChainPlanClip[] = [
+    { index: 1, prompt: '<Subject 1> stands still.', seconds: 5.2 },
+    { index: 2, prompt: '<Subject 1> turns to leave.', seconds: 5.2 },
+  ]
+
+  let n = 1000
+  const whole = chainShotsForPlan(plan, { steps: 6, nextSeed: () => ++n, priorOf: () => undefined })
+  const wholeBuilt = buildChainGraph({ graph: workflow, shots: whole, plates, opts: { runName: 'plan_probe', width: 864, height: 480, steps: 6 } })
+  assert.equal(wholeBuilt.graph['82'].inputs.scene_range, '', 'a whole-plan submit samples every scene')
+
+  const recorded = new Map(whole.map((s) => [s.index, { prompt: s.prompt, frames: s.frames, steps: s.steps, seed: s.seed }]))
+  const redo = chainShotsForPlan(
+    [{ index: 1, prompt: '<Subject 1> stands still, more still.', seconds: 5.2 }, plan[1]],
+    { sceneIndex: 1, steps: 6, nextSeed: () => ++n, priorOf: (i) => recorded.get(i) },
+  )
+  // Scene 2 is byte-identical to the whole-plan submit's recorded shot.
+  assert.deepStrictEqual(redo[1], whole[1])
+  const redoBuilt = buildChainGraph({ graph: workflow, shots: redo, plates, opts: { runName: 'plan_probe', width: 864, height: 480, steps: 6, sceneRange: '1' } })
+  assert.equal(redoBuilt.graph['82'].inputs.scene_range, '1', 'a single-scene redo samples only the redone scene')
 })

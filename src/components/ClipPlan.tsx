@@ -8,11 +8,18 @@ const PROMPT_STAGES = new Set(['draft', 'revise', 'rebuild', 'freeform'])
 /** The clip plan a Break down pass produced, and one way in per clip. */
 export function ClipPlan() {
   const app = useApp()
-  const { breakdown, versions, streaming } = app
+  const { breakdown, versions, streaming, clips, chainPlanPreview, renderChainPlan, rendering } = app
   if (!breakdown) return null
 
   const latestFor = (clipIndex: number): Version | undefined =>
     [...versions].reverse().find((v) => v.clipIndex === clipIndex && PROMPT_STAGES.has(v.stage))
+
+  // Whether THIS plan clip's scene has already landed as part of the plan's
+  // own chain (as opposed to some other manually-continued chain) — the
+  // signal that a "redo this scene alone" resubmit is even possible.
+  const renderedFor = (clipIndex: number) =>
+    chainPlanPreview &&
+    clips.some((c) => c.chain?.runName === chainPlanPreview.runName && c.chain.sceneIndex === clipIndex && c.state === 'done')
 
   return (
     <div style={{ padding: '4px 26px 0' }}>
@@ -21,6 +28,7 @@ export function ClipPlan() {
       </div>
       {breakdown.clips.map((c) => {
         const ready = latestFor(c.index)
+        const landed = renderedFor(c.index)
         return (
           <div className="card" key={c.index} style={{ marginBottom: 7 }}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 9, flexWrap: 'wrap' }}>
@@ -56,6 +64,16 @@ export function ClipPlan() {
               >
                 Generate prompt
               </button>
+              {landed && ready && (
+                <button
+                  className="btn sm ghost"
+                  disabled={!!rendering}
+                  title="Resample only this scene, resuming every other scene from its checkpoint"
+                  onClick={() => void renderChainPlan(c.index)}
+                >
+                  Redo this scene
+                </button>
+              )}
             </div>
             {c.covers && (
               <div className="tok" style={{ marginTop: 6, lineHeight: 1.55, color: 'var(--ink2)' }}>
@@ -66,38 +84,44 @@ export function ClipPlan() {
         )
       })}
 
-      <MulticlipSubmit />
+      <ChainPlanSubmit />
     </div>
   )
 }
 
 /**
- * One job for the whole plan: MiniMax H3 Long Media, `workflow_mode: 'multiclip'`.
+ * One Contex-Loop chain job for the whole plan — the studio's only multi-clip
+ * render path (Long Media multiclip removed 2026-09-07).
  *
  * The frame accounting is shown BEFORE the submit button on purpose — the
  * delivered length differs from what the plan asked for (the overlap tax, see
- * multiclip.ts), and that surprise is the whole point of surfacing it here
- * rather than after a 466-second render comes back short.
+ * chain.ts / frames.ts), and that surprise is the whole point of surfacing it
+ * here rather than after a long render comes back short. A per-clip "Redo
+ * this scene" action (above, once a clip has landed) resamples just one
+ * scene via `scene_range`, without re-sampling its neighbours.
  */
-function MulticlipSubmit() {
+function ChainPlanSubmit() {
   const app = useApp()
-  const { multiclipPreview, rendering, renderMulticlip, copyMulticlipGraph } = app
-  const [copied, setCopied] = useState(false)
-  if (!multiclipPreview) return null
+  const { chainPlanPreview, rendering, renderChainPlan } = app
+  const [busy, setBusy] = useState(false)
+  if (!chainPlanPreview) return null
 
-  const { clips, totalSeconds, issues, warnings } = multiclipPreview
-  const blocked = issues.length > 0 || !!rendering
+  const { clips, totalSeconds, issues, warnings } = chainPlanPreview
+  const blocked = issues.length > 0 || !!rendering || busy
 
-  const copy = async () => {
-    await copyMulticlipGraph()
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+  const submitAll = async () => {
+    setBusy(true)
+    try {
+      await renderChainPlan()
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
     <div className="card" style={{ marginTop: 4, marginBottom: 16 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 9 }}>
-        <span className="lbl">Long Media — the whole plan as one job</span>
+        <span className="lbl">Contex-Loop — the whole plan as one chain</span>
         <div style={{ flexGrow: 1 }} />
         <span className="tok">{totalSeconds.toFixed(3)}s delivered</span>
       </div>
@@ -134,11 +158,8 @@ function MulticlipSubmit() {
       )}
 
       <div style={{ display: 'flex', gap: 9, marginTop: 12 }}>
-        <button className="btn pri" disabled={blocked} onClick={() => void renderMulticlip()}>
-          {rendering ? 'Rendering…' : `Submit all ${clips.length} as one job`}
-        </button>
-        <button className="btn ghost" disabled={issues.length > 0} onClick={() => void copy()}>
-          {copied ? 'copied' : 'Copy the built graph'}
+        <button className="btn pri" disabled={blocked} onClick={() => void submitAll()}>
+          {rendering ? 'Rendering…' : `Submit all ${clips.length} as one chain`}
         </button>
       </div>
     </div>

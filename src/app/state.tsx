@@ -9,9 +9,9 @@ import { STAGE_LABEL, fillTemplate, filmBlock, hasPromptBlock, nextRole, parseBr
 import { DEFAULT_ENDPOINTS, lastFrameOf, poll, pollChain, probeComfy, submit, uploadImage, viewUrl } from '../lib/comfy'
 import type { PollResult } from '../lib/comfy'
 import { applyRecipe, framesForSeconds, oomRisk, recipeIssues } from '../lib/recipe'
-import { buildMulticlipGraph, multiclipIssues, multiclipWarnings, overlapFramesOf, padForOverlap, schedulerStepsOf } from '../lib/multiclip'
-import type { MulticlipClip, PaddedClip } from '../lib/multiclip'
-import { CHAIN_MIN_STEPS, ChainError, buildChainGraph, chainIssues } from '../lib/chain'
+import { padForOverlap } from '../lib/frames'
+import type { PaddedClip } from '../lib/frames'
+import { CHAIN_CONTEXT_LENGTH, CHAIN_MIN_STEPS, ChainError, SINGULARITY_UNET, buildChainGraph, chainIssues, chainShotsForPlan } from '../lib/chain'
 import type { ChainPlate, ChainShot } from '../lib/chain'
 import { fetchBundledSkills, loadSkills, removeSkill, saveSkill } from '../lib/skills'
 import { estTokens } from '../lib/tokens'
@@ -51,7 +51,7 @@ const DEFAULT_SETTINGS: Settings = {
   seed: 42,
 }
 
-/** The deterministic name a plate uploads under — shared so the multiclip path
+/** The deterministic name a plate uploads under — shared so a chain build
  * predicts the exact filename a real upload will produce, without uploading. */
 function plateFilename(p: Plate): string {
   return `${p.id}_${p.name.replace(/[^a-z0-9]+/gi, '_').slice(0, 40) || 'plate'}.png`
@@ -62,8 +62,8 @@ function plateFilename(p: Plate): string {
  *
  * Poll rather than hold a websocket: a dropped link must not lose a render the
  * box is still perfectly happily producing. Shared by every render path —
- * `pollFn` is `poll` for single-clip/Long Media and `pollChain` (chain.ts-aware,
- * so it never mistakes a scene checkpoint for the assembled film) for chain.
+ * `pollFn` is `poll` for a single clip and `pollChain` (chain.ts-aware, so it
+ * never mistakes a scene checkpoint for the assembled film) for any chain job.
  */
 async function pollToDone(
   ep: ComfyEndpoint,
@@ -149,16 +149,20 @@ export interface PreparedContinuation {
   hasEndingFrame: boolean
 }
 
-/** One plan clip's prompt and frame accounting, for the "Submit all as one job" panel. */
-interface MulticlipPreviewClip extends PaddedClip {
+/** One plan clip's prompt and frame accounting, for the clip plan's chain panel. */
+interface ChainPlanPreviewClip extends PaddedClip {
   index: number
   title: string
   prompt: string
   seconds: number
 }
 
-interface MulticlipPreview {
-  clips: MulticlipPreviewClip[]
+interface ChainPlanPreview {
+  /** The chain identity every submit of this plan resumes — derived from the
+   * breakdown's own timestamp, so the first whole-plan submit and any later
+   * single-scene redo land on the same run. */
+  runName: string
+  clips: ChainPlanPreviewClip[]
   /** Delivered seconds, summed — what the film actually runs. */
   totalSeconds: number
   /** Every blocking problem — same contract as `blockers`. */
@@ -216,9 +220,9 @@ export interface Api {
   plates: Plate[]
   recipes: Recipe[]
   recipe: Recipe | null
-  /** The Long Media (multiclip) workflow — a DIFFERENT stored recipe from `recipe`. */
-  multiclipRecipe: Recipe | null
-  /** The Contex-Loop (chain) workflow — a third, separate stored recipe. */
+  /** The Contex-Loop (chain) workflow — a DIFFERENT stored recipe from `recipe`.
+   * The studio's only multi-clip render path (Long Media multiclip removed
+   * 2026-09-07). */
   chainRecipe: Recipe | null
   endpoints: ComfyEndpoint[]
   endpoint: ComfyEndpoint | null
@@ -234,8 +238,8 @@ export interface Api {
   blockers: string[]
   /** Non-blocking — an OOM risk at the chosen geometry for the single-clip render. */
   warnings: string[]
-  /** The current clip plan's multiclip accounting and gate, or null with no plan yet. */
-  multiclipPreview: MulticlipPreview | null
+  /** The current clip plan's chain accounting and gate, or null with no plan yet. */
+  chainPlanPreview: ChainPlanPreview | null
   /** End-to-end continuation progress, retained as a receipt once ready or failed. */
   continuation: ContinuationStatus | null
   addPlate: (p: Omit<Plate, 'id' | 'addedAt'>) => Promise<void>
@@ -248,10 +252,15 @@ export interface Api {
   refreshComfyProbe: (id: string) => Promise<void>
   clipUrl: (c: Clip) => string | null
   render: () => Promise<void>
-  /** Submit the whole clip plan as one Long Media multiclip job. */
-  renderMulticlip: () => Promise<void>
-  /** Build the multiclip graph and copy it to the clipboard — no submit, no render. */
-  copyMulticlipGraph: () => Promise<void>
+  /**
+   * Submit the clip plan as a Contex-Loop chain — the only multi-clip render
+   * path. With no `sceneIndex`, submits every plan clip fresh in one job.
+   * With one, redoes JUST that plan clip: every other clip resends exactly
+   * what was recorded for it on an earlier submit of this same plan, and
+   * `scene_range` limits sampling to the one scene actually being redone.
+   * See the module comment beside its definition.
+   */
+  renderChainPlan: (sceneIndex?: number) => Promise<void>
   /** Render the current prompt as one Contex-Loop chain scene — see the
    * module comment beside `renderChain`'s definition for which chain it
    * joins and what gets resent for append-only resume verification. */
@@ -972,17 +981,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [recipes, settings.recipeId],
   )
   // No fallback to `recipes[0]` here, unlike `recipe` above: a single-clip
-  // recipe silently standing in for the Long Media one would build a graph
-  // with none of the multiclip nodes on it, and multiclipIssues would have to
-  // guess whether that was really the operator's intent.
-  const multiclipRecipe = useMemo(
-    () => recipes.find((r) => r.id === settings.multiclipRecipeId) ?? null,
-    [recipes, settings.multiclipRecipeId],
-  )
-  // Same reasoning as `multiclipRecipe`: no fallback to any other stored
-  // recipe. A workflow that is not the Contex-Loop graph has none of the
-  // MiniMaxH3Chain* nodes `buildChainGraph` requires, and `chainIssues`
-  // reports that plainly rather than this silently guessing.
+  // recipe silently standing in for the Contex-Loop one would build a graph
+  // with none of the MiniMaxH3Chain* nodes `buildChainGraph` requires, and
+  // `chainIssues` reports that plainly rather than this silently guessing.
   const chainRecipe = useMemo(
     () => recipes.find((r) => r.id === settings.chainRecipeId) ?? null,
     [recipes, settings.chainRecipeId],
@@ -1067,11 +1068,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [recipe, settings.width, settings.height, settings.seconds])
 
   /**
-   * The clip plan's multiclip accounting and gate, recomputed on every prompt,
+   * The clip plan's chain accounting and gate, recomputed on every prompt,
    * plate or geometry change so the frame accounting on screen never lags what
-   * a submit would actually build.
+   * a submit would actually build. `runName` is deterministic — derived from
+   * the breakdown's own timestamp — so a whole-plan submit and a later
+   * single-scene redo always resume the same chain (see `renderChainPlan`).
    */
-  const multiclipPreview = useMemo<MulticlipPreview | null>(() => {
+  const chainPlanPreview = useMemo<ChainPlanPreview | null>(() => {
     const b = session.breakdown
     if (!b || !b.clips.length) return null
 
@@ -1080,20 +1083,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return { index: c.index, title: c.title || `clip ${c.index}`, seconds: c.seconds, prompt: v?.text ?? '' }
     })
     const imagePlateCount = plates.filter((p) => p.kind === 'image').length
-    const graph = multiclipRecipe?.graph ?? null
-    const overlap = overlapFramesOf(graph)
-    const padded = padForOverlap(plan.map((c) => ({ frames: framesForSeconds(c.seconds, 24) })), overlap)
-    const steps = settings.steps ?? schedulerStepsOf(graph) ?? 0
+    const padded = padForOverlap(plan.map((c) => ({ frames: framesForSeconds(c.seconds, 24) })), CHAIN_CONTEXT_LENGTH)
+    const steps = settings.steps ?? CHAIN_MIN_STEPS
 
-    const issues = multiclipIssues({
-      graph,
-      clips: plan.map((c) => ({ index: c.index, prompt: c.prompt })),
+    const issues = chainIssues({
+      graph: chainRecipe?.graph ?? null,
+      shots: plan.map((c) => ({ index: c.index, prompt: c.prompt })),
       plateCount: imagePlateCount,
       steps,
     })
 
-    const width = settings.width ?? multiclipRecipe?.defaults.width ?? 0
-    const height = settings.height ?? multiclipRecipe?.defaults.height ?? 0
+    const width = settings.width ?? chainRecipe?.defaults.width ?? 0
+    const height = settings.height ?? chainRecipe?.defaults.height ?? 0
     // Check the PADDED (rendered) frame count, not delivered — that is what
     // actually gets sampled and is what VRAM has to hold.
     const warn = plan
@@ -1101,12 +1102,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .filter((x): x is string => x !== null)
 
     return {
+      runName: `plan_${b.at.toString(36)}`,
       clips: plan.map((c, i) => ({ ...c, ...padded[i] })),
       totalSeconds: +(padded.reduce((sum, p) => sum + p.delivered, 0) / 24).toFixed(3),
       issues,
-      warnings: [...warn, ...multiclipWarnings(graph)],
+      warnings: warn,
     }
-  }, [session.breakdown, session.versions, plates, multiclipRecipe, settings.steps, settings.width, settings.height])
+  }, [session.breakdown, session.versions, plates, chainRecipe, settings.steps, settings.width, settings.height])
 
   const savePlate = useCallback(async (p: Plate) => {
     setPlates((prev) => {
@@ -1288,17 +1290,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
   ])
 
   /**
-   * Gather what a multiclip submit needs and build the graph, WITHOUT
-   * submitting it — shared by `renderMulticlip` (which then submits) and
-   * `copyMulticlipGraph` (which stops here). Plates are uploaded for real:
-   * that costs a few small requests, not the 466s a render costs, so both
-   * callers pay it and both see the graph exactly as it will actually go out.
+   * Submit a clip plan as a Contex-Loop chain — the studio's only multi-clip
+   * render path ("everything should be chainable through context loop,"
+   * founder 2026-09-07, replacing the removed Long Media multiclip path).
+   *
+   * With no `sceneIndex`: every plan clip is submitted fresh, in ONE job, with
+   * `scene_range` left blank — the fast path h3-shots itself uses for a whole
+   * block (no per-clip resume cost, since nothing has rendered yet).
+   *
+   * With a `sceneIndex`: redoes JUST that one plan clip. Every OTHER clip
+   * resends EXACTLY what was recorded for it on an earlier submit of this
+   * SAME plan — never re-derived from current settings/prompts, which is
+   * exactly the drift `verify_resume_history` exists to catch (the same
+   * append-only contract `renderChain` already keeps for manual continuation)
+   * — and `scene_range` limits sampling to the redone scene alone.
+   *
+   * The plan's chain identity (`runName`) is derived from the breakdown's own
+   * timestamp (`chainPlanPreview.runName`), so the first whole-plan submit
+   * and every later single-scene redo resume the same chain rather than
+   * starting a fresh one.
    */
-  const buildMulticlipPayload = useCallback(async () => {
-    if (!endpoint) throw new Error('No ComfyUI endpoint. Add one under “Where it renders”.')
-    if (!multiclipRecipe) throw new Error('No Long Media recipe — drop the multiclip workflow and pick it as the Long Media recipe.')
+  const renderChainPlan = useCallback(async (sceneIndex?: number) => {
+    setError(null)
+    if (!endpoint || !chainRecipe) {
+      setError('Pick an endpoint and a Contex-Loop (chain) recipe first.')
+      return
+    }
     const b = sessionRef.current.breakdown
-    if (!b || !b.clips.length) throw new Error('No clip plan — run Break down first.')
+    if (!b || !b.clips.length) {
+      setError('No clip plan — run Break down first.')
+      return
+    }
 
     const vs = sessionRef.current.versions
     const plan = b.clips.map((c) => {
@@ -1306,100 +1328,124 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return { index: c.index, seconds: c.seconds, prompt: v?.text ?? '' }
     })
 
-    // Plates are uploaded once per box and cited by name, same as render()
-    // above — and only image plates: Long Media multiclip's global references
-    // are image_1..image_9, there is no video-reference slot on this path.
-    const imagePlates = platesRef.current.filter((p) => p.kind === 'image')
-    const refs: Array<{ filename: string; subfolder: string }> = []
-    for (const p of imagePlates) {
-      if (p.boxFile?.endpointId === endpoint.id) {
-        refs.push({ filename: p.boxFile.filename, subfolder: p.boxFile.subfolder })
-        continue
-      }
-      if (p.uploaded?.endpointId === endpoint.id) {
-        refs.push({ filename: p.uploaded.filename, subfolder: p.uploaded.subfolder })
-        continue
-      }
-      if (!p.dataUrl) throw new Error(`Plate “${p.name}” has no file on this box and nothing to upload.`)
-      const up = await uploadImage(endpoint, p.dataUrl, plateFilename(p))
-      refs.push(up)
-      await savePlate({ ...p, uploaded: { endpointId: endpoint.id, ...up } })
+    const runName = `plan_${b.at.toString(36)}`
+    const width = settings.width ?? chainRecipe.defaults.width
+    const height = settings.height ?? chainRecipe.defaults.height
+    const steps = settings.steps ?? CHAIN_MIN_STEPS
+
+    // A clip NOT being (re)sampled this submit must resend exactly what was
+    // recorded when IT last rendered as part of THIS plan — see
+    // `chainShotsForPlan`'s own module comment. A clip with no prior render
+    // (the whole-plan fast path, or a scene added to the plan after the fact)
+    // falls back to its current prompt/settings, same as a fresh submit.
+    const priorOf = (index: number) => {
+      const c = clipsRef.current
+        .filter((x) => x.chain?.runName === runName && x.chain.sceneIndex === index)
+        .sort((a, b) => b.at - a.at)[0]
+      return c ? { prompt: c.prompt, frames: c.frames ?? 0, steps: c.steps, seed: c.seed } : undefined
     }
-
-    const steps = settings.steps ?? schedulerStepsOf(multiclipRecipe.graph) ?? 0
-    const seed = settings.lockSeed ? settings.seed : Math.floor(Math.random() * 2 ** 31)
-    const clips: MulticlipClip[] = plan.map((c) => ({ prompt: c.prompt, seconds: c.seconds, seed }))
-
-    const built = buildMulticlipGraph({
-      graph: multiclipRecipe.graph,
-      clips,
-      plates: refs,
-      width: settings.width ?? multiclipRecipe.defaults.width,
-      height: settings.height ?? multiclipRecipe.defaults.height,
+    const shots: ChainShot[] = chainShotsForPlan(plan, {
+      sceneIndex,
       steps,
-      seed,
-      filenamePrefix: `multiclip_${Date.now().toString(36)}`,
+      nextSeed: () => (settings.lockSeed ? settings.seed : Math.floor(Math.random() * 2 ** 31)),
+      priorOf,
     })
 
-    return { plan, built, seed }
-  }, [endpoint, multiclipRecipe, settings.steps, settings.lockSeed, settings.seed, settings.width, settings.height, savePlate])
+    const imagePlates = platesRef.current.filter((p) => p.kind === 'image')
 
-  const renderMulticlip = useCallback(async () => {
-    setError(null)
-    if (!beginGpuUse('render')) return
-    const id = `c${Date.now().toString(36)}`
-    const t0 = Date.now()
-
-    let payload: Awaited<ReturnType<typeof buildMulticlipPayload>>
-    try {
-      payload = await buildMulticlipPayload()
-    } catch (e) {
-      setError(String((e as Error).message || e))
-      endGpuUse()
+    const issues = chainIssues({
+      graph: chainRecipe.graph,
+      shots: shots.map((s) => ({ index: s.index, prompt: s.prompt })),
+      plateCount: imagePlates.length,
+      steps,
+    })
+    if (issues.length) {
+      setError(issues.join(' '))
       return
     }
-    const { plan, built, seed } = payload
+    if (!beginGpuUse('render')) return
 
-    const draft: Clip = {
-      id,
-      index: clipsRef.current.length + 1,
-      parentId: sessionRef.current.parentClipId ?? null,
+    const jobId = `c${Date.now().toString(36)}`
+    const t0 = Date.now()
+
+    // One Clip record per plan clip, all sharing this job's promptId/output
+    // once it lands — the same one-Clip-per-scene model `renderChain` uses
+    // for manual continuation, so a later single-scene redo can read every
+    // other scene's recorded prompt/frames/steps/seed straight off these.
+    // A redo REPLACES the plan's earlier records rather than appending
+    // beside them — the plan has exactly one Clip per index at a time.
+    const draftClips: Clip[] = shots.map((s) => ({
+      id: `${jobId}_${s.index}`,
+      index: s.index,
+      parentId: null,
       state: 'queued',
-      // The whole job's prompt IS the first clip's — the same rule the setup
-      // node's own `prompt` field follows in multiclip mode (see multiclip.ts).
-      prompt: plan[0]?.prompt ?? '',
+      prompt: s.prompt,
       film: sessionRef.current.film,
-      plateIds: platesRef.current.filter((p) => p.kind === 'image').map((p) => p.id),
-      recipeId: multiclipRecipe!.id,
-      endpointId: endpoint!.id,
-      seed,
-      frames: built.padded.reduce((sum, p) => sum + p.delivered, 0),
+      plateIds: imagePlates.map((p) => p.id),
+      recipeId: chainRecipe.id,
+      endpointId: endpoint.id,
+      seed: s.seed,
+      frames: s.frames,
       fps: 24,
-      multiclip: {
-        clipIndexes: plan.map((c) => c.index),
-        perClip: plan.map((c, i) => ({ index: c.index, ...built.padded[i] })),
-        totalSeconds: built.totalSeconds,
-      },
+      steps: s.steps ?? steps,
+      chain: { runName, sceneIndex: s.index },
       at: Date.now(),
-    }
-    setClips((prev) => [...prev, draft])
-    setCurrentClipId(id)
-    setRenderingId(id)
+    }))
+    const draftIds = new Set(draftClips.map((c) => c.id))
+    const patchPlanClips = (patch: Partial<Clip>) =>
+      setClips((prev) => prev.map((c) => (draftIds.has(c.id) ? { ...c, ...patch } : c)))
+
+    setClips((prev) => [...prev.filter((c) => c.chain?.runName !== runName), ...draftClips])
+    setCurrentClipId(draftClips[draftClips.length - 1]?.id ?? null)
+    setRenderingId(draftClips[0]?.id ?? null)
 
     try {
-      const promptId = await submit(endpoint!, built.graph)
-      patchClip(id, { state: 'rendering', promptId })
-      const output = await pollToDone(endpoint!, promptId)
-      patchClip(id, { state: 'done', output, ms: Date.now() - t0 })
+      // Same upload contract as `render()`/`renderChain`: a plate already on
+      // THIS box (picked, or uploaded by an earlier submit) is cited by name
+      // and never sent back.
+      const chainPlates: ChainPlate[] = []
+      for (const p of imagePlates) {
+        if (p.boxFile?.endpointId === endpoint.id) {
+          chainPlates.push({ id: p.id, filename: p.boxFile.filename, subfolder: p.boxFile.subfolder })
+          continue
+        }
+        if (p.uploaded?.endpointId === endpoint.id) {
+          chainPlates.push({ id: p.id, filename: p.uploaded.filename, subfolder: p.uploaded.subfolder })
+          continue
+        }
+        if (!p.dataUrl) throw new Error(`Plate “${p.name}” has no file on this box and nothing to upload.`)
+        const up = await uploadImage(endpoint, p.dataUrl, plateFilename(p))
+        chainPlates.push({ id: p.id, filename: up.filename, subfolder: up.subfolder })
+        await savePlate({ ...p, uploaded: { endpointId: endpoint.id, ...up } })
+      }
+
+      const built = buildChainGraph({
+        graph: chainRecipe.graph,
+        shots,
+        plates: chainPlates,
+        opts: {
+          runName, width, height, steps,
+          sceneRange: sceneIndex !== undefined ? String(sceneIndex) : '',
+          unetName: settings.chainUnetName || SINGULARITY_UNET,
+        },
+      })
+
+      const promptId = await submit(endpoint, built.graph)
+      patchPlanClips({ state: 'rendering', promptId })
+      const output = await pollToDone(endpoint, promptId, (e, p) => pollChain(e, p, runName))
+      patchPlanClips({ state: 'done', output, ms: Date.now() - t0 })
     } catch (e) {
-      const msg = String((e as Error).message || e)
-      patchClip(id, { state: 'failed', error: msg, ms: Date.now() - t0 })
+      const msg = e instanceof ChainError ? e.message : String((e as Error).message || e)
+      patchPlanClips({ state: 'failed', error: msg, ms: Date.now() - t0 })
       setError(msg)
     } finally {
       setRenderingId(null)
       endGpuUse()
     }
-  }, [buildMulticlipPayload, endpoint, multiclipRecipe, patchClip, beginGpuUse, endGpuUse])
+  }, [
+    endpoint, chainRecipe, settings.width, settings.height, settings.steps,
+    settings.lockSeed, settings.seed, settings.chainUnetName, savePlate, beginGpuUse, endGpuUse,
+  ])
 
   /**
    * Render the current canonical prompt as ONE Contex-Loop chain scene —
@@ -1493,7 +1539,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setRenderingId(id)
 
     try {
-      // Same upload contract as `render()`/`buildMulticlipPayload`: a plate
+      // Same upload contract as `render()`/`renderChainPlan`: a plate
       // already on THIS box (picked, or uploaded by an earlier clip) is
       // cited by name and never sent back.
       const plates: ChainPlate[] = []
@@ -1516,7 +1562,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         graph: chainRecipe.graph,
         shots,
         plates,
-        opts: { runName, width, height, steps, sceneRange: String(sceneIndex) },
+        opts: {
+          runName, width, height, steps, sceneRange: String(sceneIndex),
+          unetName: settings.chainUnetName || SINGULARITY_UNET,
+        },
       })
 
       const promptId = await submit(endpoint, built.graph)
@@ -1535,16 +1584,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     endpoint, chainRecipe, lastPromptText, settings.width, settings.height, settings.steps,
     settings.lockSeed, settings.seed, settings.seconds, patchClip, savePlate, beginGpuUse, endGpuUse,
   ])
-
-  const copyMulticlipGraph = useCallback(async () => {
-    setError(null)
-    try {
-      const { built } = await buildMulticlipPayload()
-      await navigator.clipboard.writeText(JSON.stringify(built.graph, null, 2))
-    } catch (e) {
-      setError(String((e as Error).message || e))
-    }
-  }, [buildMulticlipPayload])
 
   const selectClip = useCallback((id: string) => setCurrentClipId(id), [])
 
@@ -1782,7 +1821,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     plates,
     recipes,
     recipe,
-    multiclipRecipe,
     chainRecipe,
     endpoints,
     endpoint,
@@ -1793,7 +1831,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     gpuBusy,
     blockers,
     warnings,
-    multiclipPreview,
+    chainPlanPreview,
     addPlate,
     updatePlate,
     deletePlate,
@@ -1804,8 +1842,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     refreshComfyProbe,
     clipUrl,
     render,
-    renderMulticlip,
-    copyMulticlipGraph,
+    renderChainPlan,
     renderChain,
     selectClip,
     continueFrom,

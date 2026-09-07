@@ -2,9 +2,13 @@ import { markSent, wasSent } from './context'
 import { withQwenReasoningBudget } from './thinking'
 import type { Provider, StageId } from './types'
 
+/** One part of a multimodal user turn — an image alongside its instruction text. */
+export type ChatContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }
+
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant'
-  content: string
+  /** A plain string for every text-only lane; an array of parts to attach an image. */
+  content: string | ChatContentPart[]
 }
 
 export interface StreamOptions {

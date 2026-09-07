@@ -1,0 +1,187 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+    :root {
+      --paper: oklch(0.973 0.008 88); --panel: oklch(0.946 0.011 85); --sunk: oklch(0.930 0.013 85);
+      --ink: oklch(0.255 0.016 62); --ink2: oklch(0.435 0.014 62); --ink3: oklch(0.605 0.013 65);
+      --rule: oklch(0.875 0.012 78); --rule2: oklch(0.815 0.016 78);
+      --ox: oklch(0.470 0.135 27); --ox-soft: oklch(0.930 0.030 30);
+      --grn: oklch(0.480 0.090 152); --amb: oklch(0.560 0.110 72); --amb-soft: oklch(0.940 0.050 80);
+      --serif: 'Instrument Serif', Georgia, serif;
+      --sans: 'IBM Plex Sans', system-ui, sans-serif;
+      --mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: var(--sans); font-size: 12px; background: var(--paper); color: var(--ink); -webkit-font-smoothing: antialiased; }
+    a { color: var(--ox); text-decoration: none; } a:hover { color: var(--ink); text-decoration: underline; }
+    .lbl { font-size: 9.5px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink3); }
+    .tok { font-family: var(--mono); font-size: 10.5px; color: var(--ink3); font-variant-numeric: tabular-nums; }
+    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 13px; font-size: 11.5px; font-weight: 500; border: 1px solid var(--rule2); background: var(--paper); color: var(--ink2); border-radius: 0; }
+    .btn.pri { background: var(--ox); border-color: var(--ox); color: oklch(0.98 0.01 30); font-weight: 600; }
+    .btn.sm { padding: 3px 9px; font-size: 10.5px; }
+    .chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; font-size: 11px; border: 1px solid var(--rule2); background: var(--paper); color: var(--ink2); border-radius: 0; }
+    .chip.on { border-color: var(--ox); background: var(--ox-soft); color: var(--ox); font-weight: 500; }
+    .dot { width: 5px; height: 5px; border-radius: 50%; flex: 0 0 auto; }
+    .dot.ok { background: var(--grn); } .dot.warn { background: var(--amb); } .dot.idle { background: var(--rule2); }
+  </style>
+</helmet>
+
+<div style="width: 1440px; height: 940px; display: flex; flex-direction: column; background: var(--paper); overflow: hidden">
+
+  <div style="flex: 0 0 auto; padding: 13px 26px 11px; border-bottom: 1px solid var(--rule2); display: flex; align-items: baseline; gap: 15px">
+    <span style="font-family: var(--serif); font-size: 21px; letter-spacing: -0.01em">H3 Prompt Studio</span>
+    <span class="tok">no chain yet</span>
+    <span style="flex-grow: 1"></span>
+    <span style="display: inline-flex; align-items: center; gap: 6px" class="tok"><span class="dot ok"></span>comfyui ready</span>
+  </div>
+
+  <div style="flex: 1 1 auto; display: flex; min-height: 0">
+
+    <!-- left: the one prompt you have -->
+    <div style="flex: 1 1 auto; min-width: 0; border-right: 1px solid var(--rule); padding: 22px 26px; overflow: hidden">
+      <div class="lbl" style="margin-bottom: 8px">Your clip prompt</div>
+      <div style="border: 1px solid var(--rule2); background: var(--sunk); padding: 12px 13px; height: 190px; overflow: hidden; font-family: var(--mono); font-size: 10.5px; line-height: 1.7; color: var(--ink2)">
+        <span style="color: var(--ox)">@chandni</span> stands alone in a stone courtyard before dawn, a brass<br>
+        lamp held low at her hip. Static Shot, wide, the arch of the<br>
+        gate behind her. Flat cold light on wet flagstones&#8230;
+      </div>
+
+      <div style="margin-top: 26px; border-top: 1px solid var(--rule); padding-top: 22px">
+
+        <div style="display: flex; align-items: flex-start; gap: 20px">
+
+          <div style="flex: 1 1 0">
+            <div style="font-family: var(--serif); font-size: 19px; margin-bottom: 7px">Render scene 1</div>
+            <div style="color: var(--ink2); line-height: 1.7">
+              There is no choice to make here. Every render is scene 1 of a chain, so this clip is continuable
+              whether or not it ever becomes a film. Keep it as a one-off, or write what happens next and add scene 2
+              &#8212; the decision waits until after you have seen it.
+            </div>
+            <div style="margin-top: 17px; border-top: 1px solid var(--rule); padding-top: 14px">
+              <div style="display: flex; align-items: baseline; gap: 10px; margin-bottom: 7px">
+                <span class="lbl">Scene length</span>
+                <span class="tok">H3 only renders these lengths &#183; 17-frame steps</span>
+              </div>
+              <div style="display: flex; gap: 5px; flex-wrap: wrap">
+                <span class="chip" style="font-size: 10.5px; padding: 3px 8px">5.2s<span class="tok" style="font-size: 9px">124f</span></span>
+                <span class="chip" style="font-size: 10.5px; padding: 3px 8px">5.9s<span class="tok" style="font-size: 9px">141f</span></span>
+                <span class="chip" style="font-size: 10.5px; padding: 3px 8px">6.6s<span class="tok" style="font-size: 9px">158f</span></span>
+                <span class="chip" style="font-size: 10.5px; padding: 3px 8px">8.0s<span class="tok" style="font-size: 9px">192f</span></span>
+                <span class="chip on" style="font-size: 10.5px; padding: 3px 8px">10.1s<span class="tok" style="font-size: 9px; color: var(--ox)">243f</span></span>
+                <span class="chip" style="font-size: 10.5px; padding: 3px 8px">12.3s<span class="tok" style="font-size: 9px">294f</span></span>
+                <span class="chip" style="font-size: 10.5px; padding: 3px 8px">15.1s<span class="tok" style="font-size: 9px">362f</span></span>
+                <span class="chip" style="font-size: 10.5px; padding: 3px 8px">17.9s<span class="tok" style="font-size: 9px">430f</span></span>
+                <span class="chip" style="font-size: 10.5px; padding: 3px 8px">20.0s<span class="tok" style="font-size: 9px">481f</span></span>
+              </div>
+              <div class="tok" style="margin-top: 8px; line-height: 1.6">
+                5.2s is the shortest H3 will make. Every scene in a chain sets its own length &#8212; they do not have to match.
+              </div>
+            </div>
+
+            <div style="display: flex; gap: 20px; margin-top: 15px">
+              <div>
+                <div class="lbl" style="margin-bottom: 4px">This render</div>
+                <div class="tok" style="line-height: 1.6">243f &#183; 10.1s<br>~2:40 at 1216&#215;672</div>
+              </div>
+              <div>
+                <div class="lbl" style="margin-bottom: 4px">Same length, continued</div>
+                <div class="tok" style="line-height: 1.6">renders 277f, delivers 255f &#183; 10.6s<br>the join costs 22 frames, so it lands longer</div>
+              </div>
+            </div>
+          </div>
+
+          <div style="flex: 0 0 264px; border: 1px solid var(--ox); background: var(--ox-soft); padding: 15px 16px 16px">
+            <span class="btn pri" style="width: 100%; justify-content: center; padding: 9px 13px">Render scene 1</span>
+            <div class="tok" style="margin-top: 11px; line-height: 1.7; color: var(--ox)">
+              Kept as a checkpoint on the box, so continuing later costs one scene &#8212; not a re-render of this one.
+            </div>
+          </div>
+
+        </div>
+
+        <div class="tok" style="margin-top: 18px; line-height: 1.7; color: var(--ink2)">
+          The old fork &#8212; &#8220;one clip&#8221; or &#8220;start a chain&#8221; &#8212; is gone. It asked you to predict, before seeing a
+          single frame, whether a prompt was worth continuing.
+        </div>
+      </div>
+    </div>
+
+    <!-- right: prerequisites, stated before you can be surprised by them -->
+    <div style="flex: 0 0 452px; padding: 22px 22px; display: flex; flex-direction: column">
+      <div class="lbl" style="margin-bottom: 11px">A chain needs</div>
+
+      <div style="border: 1px solid var(--rule2); background: var(--panel)">
+        <div style="display: flex; gap: 9px; padding: 11px 12px; border-bottom: 1px solid var(--rule)">
+          <span class="dot ok" style="margin-top: 5px"></span>
+          <div>
+            <div style="color: var(--ink)">A Contex-Loop workflow</div>
+            <div class="tok" style="margin-top: 2px">bound &#183; minimax_h3_contexloop_api</div>
+          </div>
+        </div>
+        <div style="display: flex; gap: 9px; padding: 11px 12px">
+          <span class="dot ok" style="margin-top: 5px"></span>
+          <div>
+            <div style="color: var(--ink)">A reachable ComfyUI</div>
+            <div class="tok" style="margin-top: 2px">queue empty</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="lbl" style="margin: 20px 0 11px">Optional &#8212; but it decides consistency</div>
+
+      <div style="border: 1px solid var(--rule2); background: var(--paper); padding: 12px 13px">
+        <div style="display: flex; gap: 9px">
+          <span class="dot idle" style="margin-top: 5px"></span>
+          <div>
+            <div style="color: var(--ink)">Reference plates &#183; none bound</div>
+            <div style="color: var(--ink2); line-height: 1.65; margin-top: 4px">
+              A chain renders fine without one. But only 22 frames carry across each join, so with nothing to anchor to,
+              H3 re-invents your subject every scene and a face drifts as the film grows. A plate is what holds an
+              identity across all of them.
+            </div>
+            <div style="margin-top: 9px"><span class="btn sm">Add a plate</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top: 20px; border: 1px solid var(--amb); background: var(--amb-soft); padding: 12px 13px">
+        <div style="display: flex; gap: 8px">
+          <span class="dot warn" style="margin-top: 5px"></span>
+          <div>
+            <div style="color: var(--ink); font-weight: 500">Scenes are added, not edited</div>
+            <div style="color: var(--ink2); line-height: 1.65; margin-top: 3px">
+              A chain grows at the end. Re-rendering scene 2 once scene 5 exists also re-renders 3, 4 and 5 &#8212; so the
+              moment to judge a scene is before you continue past it, not after.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top: 16px; border-left: 2px solid var(--rule2); padding: 2px 0 2px 12px">
+        <div style="color: var(--ink2); line-height: 1.7">
+          Continuing is always available and never has to be planned for. What it cannot do is change its mind about a
+          scene already behind it.
+        </div>
+      </div>
+
+      <div style="flex-grow: 1"></div>
+
+      <div class="tok" style="line-height: 1.7">
+        Refreshing this page clears the chain from view. The rendered scenes stay on the box, but the studio cannot
+        re-attach to them yet.
+      </div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

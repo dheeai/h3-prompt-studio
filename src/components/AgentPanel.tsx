@@ -80,7 +80,7 @@ export function AgentPanel({ onOpenStudio }: AgentPanelProps) {
       setItems((previous) => reduceAgentEvent(previous, event))
       if (event.type === 'tool_execution_end') {
         const details = event.result?.details && typeof event.result.details === 'object' ? event.result.details as Record<string, unknown> : undefined
-        if (details?.requiresConfirmation === 'render_current' || details?.requiresConfirmation === 'render_multiclip') setPending(details.requiresConfirmation)
+        if (details?.requiresConfirmation === 'render_current' || details?.requiresConfirmation === 'render_chain_plan') setPending(details.requiresConfirmation)
       }
       const outcome = agentEventStatus(event)
       if (outcome) {
@@ -160,7 +160,7 @@ export function AgentPanel({ onOpenStudio }: AgentPanelProps) {
     setPending(null)
     setStatus(action === 'render_current' ? 'Submitting the canonical prompt to ComfyUI…' : 'Submitting the clip plan to ComfyUI…')
     if (action === 'render_current') await app.render()
-    else await app.renderMulticlip()
+    else await app.renderChainPlan()
     setStatus('Submission requested. Follow progress in Studio.')
   }
 
@@ -184,7 +184,7 @@ export function AgentPanel({ onOpenStudio }: AgentPanelProps) {
         </div>
         <div className="agent-compose"><textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send() } }} placeholder={provider && app.settings.model ? 'Ask the Agent to inspect, improve, or prepare…' : 'Connect a model to start the Agent'} disabled={!provider || !app.settings.model || running || app.gpuBusy === 'render'} rows={3} aria-label="Agent instruction" /><div className="agent-compose-row"><span>{app.gpuBusy === 'render' && !running ? 'A render is in flight on the box — the Agent will refuse until it finishes.' : status}</span>{running ? <button className="btn" onClick={stop}>Stop</button> : <button className="btn pri" onClick={() => void send()} disabled={!input.trim() || !provider || !app.settings.model || app.gpuBusy === 'render'}>Send to Agent</button>}</div></div>
       </section>
-      <aside className="agent-context"><div className="studio-kicker">SHARED CONTEXT</div><h2>Studio stays the source of truth</h2><div className="agent-context-card"><span>Canonical prompt</span><strong>{app.current && isCanonicalPromptStage(app.current.stage) ? `v${app.versions.findIndex((version) => version.id === app.current?.id) + 1}` : 'not written yet'}</strong></div><div className="agent-context-card"><span>Clip plan</span><strong>{app.breakdown ? `${app.breakdown.clips.length} clips` : 'not set'}</strong></div><div className="agent-context-card"><span>Skills</span><strong>{app.skills.filter((skill) => app.settings.selection[skill.id]?.length).length} loaded</strong></div><div className="agent-context-card"><span>ComfyUI</span><strong>{app.endpoint?.label || 'configure in Studio'}</strong></div><div className="agent-context-note">Render and multiclip submission always pause for confirmation. The Agent never calls Studio stages recursively.</div><button className="btn" onClick={onOpenStudio}>Open full Studio</button></aside>
+      <aside className="agent-context"><div className="studio-kicker">SHARED CONTEXT</div><h2>Studio stays the source of truth</h2><div className="agent-context-card"><span>Canonical prompt</span><strong>{app.current && isCanonicalPromptStage(app.current.stage) ? `v${app.versions.findIndex((version) => version.id === app.current?.id) + 1}` : 'not written yet'}</strong></div><div className="agent-context-card"><span>Clip plan</span><strong>{app.breakdown ? `${app.breakdown.clips.length} clips` : 'not set'}</strong></div><div className="agent-context-card"><span>Skills</span><strong>{app.skills.filter((skill) => app.settings.selection[skill.id]?.length).length} loaded</strong></div><div className="agent-context-card"><span>ComfyUI</span><strong>{app.endpoint?.label || 'configure in Studio'}</strong></div><div className="agent-context-note">Render and chain submission always pause for confirmation. The Agent never calls Studio stages recursively.</div><button className="btn" onClick={onOpenStudio}>Open full Studio</button></aside>
     </main>
   )
 }

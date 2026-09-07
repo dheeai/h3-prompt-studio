@@ -1,10 +1,35 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useApp } from '../app/state'
-import { inputUrl, listBoxInputs } from '../lib/comfy'
+import { inputUrl, listBoxInputs, THUMB_PREVIEW } from '../lib/comfy'
 import { REF_CAPS } from '../lib/recipe'
+import { analyzeSubjectImage, composeSubjectJob, defaultJobForSubjectKind } from '../lib/subject'
+import type { SubjectKind } from '../lib/subject'
 import type { ComfyEndpoint, Plate } from '../lib/types'
 
 const MAX_REFS = REF_CAPS.image
+
+const SUBJECT_KINDS: { value: SubjectKind; label: string }[] = [
+  { value: 'male', label: 'male' },
+  { value: 'female', label: 'female' },
+  { value: 'other', label: 'other' },
+]
+
+/** Fetch an image already sitting somewhere (the box's input folder) and turn
+ * it into a data URL, so it can go into a vision request's `image_url` the
+ * same way a locally-picked file does. */
+function urlToDataUrl(url: string): Promise<string> {
+  return fetch(url)
+    .then((res) => res.blob())
+    .then(
+      (blob) =>
+        new Promise<string>((resolve, reject) => {
+          const fr = new FileReader()
+          fr.onerror = () => reject(new Error('Could not read that file.'))
+          fr.onload = () => resolve(String(fr.result))
+          fr.readAsDataURL(blob)
+        }),
+    )
+}
 
 /** Downscale on the way in — a phone photo is 8 MB and the box wants pixels, not megabytes. */
 function readImage(file: File, maxEdge = 1536): Promise<string> {
@@ -34,14 +59,86 @@ function readImage(file: File, maxEdge = 1536): Promise<string> {
 /** Where a plate's picture comes from: this machine, or the box it lives on. */
 function plateSrc(plate: Plate, endpoint: ComfyEndpoint | null): string | null {
   if (plate.dataUrl) return plate.dataUrl
-  if (plate.boxFile && endpoint) return inputUrl(endpoint, plate.boxFile.filename)
+  if (plate.boxFile && endpoint) return inputUrl(endpoint, plate.boxFile.filename, THUMB_PREVIEW)
   return null
 }
 
 function PlateRow({ plate, n }: { plate: Plate; n: number }) {
-  const { updatePlate, deletePlate, reorderPlate, endpoint } = useApp()
+  const { updatePlate, deletePlate, reorderPlate, endpoint, providers, settings, beginGpuUse, endGpuUse } = useApp()
   const [job, setJob] = useState(plate.job)
   const [name, setName] = useState(plate.name)
+  const [overrideText, setOverrideText] = useState(plate.wardrobeOverride ?? '')
+  const [analyzing, setAnalyzing] = useState(false)
+  const [analyzeError, setAnalyzeError] = useState<string | null>(null)
+  // A radio pick or an analysis result is a SEED, never a silent overwrite: if
+  // `job` no longer equals the last text this app itself wrote (`jobAuto`),
+  // the operator has hand-edited it, and the new text is held here instead —
+  // offered, not applied — until they explicitly say to use it.
+  const [pendingSeed, setPendingSeed] = useState<string | null>(null)
+
+  const isHandEdited = job.trim() !== '' && job.trim() !== (plate.jobAuto ?? '').trim()
+
+  function seedJob(text: string, patch?: Partial<Plate>) {
+    if (isHandEdited) {
+      if (patch) void updatePlate(plate.id, patch)
+      setPendingSeed(text)
+      return
+    }
+    setJob(text)
+    setPendingSeed(null)
+    void updatePlate(plate.id, { ...(patch ?? {}), job: text, jobAuto: text })
+  }
+
+  function acceptPendingSeed() {
+    if (!pendingSeed) return
+    setJob(pendingSeed)
+    void updatePlate(plate.id, { job: pendingSeed, jobAuto: pendingSeed })
+    setPendingSeed(null)
+  }
+
+  function chooseSubjectKind(kind: SubjectKind) {
+    seedJob(defaultJobForSubjectKind(kind), { subjectKind: kind })
+  }
+
+  async function analyze() {
+    setAnalyzeError(null)
+    const src = plateSrc(plate, endpoint)
+    if (!src) {
+      setAnalyzeError('No image to analyze yet — add one first.')
+      return
+    }
+    const provider = providers.find((p) => p.id === settings.providerId)
+    if (!provider) {
+      setAnalyzeError('Pick a provider first.')
+      return
+    }
+    if (!settings.model) {
+      setAnalyzeError('Pick a model first.')
+      return
+    }
+    // Every chat completion is a heavy GPU call on the gateway this app talks
+    // to — claim the same mutex every other LLM path claims. A refusal here
+    // (a render holds it) surfaces through the app-wide error banner already.
+    if (!beginGpuUse('llm')) return
+    setAnalyzing(true)
+    try {
+      const imageDataUrl = plate.dataUrl ?? (await urlToDataUrl(src))
+      const { def } = await analyzeSubjectImage({ provider, model: settings.model, imageDataUrl, maxTokens: settings.maxTokens })
+      const composed = composeSubjectJob({ subjectKind: plate.subjectKind ?? 'other', def, wardrobeOverride: plate.wardrobeOverride })
+      seedJob(composed, { subjectDef: def })
+    } catch (e) {
+      setAnalyzeError(String((e as Error).message || e))
+    } finally {
+      setAnalyzing(false)
+      endGpuUse()
+    }
+  }
+
+  function applyWardrobeOverride() {
+    if (!plate.subjectDef) return
+    const composed = composeSubjectJob({ subjectKind: plate.subjectKind ?? 'other', def: plate.subjectDef, wardrobeOverride: overrideText })
+    seedJob(composed, { wardrobeOverride: overrideText })
+  }
 
   return (
     <div style={{ display: 'flex', gap: 14, padding: '15px 0', borderBottom: '1px solid var(--rule)' }}>
@@ -83,6 +180,33 @@ function PlateRow({ plate, n }: { plate: Plate; n: number }) {
           </button>
         </div>
 
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginTop: 8, flexWrap: 'wrap' }}>
+          <span className="tok">subject</span>
+          {SUBJECT_KINDS.map((k) => (
+            <button
+              key={k.value}
+              className={`chip ${plate.subjectKind === k.value ? 'on' : ''}`}
+              style={{ padding: '2px 8px', fontSize: 10 }}
+              onClick={() => chooseSubjectKind(k.value)}
+            >
+              {k.label}
+            </button>
+          ))}
+          {plate.kind === 'image' && (
+            <>
+              <div style={{ flexGrow: 1 }} />
+              <button className="btn sm ghost" disabled={analyzing} onClick={() => void analyze()}>
+                {analyzing ? 'Analyzing…' : plate.subjectDef ? 'Re-analyze image' : 'Analyze image'}
+              </button>
+            </>
+          )}
+        </div>
+        {analyzeError && (
+          <div className="tok" style={{ color: 'var(--ox)', marginTop: 5 }}>
+            {analyzeError}
+          </div>
+        )}
+
         <textarea
           value={job}
           onChange={(e) => setJob(e.target.value)}
@@ -93,6 +217,47 @@ function PlateRow({ plate, n }: { plate: Plate; n: number }) {
         {!job.trim() && (
           <div className="tok" style={{ color: 'var(--ox)', marginTop: 5 }}>
             No job written — an unexplained reference drifts. This blocks rendering.
+          </div>
+        )}
+
+        {pendingSeed && (
+          <div className="alert warn" style={{ marginTop: 8 }}>
+            <div>
+              The job text above looks hand-edited, so this was not written over it automatically:
+              <div className="tok" style={{ marginTop: 4, fontStyle: 'italic' }}>“{pendingSeed}”</div>
+            </div>
+            <div style={{ display: 'flex', gap: 7, marginTop: 7 }}>
+              <button className="btn sm" onClick={acceptPendingSeed}>Use this instead</button>
+              <button className="btn sm ghost" onClick={() => setPendingSeed(null)}>Keep my edit</button>
+            </div>
+          </div>
+        )}
+
+        {plate.subjectDef && (
+          <div className="card" style={{ marginTop: 9 }}>
+            <div className="tok">
+              Detected — apparent age {plate.subjectDef.apparentAge || '—'}; build {plate.subjectDef.build || '—'}; face{' '}
+              {plate.subjectDef.face || '—'}; hair {plate.subjectDef.hair || '—'}; skin {plate.subjectDef.skin || '—'}
+              {plate.subjectDef.distinguishingMarks ? `; marks: ${plate.subjectDef.distinguishingMarks}` : ''}
+            </div>
+            <div className="tok" style={{ marginTop: 5 }}>
+              Detected wardrobe: {plate.subjectDef.wardrobe || '—'}
+            </div>
+            <div style={{ marginTop: 9 }}>
+              <div className="tok">Wear something else instead — identity stays, wardrobe changes (the source garment is never named)</div>
+              <div style={{ display: 'flex', gap: 7, marginTop: 5 }}>
+                <input
+                  type="text"
+                  value={overrideText}
+                  onChange={(e) => setOverrideText(e.target.value)}
+                  placeholder="e.g. a flowing green chiffon saree with gold embroidery"
+                  style={{ flexGrow: 1 }}
+                />
+                <button className="btn sm" disabled={!overrideText.trim()} onClick={applyWardrobeOverride}>
+                  Apply wardrobe
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -191,7 +356,7 @@ function BoxPicker({ onClose }: { onClose: () => void }) {
                 <div key={f} style={{ cursor: room > 0 ? 'pointer' : 'not-allowed', opacity: room > 0 ? 1 : 0.4 }} onClick={() => void take(f)}>
                   {tab === 'image' ? (
                     <img
-                      src={inputUrl(endpoint, f)}
+                      src={inputUrl(endpoint, f, THUMB_PREVIEW)}
                       alt=""
                       loading="lazy"
                       style={{ width: '100%', height: 92, objectFit: 'cover', border: '1px solid var(--rule2)', display: 'block', background: 'var(--sunk)' }}

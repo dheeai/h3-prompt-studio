@@ -109,7 +109,7 @@ location, core action, and dialogue language, then completely re-directs the
 shot as a new treatment around those invariants. Do not accidentally carry
 over incidental props, wardrobe, dialogue wording, blocking, timing, camera,
 lighting, sound, or tone.
-Do not turn either request into a new concept, story outline, or multiclip plan
+Do not turn either request into a new concept, story outline, or multi-clip plan
 unless the operator explicitly asks for that. Return one complete canonical
 replacement plus a concise explanation, never a patch, fragment, or endless
 retry.` ,
@@ -132,7 +132,7 @@ coherent, submission-ready scene in this order:
 
 Make creative choices that are easy for the operator to revise. Do not invent
 identity, brand, dialogue, or factual claims that the source did not provide,
-and do not expand one idea into a multiclip plan unless asked.` ,
+and do not expand one idea into a multi-clip plan unless asked.` ,
 }
 
 /**
@@ -155,7 +155,7 @@ deterministic Studio tools to inspect or mutate the one shared session. If the
 user asks for a prompt change, write the complete canonical H3 prompt and save
 it through a prompt-version tool; never put commentary in the prompt field.
 Never call Studio LLM stages, invent a render, or repeat a tool operation.
-Render and multiclip submission require explicit confirmation. Stop after one
+Render and chain submission require explicit confirmation. Stop after one
 meaningful operation and report its result briefly.`
 
 /**

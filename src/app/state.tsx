@@ -11,7 +11,7 @@ import type { PollResult } from '../lib/comfy'
 import { applyRecipe, fetchShippedChainRecipes, framesForSeconds, oomRisk, recipeIssues, resolveChainRecipeAutoBind, SHIPPED_SET_VERSION, SHIPPED_CHAIN_IDS} from '../lib/recipe'
 import { padForOverlap } from '../lib/frames'
 import type { PaddedClip } from '../lib/frames'
-import { CHAIN_CONTEXT_LENGTH, ChainError, SINGULARITY_UNET, buildChainGraph, chainIssues, chainMinSteps, chainShotsForPlan, planNeedsPerSceneLoraSplit } from '../lib/chain'
+import { CHAIN_CONTEXT_LENGTH, ChainError, SINGULARITY_UNET, buildChainGraph, chainIssues, chainMinSteps, chainShotsForPlan, planNeedsPerSceneLoraSplit, chainWarnings} from '../lib/chain'
 import type { ChainPlate, ChainShot } from '../lib/chain'
 import { countFromIndex, dropFromIndex, externalVideoForReplace, scenesBefore, sceneRangeFor } from '../lib/chainEdit'
 import { cumulativeFilm, sceneWorkLabel } from '../lib/chainDisplay'
@@ -1261,8 +1261,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
         )
       }
     }
+    // A citation with no plate behind it is advice, not a refusal — see
+    // `chainWarnings`. It used to block the render outright.
+    out.push(
+      ...chainWarnings({
+        shots: [{ index: 1, prompt: sessionRef.current.story }],
+        plateCount: plates.filter((pl) => pl.kind === 'image').length,
+      }),
+    )
     return out
-  }, [chainRecipe, settings.width, settings.height, settings.seconds])
+  }, [chainRecipe, settings.width, settings.height, settings.seconds, session.story, plates])
 
   /**
    * Gates the primary "Render scene N" action — the chain equivalent of

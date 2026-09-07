@@ -938,3 +938,26 @@ mark.w.del { background: oklch(0.895 0.060 25); color: oklch(0.36 0.13 27); text
   .studio-doc { padding-left: 12px; padding-right: 12px; }
   .studio-version-menu select { max-width: 120px; min-width: 0; }
 }
+
+/* The model's live state while a pass runs — see `DraftingStatus`. Without it
+   a long reasoning pass is indistinguishable from a hang. */
+.composer-drafting {
+  border: 1px solid var(--ox);
+  background: var(--ox-soft);
+  margin: 10px 0 0;
+}
+.composer-drafting-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 11px;
+  border-bottom: 1px solid var(--ox);
+}
+.composer-drafting-body {
+  padding: 8px 11px;
+  max-height: 92px;
+  overflow: hidden;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  color: var(--ink2);
+}

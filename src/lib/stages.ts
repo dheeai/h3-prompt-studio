@@ -108,15 +108,10 @@ does it escalate, does each beat earn its screen time, is the camera doing
 anything, is the performance observable — and say what it gets wrong. Then
 direct it again.
 
-But re-directing means re-deciding HOW it is shot. **It does not license
-changing what happens.** "A woman enters a shop" does not become a woman
-strolling down a lane because a lane is more interesting: that is a different
-film, and no amount of directorial merit makes it the one that was requested.
-Changing the subject is not a stronger reading of the brief, it is a failure to
-answer it.
-
-If you genuinely believe the requested action cannot work as asked, say so in
-one line — then direct the requested action anyway.
+Re-directing means re-deciding HOW it is shot; it never licenses changing what
+happens. "A woman enters a shop" does not become a woman strolling down a lane
+because a lane is more interesting — that is a different film. If you believe
+the requested action cannot work, say so in one line, then direct it anyway.
 
 {{film}}
 
@@ -191,26 +186,16 @@ DIRECTION SHEET
 SOURCE (for reference only)
 {{story}}
 
-Now write your reply. Output exactly two blocks, in this order, and nothing
-outside them — no heading of your own before, between or after them:
+Now write your reply. Output exactly one block, with no heading of your own
+before or after it:
 
 <<<PROMPT>>>
 the complete prompt — and nothing else in it: no preamble, no explanation, no
 fences
 
-<<<EXPLANATION>>>
-Under ~300 words, prose or short bullets, covering these parts in order:
-
-WHERE THE SOURCE STOOD — what kind of thing the source was (a raw idea, a
-story, a brief, a direction sheet, a rough or badly formatted prompt, a
-structured prompt), which decisions it had already made, and which it had not.
-
-WHAT WAS FIXED AND WHAT WAS DECIDED — the fixed elements carried through, and
-the open craft decisions taken (framing, blocking, beats, sound), each naming
-the loaded document that governed it.
-
-WHAT THE SOURCE GOT WRONG — if the source was already a prompt, what it did
-badly and what changed; otherwise "nothing to correct".`,
+Write the prompt and stop. Do not explain what you did, what the source was,
+or which document governed a choice: nothing downstream reads an explanation,
+and writing one is a second, analytical task competing with the writing.`,
 
   critique: `Audit the prompt below against the loaded documents.
 

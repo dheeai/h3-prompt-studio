@@ -18,7 +18,7 @@ The harness may import existing pure prompt-assembly functions—`buildContext`,
 
 Each variant makes one POST to:
 
-`https://5090.tail3cca41.ts.net/llama/v1/chat/completions`
+`https://YOUR_GATEWAY_HOST/llama/v1/chat/completions`
 
 The request body is exactly the normal OpenAI-compatible fields needed by the eval plus the thinking arm:
 

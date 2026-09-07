@@ -192,14 +192,16 @@ export interface Settings {
   seenBundled?: string[]
   onboarded: boolean
 
-  // ── the starting point ────────────────────────────────────────────────
-  /** Which of the three starting points ('idea' | 'prompt' | 'video') is
-   * selected — a sticky preference, unlike the draft itself. Migrated on
-   * load by `migrateEntryMode` (`lib/entry.ts`) so a profile carrying the
-   * pre-redesign 'story' door never lands on a value that no longer exists. */
-  studioMode?: 'idea' | 'prompt' | 'video'
-  /** Within the 'idea' door only: plan the whole arc first (the old "Scene
-   * (Multi-shot)" capability), rather than just scene 1. */
+  // ── the composer ──────────────────────────────────────────────────────
+  /** The one control on the composer: plan the whole arc first (writing
+   * every scene's prompt before any render) rather than just this scene.
+   * There are no entry-mode doors any more — see `lib/entry.ts`'s module
+   * comment — this is the only variable the operator chooses. */
+  breakIntoScenes?: boolean
+  /** Pre-redesign fields, read ONLY by `migrateBreakIntoScenes` on load to
+   * seed `breakIntoScenes` for an existing profile, then left alone —
+   * nothing in the current UI writes or reads these any more. */
+  studioMode?: 'idea' | 'prompt' | 'video' | 'story'
   planFirst?: boolean
 
   // ── the render loop ───────────────────────────────────────────────────
@@ -211,12 +213,14 @@ export interface Settings {
    * only multi-clip render path — a user has both this and `recipeId`. */
   chainRecipeId?: string
   /**
-   * Set once the app has auto-bound the shipped Contex-Loop recipe (see
-   * `fetchShippedChainRecipe`). Gates the attempt rather than `chainRecipeId`
-   * itself, so a deliberate later deletion of that recipe — which leaves
-   * `chainRecipeId` pointing at nothing — is never silently re-bound on the
-   * next reload. A fetch/parse failure leaves this unset, so it keeps retrying
-   * on later reloads rather than giving up forever on a transient miss.
+   * Set once the app has auto-bound the shipped Contex-Loop recipes — both
+   * the SLA default and the selectable VSA gate variant (see
+   * `fetchShippedChainRecipes`). Gates the attempt rather than `chainRecipeId`
+   * itself, so a deliberate later deletion of a shipped recipe — which can
+   * leave `chainRecipeId` pointing at nothing — is never silently re-bound on
+   * the next reload. A fetch/parse failure on both leaves this unset, so it
+   * keeps retrying on later reloads rather than giving up forever on a
+   * transient miss.
    */
   chainRecipeAutoBound?: boolean
   /** UNET stamped onto every chain graph. Unset means `SINGULARITY_UNET` — the
@@ -402,6 +406,15 @@ export interface ClipChainInfo {
    * rather than a design choice.
    */
   continuesExternalVideo?: boolean
+  /**
+   * The actual external-video choice this scene submitted with — recorded
+   * (not just the boolean above) so a later Replace of scene 1 can re-pass it
+   * faithfully without asking the operator to re-pick the file. `endpointId`
+   * is carried so a replace on a DIFFERENT endpoint is recognised as stale
+   * (the box file only exists where it was uploaded/picked) rather than
+   * silently reused.
+   */
+  externalVideo?: { filename: string; prependOriginal: boolean; endpointId: string }
 }
 
 export interface Clip {

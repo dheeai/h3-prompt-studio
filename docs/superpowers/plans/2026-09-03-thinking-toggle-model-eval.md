@@ -15,7 +15,7 @@
 - This plan changes only eval files, deterministic self-tests, captured eval artifacts, and the dated report; it does not implement an app Settings/Provider/Studio/Pi thinking feature.
 - Use exactly `default`, `thinkingcap-27b`, and `qwen38-heretic-27b-fast`.
 - Use exactly eight isolated cases and both thinking arms for a full matrix: `8 × 3 × 2 = 48` POSTs.
-- Use `https://5090.tail3cca41.ts.net/llama/v1`, temperature `0.2`, `max_tokens: 8192`, and `stream: true`.
+- Use `https://YOUR_GATEWAY_HOST/llama/v1`, temperature `0.2`, `max_tokens: 8192`, and `stream: true`.
 - Every variant sends `chat_template_kwargs: { enable_thinking: true|false }` directly to `/chat/completions`.
 - One variant makes one POST: no retry, continuation, thinking recovery, output-limit fallback, or hidden UI call.
 - `--thinking on` runs only true; `--thinking off` runs only false; omitting the option runs true then false for every case.
@@ -240,7 +240,7 @@ git commit -m "test: score direct thinking evaluation contracts"
 - [ ] **Step 1: Verify model inventory without generating.** Run:
 
 ```bash
-curl -fsS --max-time 30 https://5090.tail3cca41.ts.net/llama/v1/models
+curl -fsS --max-time 30 https://YOUR_GATEWAY_HOST/llama/v1/models
 ```
 
 Expected: the response lists `default`, `thinkingcap-27b`, and `qwen38-heretic-27b-fast`. Do not call ComfyUI.

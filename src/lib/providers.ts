@@ -1,7 +1,24 @@
 import { idb } from './db'
 import type { Provider, ProbeResult } from './types'
 
+/** The operator's own LLM endpoint, from a gitignored `.env.local` — same
+ * publishing property as `LOCAL_COMFY_URL` in `comfy.ts`: on this machine,
+ * absent from the public build. No api key, which is what marks it local. */
+export const LOCAL_LLM_URL: string | undefined = import.meta.env?.VITE_LOCAL_LLM_URL
+export const LOCAL_LLM_MODEL: string | undefined = import.meta.env?.VITE_LOCAL_LLM_MODEL
+
 export const DEFAULT_PROVIDERS: Provider[] = [
+  ...(LOCAL_LLM_URL
+    ? [{
+        id: 'localbox',
+        label: 'my box',
+        baseUrl: LOCAL_LLM_URL,
+        kind: 'openai',
+        builtIn: true,
+        sendCachePrompt: true,
+        corsHint: 'Reachable only from a device on your own network/tailnet.',
+      } as Provider]
+    : []),
   {
     id: 'ollama',
     label: 'Ollama',

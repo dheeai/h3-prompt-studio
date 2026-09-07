@@ -1,123 +1,54 @@
 import type { FilmContext } from './types'
+import type { Standing } from './lint'
 
 /**
- * The three STARTING POINTS a new operator can enter the studio from.
+ * There is no entry-mode picker any more (2026-09-07 redesign — "the system
+ * takes TEXT; whether you typed an idea, pasted a rough prompt, pasted a
+ * finished H3 prompt, or pasted a whole scene changes nothing about what
+ * happens next"). The one composer is always the input. What used to be
+ * three doors (idea / prompt / video) is now decided FROM THE TEXT itself,
+ * deterministically, via `classifyInput` (`lint.ts`) — never chosen by the
+ * operator up front.
  *
- * These describe the starting MATERIAL, not the output shape — with
- * Contex-Loop as the only render path, every render is scene 1 of a chain, so
- * an output-shaped split (the old "Scene (Multi-shot)" / "Clip" / "Prompt")
- * no longer differs in anything the operator cares about. What differs is
- * what they already have in hand: an idea, a prompt, or footage. See
- * `AuthoringMode` for the separate axis this is not — the LLM contract a
- * starting point resolves to.
- */
-export type EntryModeId = 'idea' | 'prompt' | 'video'
-
-export interface EntryMode {
-  id: EntryModeId
-  label: string
-  title: string
-  description: string
-  placeholder: string
-  action: string
-}
-
-/**
- * The LLM authoring CONTRACT (`H3_STUDIO_MODE_RULES` in context.ts) — a
- * different axis from `EntryModeId`, and NOT shown to the operator as a
- * choice of its own.
- *
- * 'story' is the narrative multi-shot planner: it used to be its own door
- * ("Scene (Multi-shot)") and is now reached from the 'idea' door by turning
- * `planFirst` on ("plan the whole arc" rather than "just scene 1") — the
- * planning capability is unchanged, only its framing moved. 'video' has no
- * rules of its own: continuing footage authors scene 1 exactly the way an
- * idea does (see `authoringModeFor`), it just starts from a different
- * material.
+ * `AuthoringMode` is the one axis that still matters: which LLM stage
+ * contract (`H3_STUDIO_MODE_RULES` in context.ts) a pass runs under. It is
+ * derived, not picked — see `authoringModeForContent`.
  */
 export type AuthoringMode = 'story' | 'prompt' | 'idea'
 
-export const ENTRY_MODES: readonly EntryMode[] = [
-  {
-    id: 'idea',
-    label: 'An idea',
-    title: 'An idea',
-    description: 'A sentence, a beat, a situation',
-    placeholder: 'Describe the clip you want…',
-    action: 'Write the prompt',
-  },
-  {
-    id: 'prompt',
-    label: 'A prompt',
-    title: 'A prompt',
-    description: 'You already have an H3 prompt',
-    placeholder: 'Paste a rough or finished H3 prompt…',
-    action: 'Audit and correct',
-  },
-  {
-    id: 'video',
-    label: 'A video',
-    title: 'A video',
-    description: 'Footage you already have',
-    placeholder: 'Describe what happens after your footage ends…',
-    action: 'Write the prompt',
-  },
-]
-
-export function entryMode(id: EntryModeId): EntryMode {
-  return ENTRY_MODES.find((mode) => mode.id === id) ?? ENTRY_MODES[0]
-}
-
-export function entryLabel(id: EntryModeId): string {
-  return entryMode(id).label
-}
-
-export function entryAction(id: EntryModeId): string {
-  return entryMode(id).action
-}
-
-/** Empty-state copy kept in the same order as the visible entry tabs. */
-export function entryStartCopy(): string {
-  const [first, second, third] = ENTRY_MODES
-  return `Start with ${first.label}, ${second.label}, or ${third.label}.`
-}
-
 /**
- * Which LLM authoring contract a starting point resolves to.
+ * Which authoring contract the composer's current text resolves to.
  *
- * Only the 'idea' door has a second axis worth asking about — `planFirst`
- * ("just scene 1" vs "plan the whole arc"). Every other door maps onto one
- * contract regardless of `planFirst`, so passing it for 'prompt'/'video' is
- * harmless rather than meaningful.
+ * A pasted FINISHED prompt (`classifyInput` reads `kind: 'prompt'` — the
+ * canonical field structure at line start) always gets the surgical prompt
+ * contract, regardless of the scene-count toggle: there is nothing to plan,
+ * only to audit and correct. Everything else is either the single-clip
+ * "idea" contract, or, when the composer's "Break into scenes" control is on,
+ * the multi-shot "story" planner — the ONLY variable the operator actually
+ * chooses (see the module comment on `EntryModeId`'s removal, above).
  */
-export function authoringModeFor(door: EntryModeId, planFirst: boolean): AuthoringMode {
-  if (door === 'prompt') return 'prompt'
-  if (door === 'idea' && planFirst) return 'story'
-  return 'idea'
-}
-
-export type EntryWorkflow = 'story-plan' | 'prompt-revise' | 'idea-prompt'
-
-/** The canonical action behind both the visible CTA and Cmd/Ctrl+Enter. */
-export function entryWorkflow(door: EntryModeId, planFirst: boolean): EntryWorkflow {
-  if (door === 'prompt') return 'prompt-revise'
-  if (door === 'idea' && planFirst) return 'story-plan'
-  return 'idea-prompt'
+export function authoringModeForContent(kind: Standing['kind'], breakIntoScenes: boolean): AuthoringMode {
+  if (kind === 'prompt') return 'prompt'
+  return breakIntoScenes ? 'story' : 'idea'
 }
 
 /**
- * Migrate a starting-point preference written by a build before this
- * redesign, when 'story' was itself a door rather than an option inside
- * 'idea'. Applied on every settings load — cheap and a no-op on an
- * already-current value — so a profile that persisted the old value never
- * lands on a door that no longer exists.
+ * Migrate a profile written by a build before this redesign, when the
+ * starting point was an explicit door (`studioMode`: 'idea' | 'prompt' |
+ * 'video', or the older 'story') plus a separate `planFirst` toggle. Applied
+ * on every settings load — cheap, and a no-op on an already-current profile —
+ * so an existing profile boots cleanly onto the one remaining control,
+ * "Break into scenes".
+ *
+ * The old 'story' door and 'idea' + planFirst both meant "plan the whole arc
+ * first" — both become `breakIntoScenes: true`. 'prompt' and 'video' never
+ * exposed planFirst in a way that changed anything (see the removed
+ * `authoringModeFor`), so they land on `false` regardless of a stale value.
  */
-export function migrateEntryMode(rawMode: unknown, rawPlanFirst?: unknown): { studioMode: EntryModeId; planFirst: boolean } {
-  if (rawMode === 'story') return { studioMode: 'idea', planFirst: true }
-  if (rawMode === 'idea' || rawMode === 'prompt' || rawMode === 'video') {
-    return { studioMode: rawMode, planFirst: !!rawPlanFirst }
-  }
-  return { studioMode: 'idea', planFirst: !!rawPlanFirst }
+export function migrateBreakIntoScenes(rawMode: unknown, rawPlanFirst?: unknown): { breakIntoScenes: boolean } {
+  if (rawMode === 'story') return { breakIntoScenes: true }
+  if (rawMode === 'idea') return { breakIntoScenes: !!rawPlanFirst }
+  return { breakIntoScenes: false }
 }
 
 /**
@@ -127,7 +58,7 @@ export function migrateEntryMode(rawMode: unknown, rawPlanFirst?: unknown): { st
  * heuristic. Every other contract keeps the heuristic so a story, idea or
  * video hand-off is not accidentally placed in a prompt-only stage.
  */
-export function promptSourceForEntryMode(
+export function promptSourceForAuthoringMode(
   mode: AuthoringMode,
   source: string,
   authoredPrompt: string,

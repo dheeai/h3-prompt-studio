@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useApp } from '../app/state'
 import { listLoraNames } from '../lib/comfy'
-import { planNeedsPerSceneLoraSplit, readBakedLoraStack, selectableStyleLoras } from '../lib/chain'
+import { localLoraStackOverride, planNeedsPerSceneLoraSplit, readBakedLoraStack, selectableStyleLoras } from '../lib/chain'
 import type { LoraStackEntry, Version } from '../lib/types'
 
 /** Stages whose output is a prompt — the only ones that count as "ready" for a clip. */
@@ -139,7 +139,14 @@ export function ClipPlan() {
     }
   }, [endpoint])
 
-  const defaultStack = useMemo(() => readBakedLoraStack(chainRecipe?.graph ?? null), [chainRecipe])
+  // The operator's own machine-local override (VITE_LOCAL_LORA_STACK, from a
+  // gitignored .env.local) wins when present; the public build has none, so
+  // every visitor falls back to the graph's own baked stack (empty on the
+  // shipped workflow) — see `localLoraStackOverride`'s module comment.
+  const defaultStack = useMemo(() => {
+    const local = localLoraStackOverride(import.meta.env.VITE_LOCAL_LORA_STACK)
+    return local.length ? local : readBakedLoraStack(chainRecipe?.graph ?? null)
+  }, [chainRecipe])
 
   if (!breakdown) return null
 
@@ -180,7 +187,18 @@ export function ClipPlan() {
                 {ready ? 'prompt ready' : 'no prompt yet'}
               </span>
               {ready && (
-                <button className="btn sm ghost" onClick={() => app.selectVersion(ready.id)}>
+                <button
+                  className="btn sm ghost"
+                  onClick={() => {
+                    app.selectVersion(ready.id)
+                    // The composer is the one editable box — loading a plan
+                    // clip's already-authored prompt into it is what makes it
+                    // reviewable/editable and renderable there, same as any
+                    // other scene.
+                    app.setStory(ready.text)
+                    app.setFilm({ role: c.role, spine: breakdown.spine, precedes: c.precedes, follows: c.follows, covers: c.covers, title: c.title, clipIndex: c.index })
+                  }}
+                >
                   read
                 </button>
               )}

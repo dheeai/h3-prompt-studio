@@ -2,7 +2,24 @@ import { mixedContentBlocked } from './providers'
 import { pickAssembledVideo } from './chain'
 import type { Clip, ComfyEndpoint, ComfyNode, ProbeResult } from './types'
 
+/**
+ * The operator's own ComfyUI, supplied by a gitignored `.env.local`.
+ *
+ * This exists because the alternative — hardcoding the gateway URL — publishes
+ * it: `public/` and the bundle are served from a PUBLIC GitHub Pages site, so a
+ * baked hostname is a permanent disclosure. Vite inlines `VITE_*` at BUILD
+ * time and the Pages workflow builds from a fresh checkout with no
+ * `.env.local`, so this is present on the operator's machine and absent from
+ * the published bundle. It also survives the thing that keeps losing config:
+ * browser storage is ORIGIN-scoped and the port is part of the origin, so a
+ * dev-server port change starts from these defaults again.
+ */
+export const LOCAL_COMFY_URL: string | undefined = import.meta.env?.VITE_LOCAL_COMFY_URL
+
 export const DEFAULT_ENDPOINTS: ComfyEndpoint[] = [
+  ...(LOCAL_COMFY_URL
+    ? [{ id: 'localbox', label: 'my box', baseUrl: LOCAL_COMFY_URL, builtIn: true } as ComfyEndpoint]
+    : []),
   { id: 'local', label: 'localhost', baseUrl: 'http://127.0.0.1:8188', builtIn: true },
 ]
 

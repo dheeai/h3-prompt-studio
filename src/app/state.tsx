@@ -4,21 +4,22 @@ import { idb } from '../lib/db'
 import { buildContext, buildH3SystemPrompt, type BuiltContext } from '../lib/context'
 import { classifyInput, findingsToText, lint, looksLikePrompt, standingToText } from '../lib/lint'
 import { continuationBudgetFor, streamChatComplete } from '../lib/llm'
-import { DEFAULT_PROVIDERS, loadProviders, probe, saveProviders } from '../lib/providers'
+import { DEFAULT_PROVIDERS, loadProviders, probe, saveProviders, LOCAL_LLM_URL, LOCAL_LLM_MODEL} from '../lib/providers'
 import { STAGE_LABEL, fillTemplate, filmBlock, hasPromptBlock, nextRole, parseBreakdown, splitHandoff, splitPromptReplacement, splitReply, templateFor } from '../lib/stages'
 import { DEFAULT_ENDPOINTS, lastFrameOf, poll, pollChain, probeComfy, submit, uploadImage, viewUrl } from '../lib/comfy'
 import type { PollResult } from '../lib/comfy'
-import { applyRecipe, fetchShippedChainRecipe, framesForSeconds, oomRisk, recipeIssues, resolveChainRecipeAutoBind } from '../lib/recipe'
+import { applyRecipe, fetchShippedChainRecipes, framesForSeconds, oomRisk, recipeIssues, resolveChainRecipeAutoBind } from '../lib/recipe'
 import { padForOverlap } from '../lib/frames'
 import type { PaddedClip } from '../lib/frames'
-import { CHAIN_CONTEXT_LENGTH, CHAIN_MIN_STEPS, ChainError, SINGULARITY_UNET, buildChainGraph, chainIssues, chainShotsForPlan, planNeedsPerSceneLoraSplit } from '../lib/chain'
+import { CHAIN_CONTEXT_LENGTH, ChainError, SINGULARITY_UNET, buildChainGraph, chainIssues, chainMinSteps, chainShotsForPlan, planNeedsPerSceneLoraSplit } from '../lib/chain'
 import type { ChainPlate, ChainShot } from '../lib/chain'
+import { countFromIndex, dropFromIndex, externalVideoForReplace, scenesBefore, sceneRangeFor } from '../lib/chainEdit'
 import { cumulativeFilm, sceneWorkLabel } from '../lib/chainDisplay'
 import type { SceneWorkLabel } from '../lib/chainDisplay'
 import { fetchBundledSkills, loadSkills, removeSkill, saveSkill } from '../lib/skills'
 import { estTokens } from '../lib/tokens'
-import { appendContinuationHistory, authoringModeFor, authorContinuation, clearDraftContext, continuationContextOverride, continuationPlateIsFresh, continuationSource, interruptedReasoningText, migrateEntryMode, previousPromptForClip, promptSourceForEntryMode } from '../lib/entry'
-import type { AuthoringMode, EntryModeId } from '../lib/entry'
+import { appendContinuationHistory, authoringModeForContent, authorContinuation, clearDraftContext, continuationContextOverride, continuationPlateIsFresh, continuationSource, interruptedReasoningText, migrateBreakIntoScenes, previousPromptForClip, promptSourceForAuthoringMode } from '../lib/entry'
+import type { AuthoringMode } from '../lib/entry'
 import { isSingleRequestStage, type StudioRunPhase } from '../lib/studio-workflow'
 import { normalizeThinkingBudgets, resolveThinkingBudget } from '../lib/thinking'
 import type {
@@ -35,8 +36,11 @@ const PROMPT_STAGES = new Set<StageId>(['draft', 'revise', 'rebuild', 'freeform'
 
 const DEFAULT_SETTINGS: Settings = {
   schema: SETTINGS_SCHEMA,
-  providerId: 'ollama',
-  model: '',
+  // Preselect the operator's own endpoint when a gitignored `.env.local`
+  // supplies one (see `LOCAL_LLM_URL` in lib/providers.ts). Falls back to
+  // Ollama, so the public build's default is unchanged and no host is baked in.
+  providerId: LOCAL_LLM_URL ? 'localbox' : 'ollama',
+  model: LOCAL_LLM_MODEL ?? '',
   temperature: 0.35,
   // 0 = no ceiling. A six-section Ref2VA prompt is long, and a reasoning model
   // spends tokens thinking before it writes a word — so any fixed number is a
@@ -51,8 +55,7 @@ const DEFAULT_SETTINGS: Settings = {
   seconds: 7.3,
   lockSeed: true,
   seed: 42,
-  studioMode: 'idea',
-  planFirst: false,
+  breakIntoScenes: false,
 }
 
 /** The deterministic name a plate uploads under — shared so a chain build
@@ -245,16 +248,12 @@ export interface Api {
   interruptedReasoning: string | null
   findings: Finding[]
   context: BuiltContext | null
-  /** Which of the three starting points is selected; Agent has its own fixed
-   * contract. */
-  studioMode: EntryModeId
-  /** Within the 'idea' door: plan the whole arc first, vs just scene 1 — see
-   * `authoringModeFor`. */
-  planFirst: boolean
+  /** The one control on the composer — see `lib/entry.ts`'s module comment.
+   * Agent has its own fixed contract and never reads this. */
+  breakIntoScenes: boolean
 
   setStory: (s: string) => void
-  setStudioMode: (mode: EntryModeId) => void
-  setPlanFirst: (v: boolean) => void
+  setBreakIntoScenes: (v: boolean) => void
   setFilm: (f: Partial<FilmContext>) => void
   patchSettings: (p: Partial<Settings>) => void
   toggleSkill: (skill: Skill) => void
@@ -327,12 +326,35 @@ export interface Api {
    * See the module comment beside its definition.
    */
   renderChainPlan: (sceneIndex?: number) => Promise<void>
-  /** Render the current prompt as one Contex-Loop chain scene — see the
-   * module comment beside `renderChain`'s definition for which chain it
-   * joins and what gets resent for append-only resume verification. */
-  renderChain: () => Promise<void>
+  /** Render the composer's current text as one Contex-Loop chain scene — see
+   * the module comment beside `renderChain`'s definition for which chain it
+   * joins and what gets resent for append-only resume verification.
+   * `seedOverride`/`runNameOverride` exist for `replaceScene`, below — a
+   * fresh render call never needs either. */
+  renderChain: (opts?: { seedOverride?: number; runNameOverride?: string }) => Promise<void>
   selectClip: (id: string) => void
-  /** Author the next prompt from a landed clip; rendering remains a separate action. */
+  /** How many scenes of `clip`'s chain, from `fromIndex` on, currently exist —
+   * what a Replace or a Continue-from-here targeting `fromIndex` would
+   * invalidate (append-only: everything from the target scene on gets
+   * discarded and would need re-rendering). Zero when there is nothing to
+   * lose. */
+  scenesFrom: (clipId: string, fromIndex: number) => number
+  /**
+   * Replace one already-rendered scene of a chain in place: reloads that
+   * scene's own prompt into the composer for editing, resends every scene
+   * BEFORE it byte-identically, and resubmits it with a fresh seed by default
+   * (same seed + same prompt reproduces the same clip, so a "replace" that
+   * does not change the seed changes nothing) — pass `keepSeed` to reuse the
+   * original seed instead. A scene-1 replace re-passes the chain's original
+   * external-video choice, if it had one. Every scene after the replaced one
+   * is invalidated (see `scenesFrom`) — Contex-Loop is append-only, so they
+   * no longer resume against a checkpoint that still exists.
+   */
+  replaceScene: (clipId: string, opts?: { keepSeed?: boolean }) => Promise<void>
+  /** Author the next prompt from a landed clip; rendering remains a separate
+   * action. Works from ANY clip in a chain, not only the newest — rendering
+   * the result (via `renderChain`) then invalidates every scene from its
+   * target on, the same append-only consequence `replaceScene` has. */
   continueFrom: (clipId: string, note?: string) => Promise<void>
   /** Append a canonical prompt version without invoking an LLM stage. */
   appendPromptVersion: (input: PromptVersionInput) => Version | null
@@ -375,13 +397,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false)
   const [skills, setSkills] = useState<Skill[]>([])
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS)
-  // The selected starting point (door) and the 'idea' door's plan-first
-  // toggle are sticky preferences, unlike the draft itself — see
-  // `Settings.studioMode`'s module comment — so they live in `settings`
-  // rather than their own state, and round-trip through the same
-  // load/migrate/persist path every other setting does.
-  const studioMode: EntryModeId = settings.studioMode ?? 'idea'
-  const planFirst: boolean = settings.planFirst ?? false
+  // The composer's one control — plan the whole arc first, vs just this
+  // scene — is a sticky preference, unlike the draft itself, so it lives in
+  // `settings` and round-trips through the same load/migrate/persist path
+  // every other setting does. See `Settings.breakIntoScenes`'s module comment.
+  const breakIntoScenes: boolean = settings.breakIntoScenes ?? false
   const [providers, setProvidersState] = useState<Provider[]>(DEFAULT_PROVIDERS)
   const [probes, setProbes] = useState<Record<string, ProbeResult>>({})
   const [session, setSession] = useState<Session>({ story: '', versions: [], currentId: null, chat: [] })
@@ -494,13 +514,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
         seenBundled: [...new Set([...(savedSettings?.seenBundled ?? []), ...bundledIds])],
       }
 
-      // A profile from before this redesign may carry the pre-redesign
-      // 'story' door (or nothing at all) — migrate on every load, not just
-      // once behind the schema gate: cheap, and a no-op on an already-current
-      // value, so this never needs its own version bump to keep working.
-      const migratedMode = migrateEntryMode(savedSettings?.studioMode, savedSettings?.planFirst)
-      merged.studioMode = migratedMode.studioMode
-      merged.planFirst = migratedMode.planFirst
+      // A profile from before this redesign may carry a pre-redesign door
+      // (or nothing at all) instead of the one remaining control — migrate on
+      // every load, not just once behind the schema gate: cheap, and a no-op
+      // on an already-current value, so this never needs its own version
+      // bump to keep working. Only seeds `breakIntoScenes` when the profile
+      // has never set it directly (an operator's own later choice must win
+      // over a stale door value on every subsequent load).
+      if (savedSettings?.breakIntoScenes === undefined) {
+        merged.breakIntoScenes = migrateBreakIntoScenes(savedSettings?.studioMode, savedSettings?.planFirst).breakIntoScenes
+      }
 
       // Settings persist per browser, so raising a default only reaches people
       // who have never opened the app. Anyone already carrying the old 4096
@@ -534,18 +557,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
         idb.get<ComfyEndpoint[]>('settings', 'comfyEndpoints'),
       ])
 
-      // Bind the shipped Contex-Loop chain recipe so a fresh profile can
-      // render before an operator ever drops a workflow of their own — see
-      // `resolveChainRecipeAutoBind` for why this is gated on
-      // `chainRecipeAutoBound` rather than on whether `chainRecipeId` itself
-      // resolves.
+      // Bind the shipped Contex-Loop chain recipes (SLA default, VSA gate
+      // selectable) so a fresh profile can render before an operator ever
+      // drops a workflow of their own — see `resolveChainRecipeAutoBind` for
+      // why this is gated on `chainRecipeAutoBound` rather than on whether
+      // `chainRecipeId` itself resolves.
       let recipesForState = savedRecipes
-      const bind = await resolveChainRecipeAutoBind(savedRecipes, merged, fetchShippedChainRecipe)
+      const bind = await resolveChainRecipeAutoBind(savedRecipes, merged, fetchShippedChainRecipes)
       if (bind) {
         merged.chainRecipeId = bind.chainRecipeId
         merged.chainRecipeAutoBound = bind.chainRecipeAutoBound
         recipesForState = bind.recipes
-        if (bind.added) await idb.set('recipes', bind.added.id, bind.added)
+        for (const r of bind.added) await idb.set('recipes', r.id, r)
       }
       setRecipes(recipesForState.sort((a, b) => a.addedAt - b.addedAt))
       if (savedEndpoints?.length) setEndpointsState(savedEndpoints)
@@ -625,8 +648,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ── actions ───────────────────────────────────────────────────────────
   const patchSettings = useCallback((p: Partial<Settings>) => setSettings((s) => ({ ...s, ...p })), [])
-  const setStudioMode = useCallback((mode: EntryModeId) => patchSettings({ studioMode: mode }), [patchSettings])
-  const setPlanFirst = useCallback((v: boolean) => patchSettings({ planFirst: v }), [patchSettings])
+  const setBreakIntoScenes = useCallback((v: boolean) => patchSettings({ breakIntoScenes: v }), [patchSettings])
 
   const setStory = useCallback((story: string) => setSession((s) => ({ ...s, story })), [])
 
@@ -783,6 +805,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const lastPrompt = () => [...snap.versions].reverse().find((v) => PROMPT_STAGES.has(v.stage)) ?? null
 
       const sourceStory = override?.story ?? snap.story
+      // The composer's TEXT decides the authoring contract — no door is
+      // picked up front any more. See `lib/entry.ts`'s module comment.
+      const contentAuthoringMode = override?.studioMode ?? authoringModeForContent(classifyInput(sourceStory).kind, breakIntoScenes)
       const clipIndex = override?.clipIndex ?? override?.film?.clipIndex ?? snap.film?.clipIndex
       // Scene's film context describes the hand-off state, but the previous
       // canonical prompt is equally important to Direct: it shows the model
@@ -800,8 +825,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       } else {
         // Critique, Revise, Rebuild and a freeform note all operate on the prompt.
         const authoredPrompt = (cur && PROMPT_STAGES.has(cur.stage) ? cur.text : lastPrompt()?.text) ?? ''
-        working = promptSourceForEntryMode(
-          override?.studioMode ?? authoringModeFor(studioMode, planFirst),
+        working = promptSourceForAuthoringMode(
+          contentAuthoringMode,
           sourceStory,
           authoredPrompt,
           looksLikePrompt(sourceStory),
@@ -863,7 +888,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           // the frame and the thread follow, which is what makes a composer
           // turn a continuation rather than a cold single-shot request.
           messages: [
-            { role: 'system', content: buildH3SystemPrompt(ctx, 'studio', override?.studioMode ?? authoringModeFor(studioMode, planFirst)) },
+            { role: 'system', content: buildH3SystemPrompt(ctx, 'studio', contentAuthoringMode) },
             { role: 'user', content: user },
             ...(stage === 'freeform'
               ? [
@@ -1009,8 +1034,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
           truncated: result.truncated || undefined,
           clipIndex,
         }
+        // The composer is the ONE box — a pass that produced a canonical
+        // prompt (Draft/Revise/Rebuild/a prompt-bearing freeform note) writes
+        // it straight back into the composer's text, so what is on screen
+        // and what would render are never two different things. Direct,
+        // Critique and Hand-off are not canonical prompts and must never
+        // overwrite it — a direction sheet or a critique landing in the
+        // composer would silently become the next render payload.
+        const nextStory = PROMPT_STAGES.has(stage) ? version.text : sessionRef.current.story
         const nextSession = {
           ...sessionRef.current,
+          story: nextStory,
           versions: [...sessionRef.current.versions, version],
           currentId: version.id,
           chat:
@@ -1029,6 +1063,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
         setSession((s) => ({
           ...s,
+          story: PROMPT_STAGES.has(stage) ? version.text : s.story,
           versions: [...s.versions, version],
           currentId: version.id,
           chat:
@@ -1058,11 +1093,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         endGpuUse()
       }
     },
-    [providers, settings, context, skills, findings, studioMode, planFirst, beginGpuUse, endGpuUse],
+    [providers, settings, context, skills, findings, breakIntoScenes, beginGpuUse, endGpuUse],
   )
 
   const rebuild = useCallback(async (mode?: AuthoringMode) => {
-    const studioModeOverride = mode ?? authoringModeFor(studioMode, planFirst)
+    const studioModeOverride = mode ?? authoringModeForContent(classifyInput(sessionRef.current.story).kind, breakIntoScenes)
     if (studioModeOverride === 'prompt') {
       // Prompt Rebuild is its own finite operation. It deliberately does not
       // route through the Scene/Clip Direct → Draft quality sequence.
@@ -1071,7 +1106,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     const sheet = await run('direct', undefined, { studioMode: studioModeOverride })
     if (sheet) await run('draft', undefined, { studioMode: studioModeOverride, current: sheet.text })
-  }, [run, studioMode, planFirst])
+  }, [run, breakIntoScenes])
 
   const reset = useCallback(async () => {
     abortRef.current?.abort()
@@ -1210,7 +1245,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   /**
    * Gates the primary "Render scene N" action — the chain equivalent of
    * `blockers`, above. Every render now goes through `renderChain`, so this
-   * checks `chainRecipe`, never the plain single-clip `recipe`.
+   * checks `chainRecipe`, never the plain single-clip `recipe` — and checks
+   * the COMPOSER'S text directly (`session.story`), since that is what
+   * `renderChain` actually sends: nothing here gates rendering behind an
+   * LLM stage having run.
    */
   const chainBlockers = useMemo(() => {
     const out: string[] = []
@@ -1219,14 +1257,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       out.push(`${endpoint.label} is not reachable — ${comfyProbes[endpoint.id].detail}`)
     }
     if (!chainRecipe) out.push('No Contex-Loop (chain) recipe loaded — drop the chain ComfyUI workflow saved in API format.')
-    if (!lastPromptText.trim()) out.push('No prompt to render yet. Run Draft, or paste one.')
+    if (!session.story.trim()) out.push('Nothing to render yet — write or paste something in the composer.')
     const jobless = plates.filter((p) => !p.job.trim())
     if (jobless.length) out.push(`${jobless.length} plate(s) have no job written. An unexplained reference drifts.`)
     if (!session.parentClipId && session.externalVideo && endpoint && session.externalVideo.endpointId !== endpoint.id) {
       out.push(`“Continue from a video” was picked on a different endpoint — switch back to it, or pick the video again on ${endpoint.label}.`)
     }
     return out
-  }, [endpoint, comfyProbes, chainRecipe, lastPromptText, plates, session.parentClipId, session.externalVideo])
+  }, [endpoint, comfyProbes, chainRecipe, session.story, plates, session.parentClipId, session.externalVideo])
 
   /**
    * The clip plan's chain accounting and gate, recomputed on every prompt,
@@ -1245,7 +1283,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     })
     const imagePlateCount = plates.filter((p) => p.kind === 'image').length
     const padded = padForOverlap(plan.map((c) => ({ frames: framesForSeconds(c.seconds, 24) })), CHAIN_CONTEXT_LENGTH)
-    const steps = settings.steps ?? CHAIN_MIN_STEPS
+    const steps = settings.steps ?? chainMinSteps(chainRecipe?.graph)
 
     const issues = chainIssues({
       graph: chainRecipe?.graph ?? null,
@@ -1573,7 +1611,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const runName = `plan_${b.at.toString(36)}`
     const width = settings.width ?? chainRecipe.defaults.width
     const height = settings.height ?? chainRecipe.defaults.height
-    const steps = settings.steps ?? CHAIN_MIN_STEPS
+    const steps = settings.steps ?? chainMinSteps(chainRecipe.graph)
 
     const issues = chainIssues({
       graph: chainRecipe.graph,
@@ -1715,9 +1753,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   ])
 
   /**
-   * Render the current canonical prompt as ONE Contex-Loop chain scene —
+   * Render the COMPOSER'S current text as ONE Contex-Loop chain scene —
    * resuming every earlier scene from its ComfyUI checkpoint and sampling
    * only this one, so a chain of N clips costs only the last one's render.
+   * Nothing gates this on an LLM stage having run: `session.story` is the one
+   * thing on screen, and it is always the render payload, typed, pasted, or
+   * authored by "Draft it for me" — see the module comment on `Session`.
    *
    * Which chain this joins: the parent clip's `.chain` (set by an earlier
    * `renderChain` call) when the current session continues from one via
@@ -1726,21 +1767,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
    * every earlier scene's prompt/frames/steps/seed, so the prior scenes are
    * always resent from what was actually recorded on their `Clip`s — never
    * re-derived from current settings, which may have since changed.
+   *
+   * `opts.seedOverride`/`opts.runNameOverride` exist for `replaceScene`: a
+   * replace needs a FRESH seed regardless of `settings.lockSeed` (the same
+   * seed on the same prompt reproduces the same clip, so a "replace" that
+   * keeps both changes nothing) and, when replacing scene 1 specifically, the
+   * ORIGINAL run's name rather than a new chain (there is no parent clip to
+   * read it from). Every other caller passes neither and gets the ordinary
+   * fresh-continuation behaviour.
+   *
+   * Append-only, in both directions this function can be asked to act on: a
+   * scene that already exists at the target index is overwritten in place
+   * (a Replace), and every scene AFTER the target index is dropped from
+   * state (a Replace or a Continue-from-an-earlier-scene) — Contex-Loop
+   * cannot verify a later scene's resume hash against a predecessor that no
+   * longer matches what rendered it, so those clips are no longer valid and
+   * would need to be re-rendered from here forward.
    */
-  const renderChain = useCallback(async () => {
+  const renderChain = useCallback(async (opts?: { seedOverride?: number; runNameOverride?: string }) => {
     if (!endpoint || !chainRecipe) {
       setError('Pick an endpoint and a Contex-Loop (chain) recipe first.')
       return
     }
-    const prompt = lastPromptText
+    const prompt = sessionRef.current.story
     if (!prompt.trim()) {
-      setError('Nothing to render — there is no prompt yet.')
+      setError('Nothing to render — write or paste something in the composer first.')
       return
     }
 
     const parentId = sessionRef.current.parentClipId ?? null
     const parent = parentId ? clipsRef.current.find((c) => c.id === parentId) : undefined
-    const runName = parent?.chain?.runName ?? `chain_${Date.now().toString(36)}`
+    const runName = opts?.runNameOverride ?? parent?.chain?.runName ?? `chain_${Date.now().toString(36)}`
     const sceneIndex = (parent?.chain?.sceneIndex ?? 0) + 1
 
     // Only meaningful on a fresh scene-1 chain — `_initial_state` only reads
@@ -1755,25 +1812,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     const width = settings.width ?? chainRecipe.defaults.width
     const height = settings.height ?? chainRecipe.defaults.height
-    const steps = settings.steps ?? CHAIN_MIN_STEPS
-    const seed = settings.lockSeed ? settings.seed : Math.floor(Math.random() * 2 ** 31)
+    const steps = settings.steps ?? chainMinSteps(chainRecipe.graph)
+    const seed = opts?.seedOverride ?? (settings.lockSeed ? settings.seed : Math.floor(Math.random() * 2 ** 31))
     const frames = framesForSeconds(settings.seconds, 24)
 
-    // Append-only: every scene before this one is resent exactly as it was
+    // Append-only: every scene BEFORE the target is resent exactly as it was
     // recorded when IT rendered — never re-derived from whatever settings
     // happen to be current now, which is exactly the drift
-    // `verify_resume_history` exists to catch.
+    // `verify_resume_history` exists to catch. Scoped to `sceneIndex < target`
+    // (not merely "same runName") so replacing or continuing from an EARLIER
+    // scene never resends a later scene that is about to be invalidated below.
     const priorShots: ChainShot[] = parent?.chain
-      ? clipsRef.current
-          .filter((c): c is Clip & { chain: ClipChainInfo } => c.chain?.runName === runName)
-          .sort((a, b) => a.chain.sceneIndex - b.chain.sceneIndex)
-          .map((c) => ({
-            index: c.chain.sceneIndex,
-            prompt: c.prompt,
-            frames: c.frames ?? 0,
-            steps: c.steps ?? steps,
-            seed: c.seed ?? 0,
-          }))
+      ? scenesBefore(
+          clipsRef.current.filter((c): c is Clip & { chain: ClipChainInfo } => !!c.chain),
+          runName,
+          sceneIndex,
+        ).map((c) => ({
+          index: c.chain.sceneIndex,
+          prompt: c.prompt,
+          frames: c.frames ?? 0,
+          steps: c.steps ?? steps,
+          seed: c.seed ?? 0,
+        }))
       : []
     const shots: ChainShot[] = [...priorShots, { index: sceneIndex, prompt, frames, steps, seed }]
 
@@ -1808,10 +1868,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
       frames,
       fps: 24,
       steps,
-      chain: { runName, sceneIndex, continuesExternalVideo: !!externalVideo },
+      chain: {
+        runName,
+        sceneIndex,
+        continuesExternalVideo: !!externalVideo,
+        externalVideo: externalVideo ? { ...externalVideo, endpointId: endpoint.id } : undefined,
+      },
       at: Date.now(),
     }
-    setClips((prev) => [...prev, draft])
+    // Drop any existing scene at or after the target index before adding the
+    // new one — see the module comment above. A fresh continuation (nothing
+    // yet at `sceneIndex`) is a no-op filter, so this is the same append it
+    // always was for the common case.
+    setClips((prev) => [...dropFromIndex(prev, runName, sceneIndex), draft])
     setCurrentClipId(id)
     setRenderingId(id)
 
@@ -1840,7 +1909,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         shots,
         plates,
         opts: {
-          runName, width, height, steps, sceneRange: String(sceneIndex),
+          runName, width, height, steps, sceneRange: sceneRangeFor(sceneIndex),
           unetName: settings.chainUnetName || SINGULARITY_UNET,
           externalVideo,
         },
@@ -1850,6 +1919,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       patchClip(id, { state: 'rendering', promptId })
       const output = await pollToDone(endpoint, promptId, (e, p) => pollChain(e, p, runName))
       patchClip(id, { state: 'done', output, ms: Date.now() - t0 })
+      // The composer is always "the next thing": once a scene lands, this
+      // scene becomes the implicit predecessor for whatever gets typed next,
+      // and the box clears so last scene's text is never mistaken for the
+      // next one's. An explicit Replace/Continue-from-here on a DIFFERENT
+      // scene overrides this the moment it is pressed.
+      const advanced = { ...sessionRef.current, story: '', parentClipId: id, parentPrompt: prompt, externalVideo: null }
+      setSession(advanced)
+      sessionRef.current = advanced
     } catch (e) {
       const msg = e instanceof ChainError ? e.message : String((e as Error).message || e)
       patchClip(id, { state: 'failed', error: msg, ms: Date.now() - t0 })
@@ -1859,11 +1936,55 @@ export function AppProvider({ children }: { children: ReactNode }) {
       endGpuUse()
     }
   }, [
-    endpoint, chainRecipe, lastPromptText, settings.width, settings.height, settings.steps,
-    settings.lockSeed, settings.seed, settings.seconds, patchClip, savePlate, beginGpuUse, endGpuUse,
+    endpoint, chainRecipe, settings.width, settings.height, settings.steps,
+    settings.lockSeed, settings.seed, settings.seconds, settings.chainUnetName, patchClip, savePlate, beginGpuUse, endGpuUse,
   ])
 
   const selectClip = useCallback((id: string) => setCurrentClipId(id), [])
+
+  /** How many scenes of the clip's chain, from `fromIndex` on, currently
+   * exist — see the module comment on `Api.scenesFrom`. */
+  const scenesFrom = useCallback((clipId: string, fromIndex: number): number => {
+    const target = clipsRef.current.find((c) => c.id === clipId)
+    const runName = target?.chain?.runName
+    if (!runName) return 0
+    return countFromIndex(clipsRef.current, runName, fromIndex)
+  }, [])
+
+  /** Replace one already-rendered scene in place — see the module comment on
+   * `Api.replaceScene`. */
+  const replaceScene = useCallback(async (clipId: string, opts?: { keepSeed?: boolean }) => {
+    const target = clipsRef.current.find((c) => c.id === clipId)
+    if (!target?.chain) {
+      setError('That scene is not part of a chain.')
+      return
+    }
+    const runName = target.chain.runName
+    const sceneIndex = target.chain.sceneIndex
+    const predecessor =
+      sceneIndex > 1
+        ? clipsRef.current.find((c) => c.chain?.runName === runName && c.chain.sceneIndex === sceneIndex - 1)
+        : undefined
+
+    const next = {
+      ...sessionRef.current,
+      story: target.prompt,
+      film: target.film ?? sessionRef.current.film,
+      parentClipId: predecessor?.id ?? null,
+      parentPrompt: predecessor?.prompt,
+      // Scene 1 alone may have an external-video predecessor to re-pass —
+      // see `ClipChainInfo.externalVideo`'s module comment.
+      externalVideo: externalVideoForReplace(target),
+    }
+    setSession(next)
+    sessionRef.current = next
+    setCurrentClipId(predecessor?.id ?? null)
+
+    await renderChain({
+      seedOverride: opts?.keepSeed ? target.seed : Math.floor(Math.random() * 2 ** 31),
+      runNameOverride: runName,
+    })
+  }, [renderChain])
 
   /**
    * Close the loop end to end.
@@ -2083,11 +2204,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     continuation,
     findings,
     context,
-    studioMode,
-    planFirst,
+    breakIntoScenes,
     setStory,
-    setStudioMode,
-    setPlanFirst,
+    setBreakIntoScenes,
     setFilm,
     patchSettings,
     toggleSkill,
@@ -2128,6 +2247,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     renderChainPlan,
     renderChain,
     selectClip,
+    scenesFrom,
+    replaceScene,
     continueFrom,
     appendPromptVersion,
     setBreakdown,

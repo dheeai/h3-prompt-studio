@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { idb } from '../lib/db'
-import { buildContext, buildH3SystemPrompt, type BuiltContext } from '../lib/context'
+import { buildContext, buildH3SystemPrompt, type BuiltContext, selectionForStage, selectionKey } from '../lib/context'
 import { classifyInput, findingsToText, lint, looksLikePrompt, standingToText } from '../lib/lint'
 import { continuationBudgetFor, streamChatComplete } from '../lib/llm'
 import { DEFAULT_PROVIDERS, loadProviders, probe, saveProviders, LOCAL_LLM_URL, LOCAL_LLM_MODEL} from '../lib/providers'
@@ -872,7 +872,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // revise pass; the deterministic rules are a small mechanical extra.
       const critiqueText = lastOf('critique')?.text ?? ''
 
-      const ctx = context ?? (await buildContext(skills, settings.selection))
+      // Each stage gets only the documents it needs — `draft` renders a sheet
+      // and wants the FIELD FORMAT, not the directing skill it was already
+      // directed with. The cached `context` prop (the whole selection) is only
+      // reused when this stage takes the whole selection anyway.
+      const stageSelection = selectionForStage(skills, settings.selection, stage)
+      const takesEverything = selectionKey(stageSelection) === selectionKey(settings.selection)
+      const ctx = takesEverything && context ? context : await buildContext(skills, stageSelection)
       const template = templateFor(settings.stageTemplates, stage)
       const user = fillTemplate(template, {
         story: sourceStory,

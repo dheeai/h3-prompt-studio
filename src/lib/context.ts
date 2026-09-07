@@ -1,6 +1,6 @@
 import { estTokens } from './tokens'
 import type { AuthoringMode } from './entry'
-import type { Selection, Skill } from './types'
+import type { Selection, Skill, StageId } from './types'
 
 /**
  * The cached layer.
@@ -38,6 +38,29 @@ export type H3PromptSurface = 'studio' | 'agent'
  * definitions of the canonical prompt.
  */
 export const H3_STUDIO_SYSTEM_RULES = `You are the H3 Prompt Studio authoring model on the Studio authoring surface.
+
+WHICH DOCUMENT WINS. When the loaded documents disagree, do not reconcile them
+from scratch — they have a fixed order of authority:
+- h3-prompting decides FORMAT: field names, their order, the six sections,
+  camera vocabulary, dialogue tags, suppressed modalities.
+- h3-direction decides WHAT TO SHOW: beats, escalation, shot cards, what is
+  withheld and when.
+- h3-acting decides PERFORMANCE: gaze, breath, hands, weight, timing.
+A FORMAT rule always wins. A beautifully directed prompt in the wrong field
+structure does not render at all, so where a directing note and a format rule
+cannot both be satisfied, satisfy the format rule and adapt the direction to
+fit it.
+
+Direction and acting overlap, because both describe observable physical
+behaviour and the two documents do not reference each other. Split them this
+way: DIRECTION owns when a beat happens, how long it lasts, where the camera
+is, and where the VIEWER's attention goes — its "Gaze" is viewer attention,
+not the character's eyeline. ACTING owns how the person behaves inside that
+beat — tactic, micro-action, eyeLife, voice identity. So a character's
+habitual tic yields to the shot's function when the two want the same second
+of screen time, and the beat grid's duration is the budget the performance
+must fit. Two things from acting are never overridden: a voice identity is
+copied verbatim, and dialogue ownership stays exactly as written.
 
 The selected skill documents above are the complete craft authority. Apply them
 to the user's source and the current stage contract. The current stage contract
@@ -192,6 +215,51 @@ export function selectionKey(selection: Selection): string {
     .map((k) => `${k}:${[...selection[k]].sort().join(',')}`)
     .join('|')
 }
+
+/**
+ * Which loaded craft documents each stage actually needs.
+ *
+ * Every stage used to receive every selected file, so `draft` was handed the
+ * whole directing skill (~5.7k tokens) even though its job is to RENDER a
+ * sheet somebody already directed — it needs the FIELD FORMAT, not directing
+ * theory. Two passes each carrying the full payload is most of why authoring
+ * a prompt is slow, and on a hosted provider there is no prompt cache to
+ * soften it.
+ *
+ * Matching is by skill NAME and is deliberately permissive: a skill this map
+ * does not recognise (anything the operator loaded themselves) is ALWAYS
+ * included, because we cannot know what it governs. Only the shipped ones are
+ * routed.
+ */
+const STAGE_SKILLS: Partial<Record<StageId, readonly string[]>> = {
+  // Deciding what to show, and how it is performed.
+  direct: ['h3-direction', 'h3-acting', 'h3-two-hander', 'h3-lira'],
+  breakdown: ['h3-direction'],
+  // Rendering a decision into the official field structure.
+  draft: ['h3-prompting'],
+  revise: ['h3-prompting'],
+  rebuild: ['h3-prompting'],
+  freeform: ['h3-prompting'],
+  handoff: ['h3-prompting'],
+  // Audits against everything, so it keeps the whole selection.
+}
+
+/** Narrow a selection to the documents a stage needs — see `STAGE_SKILLS`. */
+export function selectionForStage(skills: Skill[], selection: Selection, stage: StageId | undefined): Selection {
+  const wanted = stage ? STAGE_SKILLS[stage] : undefined
+  if (!wanted) return selection
+  const byId = new Map(skills.map((s) => [s.id, s.name.toLowerCase()]))
+  const out: Selection = {}
+  for (const [skillId, rels] of Object.entries(selection)) {
+    const name = byId.get(skillId)
+    // Unknown to the map = the operator's own document, always kept.
+    const known = name ? RECOGNISED.has(name) : false
+    if (!known || (name && wanted.includes(name))) out[skillId] = rels
+  }
+  return out
+}
+
+const RECOGNISED = new Set(['h3-direction', 'h3-acting', 'h3-two-hander', 'h3-lira', 'h3-prompting'])
 
 export async function buildContext(skills: Skill[], selection: Selection): Promise<BuiltContext> {
   const key = selectionKey(selection)

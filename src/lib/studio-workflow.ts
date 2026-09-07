@@ -25,12 +25,12 @@ export function studioActions(mode: AuthoringMode, hasPlan: boolean): StudioActi
   if (mode === 'story') {
     return hasPlan
       ? [
-          { id: 'generate-selected', label: 'Generate selected prompt', stages: ['direct', 'draft'] },
-          { id: 'generate-all', label: 'Generate all prompts', stages: ['direct', 'draft'] },
+          { id: 'generate-selected', label: 'Generate selected prompt', stages: ['draft'] },
+          { id: 'generate-all', label: 'Generate all prompts', stages: ['draft'] },
         ]
       : [{ id: 'plan', label: 'Create clip plan', stages: ['breakdown'] }]
   }
-  if (mode === 'idea') return [{ id: 'generate-clip', label: 'Generate prompt', stages: ['direct', 'draft'] }]
+  if (mode === 'idea') return [{ id: 'generate-clip', label: 'Generate prompt', stages: ['draft'] }]
   return [
     { id: 'revise', label: 'Revise prompt', stages: ['revise'] },
     { id: 'rebuild', label: 'Rebuild prompt', stages: ['rebuild'] },

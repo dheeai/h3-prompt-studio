@@ -14,14 +14,22 @@ const namesFor = (stage: Parameters<typeof selectionForStage>[2]) =>
   Object.keys(selectionForStage(skills, all, stage)).map((id) => skills.find((s) => s.id === id)!.name).sort()
 
 /**
- * Every stage used to get every document, so `draft` carried the whole
- * directing skill (~5.7k tokens) to RENDER a sheet it had already been
- * directed with — paid twice per prompt, and with no prompt cache on a hosted
- * provider.
+ * `draft` DIRECTS and WRITES in one pass, so it legitimately needs all three
+ * documents — but once per prompt rather than the old direct→draft pair, which
+ * sent the directing skill and then the format skill in two separate calls and
+ * round-tripped the direction sheet between them.
+ *
+ * `direct` survives as its own stage for anyone who wants the sheet itself,
+ * and it still gets only what directing needs.
  */
-test('selectionForStage gives draft the format document, not the directing one', () => {
-  assert.deepStrictEqual(namesFor('draft'), ['h3-prompting', 'my-own-notes'])
-  assert.deepStrictEqual(namesFor('direct'), ['h3-acting', 'h3-direction', 'my-own-notes'])
+test('selectionForStage: draft directs and writes, so it takes every document', () => {
+  assert.deepStrictEqual(namesFor('draft'), ['h3-acting', 'h3-direction', 'h3-prompting', 'my-own-notes'])
+})
+
+test('selectionForStage: a standalone direct pass still gets no format document', () => {
+  const names = namesFor('direct')
+  assert.deepStrictEqual(names, ['h3-acting', 'h3-direction', 'my-own-notes'])
+  assert.ok(!names.includes('h3-prompting'), 'directing does not need the field format')
 })
 
 test('selectionForStage keeps an unrecognised skill everywhere — we cannot know what it governs', () => {

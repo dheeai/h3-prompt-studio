@@ -4,8 +4,9 @@ import { idb } from '../lib/db'
 import { buildContext, buildH3SystemPrompt, type BuiltContext, selectionForStage, selectionKey } from '../lib/context'
 import { classifyInput, findingsToText, lint, looksLikePrompt, standingToText } from '../lib/lint'
 import { continuationBudgetFor, streamChatComplete } from '../lib/llm'
+import type { ChatContentPart } from '../lib/llm'
 import { DEFAULT_PROVIDERS, loadProviders, probe, saveProviders, LOCAL_LLM_URL, LOCAL_LLM_MODEL} from '../lib/providers'
-import { SCHEMA_STAGES, STAGE_LABEL, fillTemplate, filmBlock, hasPromptBlock, nextRole, parseBreakdown, splitHandoff, splitPromptReplacement, splitReply, templateFor } from '../lib/stages'
+import { SCHEMA_STAGES, STAGE_LABEL, fillTemplate, filmBlock, platesBlock, hasPromptBlock, nextRole, parseBreakdown, splitHandoff, splitPromptReplacement, splitReply, templateFor } from '../lib/stages'
 import { h3ResponseFormat, joinH3Sections } from '../lib/schema'
 import { DEFAULT_ENDPOINTS, poll, pollChain, probeComfy, submit, uploadImage, viewUrl } from '../lib/comfy'
 import type { PollResult } from '../lib/comfy'
@@ -891,7 +892,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
         findings: findings.length ? findingsToText(findings) : undefined,
         critique: critiqueText,
         standing: standingToText(classifyInput(snap.story)),
+        plates: platesBlock(plates),
       })
+
+      // Show the plates, not just describe them. Only a plate added from THIS
+      // machine has a dataUrl — one picked from the box is deliberately never
+      // round-tripped back, so it contributes its text line only. Images go in
+      // the user turn, AFTER the byte-identical system block, so the KV prefix
+      // cache still hits; putting them earlier would destroy it.
+      const plateImages: ChatContentPart[] =
+        provider.supportsVision && SCHEMA_STAGES.has(stage)
+          ? plates
+              .filter((pl) => pl.kind === 'image' && pl.dataUrl)
+              .map((pl) => ({ type: 'image_url' as const, image_url: { url: pl.dataUrl! } }))
+          : []
 
       if (!beginGpuUse('llm')) return null
 
@@ -923,7 +937,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
           // turn a continuation rather than a cold single-shot request.
           messages: [
             { role: 'system', content: buildH3SystemPrompt(ctx, 'studio', contentAuthoringMode) },
-            { role: 'user', content: user },
+            {
+              role: 'user',
+              content: plateImages.length ? [{ type: 'text' as const, text: user }, ...plateImages] : user,
+            },
             ...(stage === 'freeform'
               ? [
                   ...(snap.chat ?? []).map((t) => ({ role: t.role, content: t.text })),

@@ -40,6 +40,16 @@ export interface Provider {
    * enforced, and it does NOT suppress the reasoning block. */
   supportsJsonSchema?: boolean
   /**
+   * Endpoint + model can take image content parts.
+   *
+   * Every model on the local box is mmproj-equipped (thinkingcap-27b,
+   * qwen38-heretic-27b*, huihui-*), so plates can be shown to the authoring
+   * model rather than only described. A text-only model 400s on an
+   * `image_url` part, so `llm.ts` retries text-only when that happens —
+   * this flag only decides whether to try.
+   */
+  supportsVision?: boolean
+  /**
    * Endpoint honours a per-request reasoning ceiling.
    *
    * Set FALSE for a server that accepts the fields and ignores them — the

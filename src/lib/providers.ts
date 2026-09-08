@@ -18,6 +18,7 @@ export const DEFAULT_PROVIDERS: Provider[] = [
         sendCachePrompt: true,
         supportsJsonSchema: true,
         supportsReasoningBudget: true,
+        supportsVision: true,
         corsHint: 'Reachable only from a device on your own network/tailnet.',
       } as Provider]
     : []),
@@ -49,6 +50,7 @@ export const DEFAULT_PROVIDERS: Provider[] = [
     sendCachePrompt: true,
     supportsJsonSchema: true,
     supportsReasoningBudget: true,
+    supportsVision: true,
     corsHint: 'Run llama-server with --host 0.0.0.0; it sends permissive CORS headers by default.',
   },
   {

@@ -79,7 +79,7 @@ export const STAGE_LABEL: Record<StageId, string> = {
  * Stage templates. Editable by the user and stored in settings, so these are
  * only the starting point.
  *
- * Placeholders: {{story}} {{current}} {{mode}} {{notes}} {{findings}} {{critique}} {{film}} {{standing}} {{previous}}
+ * Placeholders: {{story}} {{current}} {{mode}} {{notes}} {{findings}} {{critique}} {{film}} {{standing}} {{previous}} {{plates}}
  *
  * Each one deliberately refuses to restate the loaded skills — the skills are
  * already in the system block, and repeating them here would both waste the
@@ -159,6 +159,7 @@ in the direction sheet. Include concrete sound anchors for every
 beat/shot as required by the loaded direction skill. Do not author
 non-diegetic music or a score in this pass. Output the direction sheet only.
 
+{{plates}}
 SOURCE
 {{story}}`,
 
@@ -196,6 +197,7 @@ A DETERMINISTIC READ OF THE SOURCE, computed before you looked at it — treat
 it as context, not as something to reproduce:
 {{standing}}
 
+{{plates}}
 SOURCE
 {{story}}
 
@@ -400,6 +402,7 @@ shape:
   ]
 }
 
+{{plates}}
 SOURCE
 {{story}}`,
 }
@@ -641,6 +644,40 @@ export function nextRole(role: ClipRole): ClipRole {
  * film becomes a row of miniature complete films, each hooking, escalating and
  * resolving, none of them going anywhere together.
  */
+/**
+ * The reference plates, as text the authoring model can act on.
+ *
+ * These were reaching the RENDER but never the PROMPT: `fillTemplate` took
+ * story/current/previous/mode/film/notes/findings/critique/standing and no
+ * plates at all, so the model wrote `subject_definitions` for references it
+ * had neither seen nor been told the purpose of. `job` is the field that
+ * matters most here — it is where "take her face, ignore the wardrobe" is
+ * written, which is exactly the decision `attribute_transfer` turns on.
+ *
+ * Numbered `<Subject N>` in declaration order, because that is the label the
+ * runner emits for a character/scene/style plate and the prompt has to cite
+ * the same one. A video plate is called out separately: H3 takes images and
+ * video on different inputs.
+ */
+export function platesBlock(plates: { name: string; job: string; kind: 'image' | 'video' }[] | undefined): string {
+  if (!plates?.length) return ''
+  const lines = plates.map((p, i) => {
+    const label = p.kind === 'video' ? `<Video ${i + 1}>` : `<Subject ${i + 1}>`
+    const job = p.job.trim() || '(no job written — say what it is for, or do not cite it)'
+    return `- ${label} — ${p.name.trim() || 'unnamed plate'} (${p.kind}): ${job}`
+  })
+  return `REFERENCE PLATES WIRED TO THIS RENDER — cite these labels, and only these
+
+${lines.join('\n')}
+
+Each plate's line says what to TAKE from it and what to IGNORE. Honour that:
+a plate whose job is an identity must not also dictate wardrobe, and a
+garment moved onto a different person is \`attribute_transfer\`, not
+\`fully_preserved\`. Do not cite a label that is not listed above, and do not
+invent a plate that is not wired.
+`
+}
+
 export function filmBlock(f: FilmContext | undefined): string {
   if (!f) return ''
 
@@ -703,6 +740,8 @@ export function fillTemplate(
     standing?: string
     /** The prompt that produced the rendered parent clip, for continuation Direct. */
     previous?: string
+    /** The wired reference plates — see `platesBlock`. */
+    plates?: string
   },
 ): string {
   return template
@@ -715,6 +754,7 @@ export function fillTemplate(
     .replace(/\{\{notes\}\}/g, vars.notes ? `ALSO\n${vars.notes}` : '')
     .replace(/\{\{standing\}\}/g, vars.standing?.trim() || '(not computed)')
     .replace(/\{\{previous\}\}/g, vars.previous?.trim() || '(none — this is the first clip)')
+    .replace(/\{\{plates\}\}/g, vars.plates?.trim() || '(no reference plates are wired — do not cite any <Subject N> or <Video N> label)')
     .trim()
 }
 

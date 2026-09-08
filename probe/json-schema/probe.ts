@@ -87,6 +87,22 @@ const OUT_DIR = flag('out-dir', '')
 const TEMPERATURE = Number(flag('temp', '0.7'))
 /** Build and dump every request body without sending one. */
 const DRY = argv.includes('--dry')
+/**
+ * Every request streams. This is deliberately NOT configurable.
+ *
+ * A non-streaming request sends NOTHING until generation completes, so a long
+ * call looks like an idle connection to anything in the path. Measured
+ * 2026-09-08: `huihui-thinkingcap-27b` lost briefs 01 and 02 to
+ * `TypeError: fetch failed` that way, and — because a reset request keeps
+ * generating server-side while still holding its slot, and that preset
+ * declares no `parallel` line so it has only ONE — every later request queued
+ * behind the zombies forever. Streaming keeps bytes flowing, so the idle timer
+ * never fires. There is no flag to turn this off: a run that silently used
+ * the fragile transport would produce failures indistinguishable from model
+ * defects, which is exactly what happened.
+ */
+/** Attempts allowed for the warm-up request, which absorbs the cold load. */
+const WARMUP_TRIES = Number(flag('warmup-tries', '4'))
 
 if (OUT_DIR) OUT = OUT_DIR.startsWith('/') ? OUT_DIR : join(HERE, OUT_DIR)
 
@@ -312,12 +328,103 @@ function buildPayload(mode: ModeName, brief: Brief, system: string) {
     ],
     temperature: TEMPERATURE,
     seed: SEED,
-    stream: false,
+    stream: true,
+    // usage arrives in the final chunk rather than a whole-body reply
+    stream_options: { include_usage: true },
     ...(MAX_TOKENS > 0 ? { max_tokens: MAX_TOKENS } : {}),
     ...(provider.sendCachePrompt ? { cache_prompt: true } : {}),
     ...(responseFormatFor(mode) || {}),
   }
   return withQwenReasoningBudget(provider, USE_MODEL!, body, REASONING)
+}
+
+interface Wire {
+  content: string
+  reasoning: string
+  finishReason: string | null
+  usage: { prompt_tokens?: number; completion_tokens?: number; completion_tokens_details?: { reasoning_tokens?: number } } | null
+}
+
+/** Collect an OpenAI-compatible SSE stream into one reply. */
+async function readStream(res: Response): Promise<Wire> {
+  const out: Wire = { content: '', reasoning: '', finishReason: null, usage: null }
+  const reader = res.body!.getReader()
+  const dec = new TextDecoder()
+  let buf = ''
+  for (;;) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buf += dec.decode(value, { stream: true })
+    // SSE frames are separated by a blank line; keep any partial tail.
+    let nl: number
+    while ((nl = buf.indexOf('\n')) !== -1) {
+      const line = buf.slice(0, nl).trim()
+      buf = buf.slice(nl + 1)
+      if (!line.startsWith('data:')) continue
+      const payload = line.slice(5).trim()
+      if (!payload || payload === '[DONE]') continue
+      let j: any
+      try {
+        j = JSON.parse(payload)
+      } catch {
+        continue // a half-frame split across reads; the next loop picks it up
+      }
+      // An error frame can arrive AFTER headers — the gateway emits one on an
+      // upstream stream failure, which would otherwise look like a clean end.
+      if (j.error) throw new Error(`upstream error frame: ${JSON.stringify(j.error).slice(0, 300)}`)
+      const ch = j.choices?.[0]
+      if (ch?.delta?.content) out.content += ch.delta.content
+      const r = ch?.delta?.reasoning_content ?? ch?.delta?.reasoning
+      if (r) out.reasoning += r
+      if (ch?.finish_reason) out.finishReason = ch.finish_reason
+      if (j.usage) out.usage = j.usage
+    }
+  }
+  return out
+}
+
+/**
+ * Absorb the cold model load OUTSIDE the measured requests.
+ *
+ * The load is the risky part: the request that triggers it waits through the
+ * whole thing with no bytes moving, and if that socket is reset the request
+ * keeps generating and holds a slot. So spend it here, on a tiny call whose
+ * zombie (if it happens) finishes immediately, and retry until one lands.
+ */
+async function warmup(model: string): Promise<boolean> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (API_KEY) headers.Authorization = `Bearer ${API_KEY}`
+  const body = {
+    model,
+    messages: [{ role: 'user', content: 'Reply with the single word: ok' }],
+    // Tiny on purpose: a reset warm-up must not sit in a slot generating.
+    max_tokens: 24,
+    stream: true,
+    // usage arrives in the final chunk rather than a whole-body reply
+    stream_options: { include_usage: true },
+    reasoning_budget_tokens: 32,
+    reasoning_budget_message: 'Time to stop thinking. Give the final answer.',
+  }
+  for (let attempt = 1; attempt <= WARMUP_TRIES; attempt++) {
+    const started = Date.now()
+    try {
+      const res = await fetch(`${BASE_URL!.replace(/\/$/, '')}/chat/completions`, {
+        method: 'POST', headers, body: JSON.stringify(body),
+      })
+      if (!res.ok) {
+        console.log(`  warm-up ${attempt}/${WARMUP_TRIES}: HTTP ${res.status} after ${((Date.now() - started) / 1000).toFixed(0)}s`)
+        continue
+      }
+      const w = await readStream(res)
+      console.log(`  warm-up ${attempt}/${WARMUP_TRIES}: model hot after ${((Date.now() - started) / 1000).toFixed(0)}s (${JSON.stringify(w.content.trim().slice(0, 20))})`)
+      return true
+    } catch (e) {
+      // Expected on the attempt that eats the load: the socket dies while the
+      // server is still bringing weights up. The next attempt usually lands.
+      console.log(`  warm-up ${attempt}/${WARMUP_TRIES}: ${String(e).slice(0, 80)} after ${((Date.now() - started) / 1000).toFixed(0)}s`)
+    }
+  }
+  return false
 }
 
 async function once(mode: ModeName, brief: Brief, n: number, system: string): Promise<Run> {
@@ -332,14 +439,18 @@ async function once(mode: ModeName, brief: Brief, n: number, system: string): Pr
     headers,
     body: JSON.stringify(payload),
   })
-  const ms = Date.now() - started
+  // NOT the elapsed time: with stream: true, fetch resolves as soon as the
+  // HEADERS arrive, so this is only time-to-first-byte and is used for the
+  // error path alone. The real duration is measured after the body is drained.
+  const headerMs = Date.now() - started
 
-  const base = { mode, brief: brief.id, n, ms, thought: false, parsed: false, fieldsPresent: 0, findings: [] as Finding[] }
+  const base = { mode, brief: brief.id, n, thought: false, parsed: false, fieldsPresent: 0, findings: [] as Finding[] }
 
   if (!res.ok) {
     const detail = (await res.text()).slice(0, 600)
     return {
       ...base,
+      ms: headerMs,
       httpError: `HTTP ${res.status} ${res.statusText} — ${detail}`,
       finishReason: null,
       fieldsExpected: 0,
@@ -349,11 +460,13 @@ async function once(mode: ModeName, brief: Brief, n: number, system: string): Pr
     }
   }
 
-  const json = (await res.json()) as any
-  const choice = json.choices?.[0] || {}
-  const msg = choice.message || {}
-  const content: string = msg.content ?? ''
-  const reasoning: string = msg.reasoning_content ?? msg.reasoning ?? ''
+  const wire = await readStream(res)
+  // Now the body is fully drained, so this is the real wall-clock duration.
+  const ms = Date.now() - started
+  const json = { usage: wire.usage } as any
+  const choice = { finish_reason: wire.finishReason } as any
+  const content: string = wire.content
+  const reasoning: string = wire.reasoning
   const inlineThink = /<think>/.test(content)
 
   const order = mode === 'json_decomposed' ? REF_DECOMPOSED.required
@@ -386,6 +499,7 @@ async function once(mode: ModeName, brief: Brief, n: number, system: string): Pr
 
   return {
     ...base,
+    ms,
     finishReason: choice.finish_reason ?? null,
     promptTokens: json.usage?.prompt_tokens,
     completionTokens: json.usage?.completion_tokens,
@@ -439,6 +553,14 @@ async function main() {
     console.log(`\nrequest bodies written to ${OUT}/DRY-*.request.json — nothing was sent`)
     return
   }
+
+  // Spend the cold load here, not inside a measured request.
+  if (!(await warmup(USE_MODEL!))) {
+    console.error(`\nwarm-up failed after ${WARMUP_TRIES} attempts — the model never came up. Aborting rather than`)
+    console.error('reporting load failures as model defects. Check the gateway and that no request is wedged in a slot.')
+    process.exit(1)
+  }
+  console.log('')
 
   for (const brief of briefs) {
     for (const mode of MODES) {

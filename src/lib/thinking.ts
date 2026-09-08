@@ -28,6 +28,40 @@ type LlamaEndpoint = {
   id?: string
   baseUrl: string
   sendCachePrompt?: boolean
+  /** Explicit override; undefined means infer. See `reasoningBudgetSupported`. */
+  supportsReasoningBudget?: boolean
+}
+
+/**
+ * Paths on an otherwise-local host that are NOT llama.cpp.
+ *
+ * The 5090 gateway fronts several backends behind one host, so "local" does
+ * not imply llama.cpp: `/ninfer/v1` is a from-scratch C++/CUDA engine that
+ * accepts `reasoning_budget_tokens` and ignores it. Without this guard the
+ * endpoint check below would hand it a ceiling it does not implement, and the
+ * request body would claim a bound that never existed.
+ */
+const NOT_LLAMACPP_PATHS = [/\/ninfer(\/|$)/i, /\/vllm(\/|$)/i, /\/render(\/|$)/i]
+
+function pathIsNotLlamaCpp(baseUrl: string): boolean {
+  try {
+    return NOT_LLAMACPP_PATHS.some((re) => re.test(new URL(baseUrl).pathname))
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Will a per-request reasoning ceiling actually take effect here?
+ *
+ * Callers must use this rather than assuming: a UI or log that reports a
+ * budget the server ignores is worse than one that admits it is unbounded.
+ */
+export function reasoningBudgetSupported(provider: LlamaEndpoint, model: string): boolean {
+  if (provider.supportsReasoningBudget === false) return false
+  if (pathIsNotLlamaCpp(provider.baseUrl)) return false
+  if (provider.supportsReasoningBudget === true) return true
+  return isLocalLlamaCppEndpoint(provider) || isQwenFamilyModel(provider, model) || isOpenRouter(provider)
 }
 
 const LOCAL_QWEN_ALIASES = new Set([
@@ -129,7 +163,11 @@ export function withQwenReasoningBudget<T>(provider: LlamaEndpoint, model: strin
   // neither the alias list nor the /qwen/ pattern, so it thought without any
   // ceiling at all. llama.cpp ignores fields it does not know, so widening
   // this cannot break a non-reasoning local model.
-  if (isLocalLlamaCppEndpoint(provider) || isQwenFamilyModel(provider, model)) {
+  // An endpoint that ignores the fields must not be sent them: see
+  // `reasoningBudgetSupported` and the ninfer measurement on Provider.
+  if (!reasoningBudgetSupported(provider, model)) return payload
+
+  if ((isLocalLlamaCppEndpoint(provider) || isQwenFamilyModel(provider, model)) && !pathIsNotLlamaCpp(provider.baseUrl)) {
     return {
       ...(payload as Record<string, unknown>),
       reasoning_budget_tokens: tokens,

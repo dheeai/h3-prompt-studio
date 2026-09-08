@@ -17,6 +17,7 @@ export const DEFAULT_PROVIDERS: Provider[] = [
         builtIn: true,
         sendCachePrompt: true,
         supportsJsonSchema: true,
+        supportsReasoningBudget: true,
         corsHint: 'Reachable only from a device on your own network/tailnet.',
       } as Provider]
     : []),
@@ -26,6 +27,8 @@ export const DEFAULT_PROVIDERS: Provider[] = [
     baseUrl: 'http://localhost:11434/v1',
     kind: 'openai',
     builtIn: true,
+    // No reasoning-budget flag: unverified on Ollama, and claiming one we have
+    // not measured is the failure this flag exists to prevent.
     corsHint: 'Restart Ollama so it accepts this page:\nOLLAMA_ORIGINS=<origin> ollama serve',
   },
   {
@@ -45,6 +48,7 @@ export const DEFAULT_PROVIDERS: Provider[] = [
     builtIn: true,
     sendCachePrompt: true,
     supportsJsonSchema: true,
+    supportsReasoningBudget: true,
     corsHint: 'Run llama-server with --host 0.0.0.0; it sends permissive CORS headers by default.',
   },
   {
@@ -54,6 +58,8 @@ export const DEFAULT_PROVIDERS: Provider[] = [
     kind: 'openai',
     builtIn: true,
     supportsJsonSchema: true,
+    // Its own unified control (`reasoning: {max_tokens}`), not llama.cpp's.
+    supportsReasoningBudget: true,
   },
 ]
 

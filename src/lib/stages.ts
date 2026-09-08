@@ -2,6 +2,13 @@ import type { Breakdown, BreakdownClip, ClipRole, FilmContext, StageId } from '.
 
 export const STAGE_ORDER: StageId[] = ['direct', 'draft', 'critique', 'revise']
 
+/**
+ * Stages whose deliverable IS the canonical prompt, and which therefore take a
+ * schema-constrained reply when the provider supports one. Direct and Critique
+ * return one undivided document; Handoff and Breakdown have their own shapes.
+ */
+export const SCHEMA_STAGES = new Set<StageId>(['draft', 'revise', 'rebuild'])
+
 /** Stages that are actions rather than steps in the chain. */
 export const OFF_CHAIN: StageId[] = ['rebuild', 'freeform', 'handoff', 'breakdown']
 

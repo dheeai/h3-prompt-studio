@@ -16,6 +16,7 @@ export const DEFAULT_PROVIDERS: Provider[] = [
         kind: 'openai',
         builtIn: true,
         sendCachePrompt: true,
+        supportsJsonSchema: true,
         corsHint: 'Reachable only from a device on your own network/tailnet.',
       } as Provider]
     : []),
@@ -33,6 +34,7 @@ export const DEFAULT_PROVIDERS: Provider[] = [
     baseUrl: 'http://localhost:1234/v1',
     kind: 'openai',
     builtIn: true,
+    supportsJsonSchema: true,
     corsHint: 'Start the local server, then turn on “Enable CORS” in Developer ▸ Settings.',
   },
   {
@@ -42,6 +44,7 @@ export const DEFAULT_PROVIDERS: Provider[] = [
     kind: 'openai',
     builtIn: true,
     sendCachePrompt: true,
+    supportsJsonSchema: true,
     corsHint: 'Run llama-server with --host 0.0.0.0; it sends permissive CORS headers by default.',
   },
   {
@@ -50,6 +53,7 @@ export const DEFAULT_PROVIDERS: Provider[] = [
     baseUrl: 'https://openrouter.ai/api/v1',
     kind: 'openai',
     builtIn: true,
+    supportsJsonSchema: true,
   },
 ]
 

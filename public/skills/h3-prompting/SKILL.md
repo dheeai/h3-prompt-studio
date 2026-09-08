@@ -112,7 +112,15 @@ that sounds like a corrupted file. Measured on a shipped 35-section film: one
 scene asserted speech three times with zero `<d>` tags; re-rendering with the
 line supplied, changing nothing else, produced clean speech. Resolution, model,
 steps and caching were each falsified first. This applies to background voices
-too — a shouting crowd with no words becomes babble; describe it non-vocally.
+too, but the line is ARTICULATION, not the presence of people. A crowd rendered
+as *speech* — shouting, calling out, audible individual lines — with no words
+supplied becomes babble; either give it real words in a `<d>` tag or describe it
+non-vocally. A crowd as undifferentiated *texture* is ambience and is correct:
+"a low murmur of many voices" under a market is the sound of a market, not a
+speech instruction, and belongs in `overall_soundscape`. (Clarified 2026-09-08
+by the founder, after two blind judges independently penalised a market murmur
+as a babble defect — the rule as written did not draw this line, so it was
+teaching the strict reading.)
 
 Every spoken line needs **both**:
 

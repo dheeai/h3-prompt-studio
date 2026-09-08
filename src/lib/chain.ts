@@ -156,12 +156,24 @@ export const SINGULARITY_UNET = 'Minimax-h3_Singularity_ref2va_Pruned_v1.3_int8.
  *
  * No override: this is a browser app, not a script with an env-var escape hatch.
  */
-export const CHAIN_MIN_STEPS_SLA = 6
+/**
+ * SLA floor: 5, not 6.
+ *
+ * The corruption was measured at FOUR steps (2026-08-23) and the floor was
+ * then set at six — one above what the evidence actually required, because
+ * five had never been tried. The founder ran it at five on 2026-09-08 and
+ * reports the same quality as six, one step cheaper. So five is the lowest
+ * count with evidence behind it, and four remains the count with evidence
+ * against it.
+ *
+ * Recorded here rather than left as a nag, so the number is not re-derived
+ * upward by the next person reading the 2026-08-23 note in isolation.
+ */
+export const CHAIN_MIN_STEPS_SLA = 5
 export const CHAIN_MIN_STEPS_VSA = 4
-/** Neither node class found (an unknown/foreign graph) — same conservative
- * floor as SLA, never the lower VSA one, since the corruption risk is on
- * under-stepping, not on being overly cautious. */
-export const CHAIN_MIN_STEPS_DEFAULT = 6
+/** Neither node class found (an unknown/foreign graph) — same floor as SLA,
+ * never the lower VSA one, since the risk is on under-stepping. */
+export const CHAIN_MIN_STEPS_DEFAULT = 5
 
 const SLA_ATTENTION_CLASS = 'H3SLAAttention'
 const VSA_GATE_CLASS = 'Ref2VAVSAGatePatch'

@@ -1293,6 +1293,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ...chainWarnings({
         shots: [{ index: 1, prompt: sessionRef.current.story }],
         plateCount: plates.filter((pl) => pl.kind === 'image').length,
+        // Advisory only — a step count below the accelerator LoRA's distilled
+        // count degrades the picture but must not refuse the submit.
+        steps: settings.steps,
+        graph: chainRecipe?.graph,
       }),
     )
     return out

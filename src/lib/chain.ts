@@ -560,13 +560,12 @@ export function buildChainGraph(args: BuildChainArgs): BuildChainResult {
         'the imported video would be silently ignored.',
     )
   }
-  const minSteps = chainMinSteps(source)
-  if (steps < minSteps) {
-    throw new ChainError(
-      `${steps} steps is below the floor of ${minSteps} for this workflow's attention/gate config — the ` +
-        'accelerator LoRA samples above its distilled step count; under-stepped renders come back looking corrupted.',
-    )
-  }
+  // NOT gated on step count. Under-stepping an accelerator LoRA below its
+  // distilled count does degrade a render, and `chainWarnings` still says so —
+  // but that is a judgement about picture quality, not a malformed graph, and
+  // the operator is better placed to make it than this builder is. A render
+  // that comes back soft is cheap to redo; a floor that refuses to submit is
+  // not. (Demoted from a hard error 2026-09-08 at the founder's call.)
   // Guard against a LoRA/steps combination already measured to look
   // corrupted, the same contract h3-shots enforces at build time — checked
   // before anything is mutated, not after.
@@ -862,13 +861,6 @@ export function chainIssues(input: ChainIssuesInput): string[] {
   // module comment. H3's reference cap is what actually blocks.
   if (plateCount > REF_CAPS.image) out.push(`${plateCount} plates exceeds H3's ${REF_CAPS.image}-reference cap.`)
 
-  const minSteps = chainMinSteps(graph)
-  if (steps < minSteps) {
-    out.push(
-      `${steps} steps is below the floor of ${minSteps} for this workflow's attention/gate config — the accelerator LoRA samples above its distilled step count; under-stepped renders come back looking corrupted.`,
-    )
-  }
-
   return out
 }
 
@@ -882,9 +874,21 @@ export function chainIssues(input: ChainIssuesInput): string[] {
  * validity, and blocking on it refused whole prompts an authoring pass had
  * legitimately written with more subjects than plates bound.
  */
-export function chainWarnings(input: Pick<ChainIssuesInput, 'shots' | 'plateCount'>): string[] {
-  const { shots, plateCount } = input
+export function chainWarnings(
+  input: Pick<ChainIssuesInput, 'shots' | 'plateCount'> & Partial<Pick<ChainIssuesInput, 'steps' | 'graph'>>,
+): string[] {
+  const { shots, plateCount, steps, graph } = input
   const out: string[] = []
+
+  // Advisory, not a gate: this is a picture-quality call for the operator.
+  if (typeof steps === 'number') {
+    const minSteps = chainMinSteps(graph)
+    if (steps < minSteps) {
+      out.push(
+        `${steps} steps is below this workflow's accelerator LoRA distilled count of ${minSteps} — expect a softer or noisier render. Submitting anyway is fine.`,
+      )
+    }
+  }
   for (const s of shots) {
     const unresolved = new Set<string>()
     for (const m of s.prompt.matchAll(CITATION)) {

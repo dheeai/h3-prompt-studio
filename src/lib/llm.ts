@@ -181,6 +181,23 @@ export async function streamChat(opts: StreamOptions): Promise<StreamResult> {
     }
   }
 
+  // A text-only model 400s on an image_url content part. Strip the images and
+  // retry once — a prompt written from the plates' TEXT is still far better
+  // than one written with no knowledge of them at all.
+  let sentImages = messages.some((m) => Array.isArray(m.content) && m.content.some((c) => c.type === 'image_url'))
+  if (sentImages && !res.ok && res.status === 400) {
+    const detail = await res.clone().text().catch(() => '')
+    if (/image|vision|mmproj|multimodal|content part/i.test(detail)) {
+      const flattened = messages.map((m) =>
+        Array.isArray(m.content)
+          ? { ...m, content: m.content.filter((c) => c.type === 'text').map((c) => (c as { text: string }).text).join('\n\n') }
+          : m,
+      )
+      res = await send({ ...(requestBody as Record<string, unknown>), messages: flattened })
+      sentImages = false
+    }
+  }
+
   // An endpoint that does not understand response_format 400s on it. Drop the
   // field and retry once: a constrained reply is better, but an unconstrained
   // one still works, and the caller is told which it got.

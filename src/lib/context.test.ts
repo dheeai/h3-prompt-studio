@@ -1,5 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { DEFAULT_TEMPLATES, fillTemplate, platesBlock } from './stages'
 import { selectionForStage, H3_STUDIO_SYSTEM_RULES } from './context'
 import type { Skill, Selection } from './types'
 
@@ -45,4 +46,45 @@ test('critique keeps the whole selection — it audits against everything', () =
 test('the system rules rank the documents, so conflicts are not re-reasoned per call', () => {
   assert.match(H3_STUDIO_SYSTEM_RULES, /h3-prompting decides FORMAT/)
   assert.match(H3_STUDIO_SYSTEM_RULES, /A FORMAT rule always wins/)
+})
+
+// ── plates reach the PROMPT, not just the render (2026-09-08) ──────────────
+// fillTemplate took story/current/previous/mode/film/notes/findings/critique/
+// standing and no plates at all, so the model wrote subject_definitions for
+// references it had never seen and whose job it had not been told.
+
+test('platesBlock numbers plates in declaration order and carries each job', () => {
+  const out = platesBlock([
+    { name: 'Lira — identity', job: 'take her face and build; ignore the wardrobe', kind: 'image' },
+    { name: 'porter uniform', job: 'the garment only', kind: 'image' },
+  ])
+  assert.match(out, /<Subject 1> — Lira — identity \(image\): take her face and build; ignore the wardrobe/)
+  assert.match(out, /<Subject 2> — porter uniform \(image\): the garment only/)
+  // the swap rule is what `job` exists to inform
+  assert.match(out, /attribute_transfer/)
+})
+
+test('a video plate gets a <Video N> label, since H3 takes it on a different input', () => {
+  const out = platesBlock([{ name: 'source clip', job: 'continue from its last moment', kind: 'video' }])
+  assert.match(out, /<Video 1> — source clip \(video\)/)
+  assert.doesNotMatch(out, /<Subject 1>/)
+})
+
+test('no plates yields an empty block, and fillTemplate says so explicitly', () => {
+  assert.equal(platesBlock([]), '')
+  assert.equal(platesBlock(undefined), '')
+  const filled = fillTemplate('X {{plates}} Y', {})
+  assert.match(filled, /no reference plates are wired/)
+})
+
+test('a plate with no job written says so rather than going silent', () => {
+  const out = platesBlock([{ name: 'mystery', job: '   ', kind: 'image' }])
+  assert.match(out, /no job written/)
+})
+
+test('the prompt-producing templates all carry the plates block', () => {
+  for (const stage of ['draft', 'revise', 'rebuild'] as const) {
+    const t = DEFAULT_TEMPLATES[stage]
+    if (t.includes('SOURCE')) assert.ok(t.includes('{{plates}}'), `${stage} must show the wired plates`)
+  }
 })

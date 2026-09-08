@@ -1,0 +1,4 @@
+# Probe artifacts: request dumps embed the whole ~34k-token skill corpus, and
+# the outputs are measurement scratch. Never commit them.
+out/
+out-*/

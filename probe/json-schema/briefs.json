@@ -1,0 +1,53 @@
+[
+  {
+    "id": "01-two-hander",
+    "why": "two speakers — every line needs its own (Sx) AND its words inside <d>",
+    "text": "A woman in her late thirties waits in a hospital corridor at night. A younger nurse comes out of a room and tells her the surgery went well. The woman does not react the way the nurse expects. About 10 seconds."
+  },
+  {
+    "id": "02-silent",
+    "why": "nobody speaks — any speech verb, even inside a denial, invents dialogue; music must be the bare N/A sentinel",
+    "text": "A man alone in a workshop before dawn finishes repairing a wooden chair, sets the chisel down, and looks at it. Nobody speaks and there is no music. About 10 seconds."
+  },
+  {
+    "id": "03-crowd",
+    "why": "background voices with no words become babble — the crowd must be described non-vocally or given words",
+    "text": "A boy pushes through a crowded evening vegetable market carrying a cloth bag, looking for someone. Vendors and shoppers press around him. He stops when he sees a face he knows. About 10 seconds."
+  },
+  {
+    "id": "04-voiceover",
+    "why": "voiceover needs the exact phrase 'says in an off-screen voiceover' plus a statement that the lips stay closed",
+    "text": "An elderly woman sits alone at a kitchen table sorting through old photographs. Over the images, her own voice reflects on her sister, who is not present. Her mouth does not move on camera. About 10 seconds."
+  },
+  {
+    "id": "05-wardrobe-swap",
+    "why": "identity from the plate, clothing overridden by words — the retention marker must be attribute_transfer, and the plate is a Subject, never a Picture",
+    "text": "Take the woman from the attached character reference sheet, keep her face and build exactly, but put her in a soaked grey railway porter's uniform instead of what she is wearing in the reference. She hauls a trunk along a wet platform as a train pulls in. About 10 seconds."
+  },
+  {
+    "id": "06-continuation",
+    "why": "continuing existing footage — summary must open with the video continuation task type",
+    "text": "Continue directly from the attached clip, which ends on a man's hand closing around a brass key on a table. He straightens, pockets the key, and turns toward a door he has been avoiding. About 10 seconds."
+  },
+  {
+    "id": "07-multi-shot",
+    "why": "several cuts — [Shot 1] carries no timestamp, later shots strictly increase, and each cut must bring new information",
+    "text": "A cycle rickshaw driver races through narrow lanes in heavy monsoon rain to deliver a package before a shop closes. Show the journey and the arrival. About 15 seconds.",
+    "mode": "Ref2VA"
+  },
+  {
+    "id": "08-score",
+    "why": "music is wanted — non_diegetic_music must carry real instrumentation, tempo and dynamics",
+    "text": "A young dancer alone in an empty rehearsal hall at dusk runs a sequence, stumbles, and starts it again from the top. She says nothing. Carry it on a spare piano score that builds. About 15 seconds."
+  },
+  {
+    "id": "09-dialogue-across-cut",
+    "why": "a line that spans a cut takes <scenetrans> on both sides",
+    "text": "Two brothers argue over a land document across a courtyard table. One keeps speaking as the camera cuts to the other's face mid-sentence. Neither backs down. About 10 seconds."
+  },
+  {
+    "id": "10-sound-heavy",
+    "why": "dense physical sound — overall_soundscape must carry it all with no voice content whatsoever",
+    "text": "Inside a working blacksmith's forge, a smith quenches a red-hot blade, works the bellows, and hammers the edge flat. He is concentrating and does not speak. About 10 seconds."
+  }
+]

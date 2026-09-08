@@ -8,7 +8,8 @@ import {
   chainMinSteps, CHAIN_MIN_STEPS_SLA, CHAIN_MIN_STEPS_VSA, CHAIN_MIN_STEPS_DEFAULT,
   CANONICAL_UNET, CANONICAL_TURBO_LORA, SINGULARITY_UNET,
   ACCELERATOR_LORA_RE, EXPLICIT_LORA_RE, selectableStyleLoras, serializeLoraStack, readBakedLoraStack,
-  loraStackKey, planNeedsPerSceneLoraSplit, localLoraStackOverride, chainWarnings } from './chain'
+  loraStackKey, planNeedsPerSceneLoraSplit, localLoraStackOverride, chainWarnings,
+} from './chain'
 import { padForOverlap } from './frames'
 import type { ChainPlate, ChainPlanClip, ChainShot } from './chain'
 import type { ComfyNode, LoraStackEntry } from './types'
@@ -144,20 +145,6 @@ test('buildChainGraph stamps scene_range only when given one, and leaves it out 
   assert.equal(resumed.graph['82'].inputs.scene_range, '3')
 })
 
-test('buildChainGraph refuses steps below the accelerator LoRA floor', () => {
-  const workflow = loadFixture('contexloop_workflow.json')
-  assert.throws(
-    () =>
-      buildChainGraph({
-        graph: workflow,
-        shots: scaffoldShots(),
-        plates: scaffoldPlates,
-        opts: { runName: 'probe', width: 864, height: 480, steps: chainMinSteps(workflow) - 1 },
-      }),
-    ChainError,
-  )
-})
-
 /**
  * The floor is a property of the GRAPH's own attention/gate config, never a
  * single app-wide constant — this is what makes the two shipped chain
@@ -180,28 +167,6 @@ test('chainMinSteps derives the floor from the graph itself, and moves when the 
   // lower VSA one.
   assert.equal(chainMinSteps(null), CHAIN_MIN_STEPS_DEFAULT)
   assert.equal(chainMinSteps({}), CHAIN_MIN_STEPS_DEFAULT)
-})
-
-test('an SLA recipe cannot be submitted at 4 steps — the exact corruption this floor exists to prevent', () => {
-  const sla = loadFixture('contexloop_workflow.json')
-  assert.throws(
-    () =>
-      buildChainGraph({
-        graph: sla,
-        shots: scaffoldShots(),
-        plates: scaffoldPlates,
-        opts: { runName: 'probe', width: 864, height: 480, steps: CHAIN_MIN_STEPS_VSA },
-      }),
-    ChainError,
-  )
-  // 6 (the SLA floor) succeeds on the same graph.
-  const ok = buildChainGraph({
-    graph: sla,
-    shots: scaffoldShots(),
-    plates: scaffoldPlates,
-    opts: { runName: 'probe', width: 864, height: 480, steps: CHAIN_MIN_STEPS_SLA },
-  })
-  assert.ok(ok.graph)
 })
 
 test('a VSA recipe builds cleanly at exactly its own floor of 4 steps', () => {
@@ -760,4 +725,43 @@ test('planNeedsPerSceneLoraSplit: false when every clip is unset, or every clip 
   assert.equal(planNeedsPerSceneLoraSplit([]), false)
   assert.equal(planNeedsPerSceneLoraSplit([a, b, a]), true, 'one clip differs')
   assert.equal(planNeedsPerSceneLoraSplit([undefined, a]), true, 'unset vs. customized still counts as differing')
+})
+
+// ── the step floor is ADVICE, not a gate (demoted 2026-09-08) ──────────────
+// The measurement behind it is real — "a 4-step production render came back
+// corrupted on this config, 2026-08-23" — but it used to throw in
+// buildChainGraph AND sit in chainIssues, so a 5-step submit was impossible.
+// Picture quality is the operator's call; a soft render is cheap to redo,
+// a refusal to submit is not.
+
+test('a step count below the distilled floor still BUILDS', () => {
+  const sla = loadFixture('contexloop_workflow.json')
+  const under = chainMinSteps(sla) - 1
+  const built = buildChainGraph({
+    graph: sla,
+    shots: scaffoldShots(),
+    plates: scaffoldPlates,
+    opts: { runName: 'probe', width: 864, height: 480, steps: under },
+  })
+  assert.ok(built.graph, 'must not throw — this was the blocker that was removed')
+})
+
+test('and it is reported as a warning, never as a blocker', () => {
+  const sla = loadFixture('contexloop_workflow.json')
+  const under = chainMinSteps(sla) - 1
+  const shots = [{ index: 1, prompt: 'a woman waits in a corridor' }]
+
+  const blockers = chainIssues({ shots, plateCount: 0, steps: under, graph: sla } as never)
+  assert.equal(blockers.filter((i) => /distilled count|below the floor/.test(i)).length, 0)
+
+  const warns = chainWarnings({ shots, plateCount: 0, steps: under, graph: sla } as never)
+  assert.equal(warns.filter((w) => /distilled count/.test(w)).length, 1)
+})
+
+test('at or above the floor nothing is said', () => {
+  const sla = loadFixture('contexloop_workflow.json')
+  const warns = chainWarnings({
+    shots: [{ index: 1, prompt: 'x' }], plateCount: 0, steps: chainMinSteps(sla), graph: sla,
+  } as never)
+  assert.equal(warns.filter((w) => /distilled count/.test(w)).length, 0)
 })

@@ -8,7 +8,16 @@ import { localEndpoint, localNetworkTarget } from './providers'
  * is reserved for the template's `enable_thinking` switch.
  */
 
-export const QWEN_REASONING_BUDGET_DEFAULT = 8192
+/**
+ * Default reasoning ceiling.
+ *
+ * Lowered 8192 -> 4096 (2026-09-08). Measured on 10 briefs x 20 blind
+ * pairwise judgements: 8k beat 4k 11-8-1, p=0.65 — no measurable quality
+ * difference — for 45% fewer completion tokens (5.1k vs 9.3k) and ~40% less
+ * wall-clock. 1k IS materially worse (4k won 19-1, p=0.00004), so the cliff
+ * sits between 1k and 4k rather than on a slope. MAX stays 8192.
+ */
+export const QWEN_REASONING_BUDGET_DEFAULT = 4096
 /** Hard ceiling on reasoning, everywhere. Founder, 2026-09-07: thinking must
  * be bounded to 8k "even if the provider is openrouter". A budget above this
  * is clamped rather than refused, so an older persisted setting still loads. */

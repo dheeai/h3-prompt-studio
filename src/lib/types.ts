@@ -35,6 +35,10 @@ export interface Provider {
   builtIn: boolean
   /** llama.cpp understands cache_prompt; others reject unknown fields. */
   sendCachePrompt?: boolean
+  /** Endpoint compiles `response_format: json_schema` into a sampling
+   * constraint. Verified on llama.cpp build b10826 (2026-09-08): accepted,
+   * enforced, and it does NOT suppress the reasoning block. */
+  supportsJsonSchema?: boolean
   /** Set-up hint shown when a probe fails with a CORS-shaped error. */
   corsHint?: string
 }

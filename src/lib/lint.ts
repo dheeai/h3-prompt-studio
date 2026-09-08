@@ -34,6 +34,19 @@ function findAll(text: string, re: RegExp): { match: string; excerpt: string }[]
 
 const DENIAL = /\b(none|no\b|without|silence|silent|absent|absence|do not|don'?t|never|avoid|omit)\b/i
 
+/**
+ * Vocabulary that only appears when a field is describing an actual score.
+ *
+ * A denial word can sit INSIDE legitimate score writing — "sparse notes with
+ * long silence between them", "a solo-cello drone with no melody" — and
+ * treating those as suppression-by-denial produced the only two lint ERRORs
+ * across 50 measured prompts, both false. The denial branch now requires the
+ * absence of real musical substance, so it fires on "None. No music." and not
+ * on a score that happens to use the word silence. (2026-09-08.)
+ */
+const MUSIC_SUBSTANCE =
+  /\b(piano|cello|violin|viola|strings?|guitar|sitar|flute|drum\w*|bass|synth\w*|pad|organ|harp|percussion|score|tempo|bpm|melod\w*|chord\w*|harmon\w*|arpeggi\w*|motif|instrument\w*|crescendo|swell|drone|dynamics)\b/i
+
 const MUSIC_VOCAB =
   /\b(\d{2,3}\s?bpm|on the beat|on-beat|off-?beat|downbeat|upbeat|to the rhythm|rhythmic(?:ally)?|musical(?:ly)?|percussi\w+|melod\w+|harmon(?:y|ies|ic)|tempo|syncopat\w+|groove|drum\w*|bass ?line|chord\w*|score|soundtrack|instrument(?:al|s)?)\b/i
 
@@ -404,7 +417,11 @@ export function lint(prompt: string, mode: H3Mode): Finding[] {
   // ── the music sentinel ──────────────────────────────────────────────────
   const music = fieldValue(text, 'non_diegetic_music')
   const musicIsNA = music !== null && /^n\/a\.?$/i.test(music.trim())
-  const musicIsDenial = music !== null && !musicIsNA && DENIAL.test(music)
+  const musicIsDenial = music !== null && !musicIsNA && DENIAL.test(music) && !MUSIC_SUBSTANCE.test(music)
+  // A field with real instrumentation in it is a score, whether or not it also
+  // contains a denial word. Surfaced so an operator can confirm a score was
+  // actually wanted — the linter cannot know the brief.
+  const musicIsScore = music !== null && !musicIsNA && !musicIsDenial && MUSIC_SUBSTANCE.test(music)
   // The sweep below applies whenever music is MEANT to be absent — which
   // includes the denial case, where the field is wrong but the intent is
   // still silence. Gating it on the sentinel alone let a prompt carrying both
@@ -421,6 +438,16 @@ export function lint(prompt: string, mode: H3Mode): Finding[] {
     })
   } else if (musicIsNA) {
     findings.push({ id: 'music/sentinel', severity: 'pass', title: 'Music suppressed with the sentinel', detail: '', matches: [], metric: 'N/A' })
+  } else if (musicIsScore) {
+    findings.push({
+      id: 'music/sentinel',
+      severity: 'pass',
+      title: 'A non-diegetic score is specified',
+      detail:
+        'Instrumentation, tempo or dynamics are named, so this reads as a real score rather than a denial. If no music was asked for, the field must be exactly N/A — a score nobody requested is still a score.',
+      matches: [music!.replace(/\s+/g, ' ').trim().slice(0, 160)],
+      metric: 'scored',
+    })
   }
 
   // ── rhythm vocabulary leaking into a silent film ────────────────────────

@@ -27,6 +27,13 @@ export interface StreamOptions {
   onReasoning?: (chunk: string) => void
   /** Prompt replacement operations must make one endpoint attempt only. */
   retryOnLimit?: boolean
+  /**
+   * A `response_format` to constrain the reply — see `schema.ts`. Sent only
+   * when the caller has decided this provider supports it; if the endpoint
+   * rejects the field anyway we retry once without it, so an unsupported
+   * server degrades to free text rather than failing the turn.
+   */
+  responseFormat?: Record<string, unknown>
 }
 
 export interface StreamResult {
@@ -42,6 +49,9 @@ export interface StreamResult {
   sentLimit: number | null
   /** Real counts, when the server reports them. Estimates are used otherwise. */
   usage: { prompt?: number; completion?: number } | null
+  /** False when a requested response_format had to be dropped, so the caller
+   * knows the reply is free text and must be parsed the old way. */
+  schemaHonoured: boolean
 }
 
 const THINK_OPEN = '<think>'
@@ -126,6 +136,12 @@ export async function streamChat(opts: StreamOptions): Promise<StreamResult> {
   // no fixed number here could ever guess correctly across every model.
   if (maxTokens > 0) body.max_tokens = maxTokens
   if (provider.sendCachePrompt) body.cache_prompt = true
+  if (opts.responseFormat) {
+    Object.assign(body, opts.responseFormat.type ? { response_format: opts.responseFormat } : opts.responseFormat)
+    // OpenRouter silently routes to a provider that DROPS response_format
+    // unless told not to; llama.cpp ignores the field.
+    if (/openrouter\.ai/.test(provider.baseUrl)) body.provider = { require_parameters: true }
+  }
   const requestBody = withQwenReasoningBudget(provider, model, body, thinkingBudget)
 
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
@@ -162,6 +178,19 @@ export async function streamChat(opts: StreamOptions): Promise<StreamResult> {
         const { max_tokens: _dropped, ...withoutLimit } = requestBody
         res = await send(withoutLimit)
       }
+    }
+  }
+
+  // An endpoint that does not understand response_format 400s on it. Drop the
+  // field and retry once: a constrained reply is better, but an unconstrained
+  // one still works, and the caller is told which it got.
+  let schemaHonoured = !!opts.responseFormat
+  if (opts.responseFormat && !res.ok && res.status === 400) {
+    const detail = await res.clone().text().catch(() => '')
+    if (/response_format|json_schema|grammar|schema/i.test(detail)) {
+      const { response_format: _rf, provider: _pv, ...withoutSchema } = requestBody as Record<string, unknown>
+      res = await send(withoutSchema)
+      schemaHonoured = false
     }
   }
 
@@ -260,6 +289,7 @@ export async function streamChat(opts: StreamOptions): Promise<StreamResult> {
     unterminatedThink,
     sentLimit: typeof requestBody.max_tokens === 'number' ? requestBody.max_tokens : null,
     usage,
+    schemaHonoured,
   }
 }
 
@@ -436,6 +466,7 @@ export async function streamChatComplete(
   let sentLimit = first.sentLimit
   let usage = first.usage
   const cacheReused = first.cacheReused
+  const schemaHonoured = first.schemaHonoured
 
   let round = 0
   let triedThinkingRecovery = false
@@ -515,6 +546,9 @@ export async function streamChatComplete(
     unterminatedThink,
     sentLimit,
     usage,
+    // A continuation round is unconstrained free text, so a schema only held
+    // if the FIRST round honoured it and no continuation was needed.
+    schemaHonoured: schemaHonoured && round === 0,
     continuations: round,
     truncated: finishReason === 'length',
   }

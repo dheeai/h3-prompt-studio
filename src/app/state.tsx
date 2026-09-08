@@ -5,7 +5,8 @@ import { buildContext, buildH3SystemPrompt, type BuiltContext, selectionForStage
 import { classifyInput, findingsToText, lint, looksLikePrompt, standingToText } from '../lib/lint'
 import { continuationBudgetFor, streamChatComplete } from '../lib/llm'
 import { DEFAULT_PROVIDERS, loadProviders, probe, saveProviders, LOCAL_LLM_URL, LOCAL_LLM_MODEL} from '../lib/providers'
-import { STAGE_LABEL, fillTemplate, filmBlock, hasPromptBlock, nextRole, parseBreakdown, splitHandoff, splitPromptReplacement, splitReply, templateFor } from '../lib/stages'
+import { SCHEMA_STAGES, STAGE_LABEL, fillTemplate, filmBlock, hasPromptBlock, nextRole, parseBreakdown, splitHandoff, splitPromptReplacement, splitReply, templateFor } from '../lib/stages'
+import { h3ResponseFormat, joinH3Sections } from '../lib/schema'
 import { DEFAULT_ENDPOINTS, poll, pollChain, probeComfy, submit, uploadImage, viewUrl } from '../lib/comfy'
 import type { PollResult } from '../lib/comfy'
 import { applyRecipe, fetchShippedChainRecipes, framesForSeconds, oomRisk, recipeIssues, resolveChainRecipeAutoBind, SHIPPED_SET_VERSION, SHIPPED_CHAIN_IDS} from '../lib/recipe'
@@ -908,6 +909,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
           temperature: settings.temperature,
           maxTokens: settings.maxTokens,
           thinkingBudget: resolveThinkingBudget(provider.id, settings.model, settings.thinkingBudgets),
+          // Constrain the reply where the deliverable IS the canonical prompt.
+          // Direct and Critique produce one undivided document, and Handoff /
+          // Breakdown have their own shapes, so they stay free text.
+          responseFormat:
+            provider.supportsJsonSchema && SCHEMA_STAGES.has(stage) ? h3ResponseFormat(settings.mode) : undefined,
           contextHash: ctx.hash,
           signal: ac.signal,
           // The cached block is always first and byte-identical between calls;
@@ -1025,14 +1031,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
         // Draft, Revise and freeform are asked for a prompt plus an
         // explanation (and, for Revise/freeform, a changelog); Direct and
         // Critique return one undivided document.
+        // A schema-constrained reply carries the sections as fields, so the
+        // <<<PROMPT>>>/<<<EXPLANATION>>> markers are neither present nor
+        // needed. joinH3Sections returns null on anything incomplete, which
+        // falls through to the marker contract rather than letting a partial
+        // object replace a good prompt.
+        const schemaResult =
+          result.schemaHonoured && SCHEMA_STAGES.has(stage) ? joinH3Sections(result.text, settings.mode) : null
+
         const wantsSplit = stage === 'draft' || stage === 'revise' || stage === 'rebuild' || stage === 'freeform'
         const strictReplacement = stage === 'revise' || stage === 'rebuild'
-        const splitResult = wantsSplit
+        const splitResult = schemaResult
+          ? { ...schemaResult, changelog: [] as string[] }
+          : wantsSplit
           ? strictReplacement
             ? splitPromptReplacement(result.text)
             : splitReply(result.text)
           : { prompt: result.text.trim(), explanation: '', changelog: [] as string[] }
-        if (strictReplacement && !splitResult) {
+        if (strictReplacement && !schemaResult && !splitResult) {
           // A malformed replacement must never become the new canonical
           // prompt. Keep the prior version untouched and surface the failed
           // contract alongside any model thinking for diagnosis.

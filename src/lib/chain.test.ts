@@ -157,7 +157,10 @@ test('chainMinSteps derives the floor from the graph itself, and moves when the 
   const vsa = loadFixture('contexloop_vsa_workflow.json')
 
   assert.equal(chainMinSteps(sla), CHAIN_MIN_STEPS_SLA)
-  assert.equal(chainMinSteps(sla), 6, 'a 4-step production render came back corrupted on this config, 2026-08-23')
+  // 4 corrupted (2026-08-23); 5 validated same-quality-as-6 by the founder
+  // (2026-09-08). So the floor is 5 — the lowest count with evidence FOR it.
+  assert.equal(chainMinSteps(sla), 5)
+  assert.ok(chainMinSteps(sla) > 4, 'a 4-step production render came back corrupted on this config, 2026-08-23')
   assert.equal(chainMinSteps(vsa), CHAIN_MIN_STEPS_VSA)
   assert.equal(chainMinSteps(vsa), 4, 'validated clean at 4 steps once the VSA gate replaced SLA attention, 2026-09-07')
   assert.notEqual(chainMinSteps(sla), chainMinSteps(vsa), 'switching the bound recipe must move the floor')

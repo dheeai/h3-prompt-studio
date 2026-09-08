@@ -39,6 +39,20 @@ export interface Provider {
    * constraint. Verified on llama.cpp build b10826 (2026-09-08): accepted,
    * enforced, and it does NOT suppress the reasoning block. */
   supportsJsonSchema?: boolean
+  /**
+   * Endpoint honours a per-request reasoning ceiling.
+   *
+   * Set FALSE for a server that accepts the fields and ignores them — the
+   * dangerous case, because the request says 4096 and nothing is bounded.
+   * Measured 2026-09-08 against ninfer (NInfer, NVFP4 Qwen3.8-27B): with
+   * `reasoning_budget_tokens: 128` it produced 786 chars of reasoning against
+   * an 834-char baseline, and `thinking_budget_tokens: 128` produced 1162 —
+   * MORE than baseline. Its only real levers are the coarse `reasoning_effort`
+   * enum and a process-level `--default-thinking-budget`.
+   *
+   * Leave undefined to infer from the endpoint (see `reasoningBudgetSupported`).
+   */
+  supportsReasoningBudget?: boolean
   /** Set-up hint shown when a probe fails with a CORS-shaped error. */
   corsHint?: string
 }

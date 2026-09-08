@@ -266,7 +266,10 @@ beat. Full treatment in `references/visual-structure.md`.
 
 ## 6. The direction sheet
 
-The deliverable. Emit this **before** any prompt prose. One sheet per clip.
+What a directed clip has decided, one sheet's worth per clip. This is the
+SHAPE of the thinking — the things that must be settled before prose is worth
+writing. Whether any of it is written down, and in what form, is the task's
+business and not this document's.
 
 ```markdown
 ## Direction sheet — <clip id> — <duration>s — register: <social|explainer|brand|title|drama>

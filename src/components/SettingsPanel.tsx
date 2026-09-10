@@ -168,7 +168,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                     />
                   </div>
                   <div style={{ display: 'flex', gap: 5, marginTop: 9, marginLeft: 108, flexWrap: 'wrap' }}>
-                    {[0, 2048, 4096, 8192, 16384, 32768].map((budget) => (
+                    {[0, 1024, 2048, 4096, 8192, 16384].map((budget) => (
                       <button
                         key={budget}
                         className={`chip${selectedBudget === budget ? ' on' : ''}`}

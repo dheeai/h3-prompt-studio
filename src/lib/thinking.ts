@@ -11,13 +11,41 @@ import { localEndpoint, localNetworkTarget } from './providers'
 /**
  * Default reasoning ceiling.
  *
- * Lowered 8192 -> 4096 (2026-09-08). Measured on 10 briefs x 20 blind
- * pairwise judgements: 8k beat 4k 11-8-1, p=0.65 — no measurable quality
- * difference — for 45% fewer completion tokens (5.1k vs 9.3k) and ~40% less
- * wall-clock. 1k IS materially worse (4k won 19-1, p=0.00004), so the cliff
- * sits between 1k and 4k rather than on a slope. MAX stays 8192.
+ * Lowered 4096 -> 1024 (2026-09-10). This SUPERSEDES the "1k is materially
+ * worse" finding below for the current contract, and the reason is that the
+ * contract changed, not the model.
+ *
+ * That 19-1 result was measured against a 1,584-word FORMAT-only contract with
+ * free-form output. Re-measured on the merged authoring contract (~3,900 words,
+ * which states the direction and acting rules explicitly) with the output shape
+ * fixed by a GBNF grammar, on `qwen38-heretic-27b`:
+ *
+ *   budget   pass        reasoning     s/clip   register-floor violations
+ *        0   0/5              ~10       25-48   13
+ *      512   3/5          332-505       26-49    3
+ *     1024   3/5          819-909       27-43    0
+ *     4096   4/5        3153-3812       59-84    0
+ *
+ * 1024 removes every arithmetic failure that 0 and 512 had, and costs almost
+ * nothing over 0 (~850 tokens). 4096 is 1.56x slower per clip — 68.8s against
+ * 44.0s across three briefs — for output of the SAME SIZE: 3,381 vs 3,304
+ * output-only tokens, a 2% difference. All of the extra 24.8s is deliberation
+ * that does not change the deliverable.
+ *
+ * Quality was then judged on RENDERS, blind, at 0.52 MP:
+ *   - silent clip: two human judges split, both calling it near-tied
+ *   - dialogue clip: the founder preferred 4096 — but on inspection its edge was
+ *     not worth the cost, and both clips carried render defects of a kind
+ *     prompt quality does not control
+ * A blind pairwise read by an independent judge (Codex) put 4096 ahead 2-1 with
+ * the margin described as "slight".
+ *
+ * So: structure substituted for deliberation. Prior guidance for the older
+ * contract is kept above because it is still true OF that contract — if the
+ * authoring contract is ever cut back to format-only, 1k will be wrong again.
+ * MAX stays 8192.
  */
-export const QWEN_REASONING_BUDGET_DEFAULT = 4096
+export const QWEN_REASONING_BUDGET_DEFAULT = 1024
 /** Hard ceiling on reasoning, everywhere. Founder, 2026-09-07: thinking must
  * be bounded to 8k "even if the provider is openrouter". A budget above this
  * is clamped rather than refused, so an older persisted setting still loads. */

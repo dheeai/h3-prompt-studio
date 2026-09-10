@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { ReactNode } from 'react'
 import { idb } from '../lib/db'
 import { buildContext, buildH3SystemPrompt, type BuiltContext, selectionForStage, selectionKey } from '../lib/context'
+import { armModelLock, modelLockViolation, describeModelLock, type ModelLock } from '../lib/modelLock'
 import { classifyInput, findingsToText, lint, looksLikePrompt, standingToText } from '../lib/lint'
 import { continuationBudgetFor, streamChatComplete } from '../lib/llm'
 import type { ChatContentPart } from '../lib/llm'
@@ -398,6 +399,10 @@ export interface Api {
    * Always release with `endGpuUse`. */
   beginGpuUse: (kind: 'llm' | 'render') => boolean
   endGpuUse: () => void
+  /** The model this session is pinned to, and a deliberate release. */
+  modelLock: ModelLock
+  modelLockLabel: string
+  releaseModelLock: () => void
 }
 
 const Ctx = createContext<Api | null>(null)
@@ -457,6 +462,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // button is disabled.
   const [gpuBusy, setGpuBusyState] = useState<'idle' | 'llm' | 'render'>('idle')
   const gpuBusyRef = useRef<'idle' | 'llm' | 'render'>('idle')
+  // ONE MODEL PER SESSION, enforced at the same choke point as the GPU mutex.
+  //
+  // Every LLM path already routes through `settings.model` — the authoring stages, the
+  // Agent surface, and the plate/vision analysis — so there is no per-stage swap. The
+  // hole is a swap BETWEEN calls: changing the selection mid-session evicts ~30 GB and
+  // reloads, and swap contention on this box has been measured at ~150x on render times.
+  // Founder directive 2026-09-10: the Studio must never swap models. The lock arms on the
+  // first model call and pins it; a different one is refused with the reason.
+  // `beginGpuUse('llm')` is the one gate all three LLM paths pass through, which is why
+  // this lives here rather than at each call site.
+  const [modelLock, setModelLock] = useState<ModelLock>(null)
+  const modelLockRef = useRef<ModelLock>(null)
   const beginGpuUse = useCallback((kind: 'llm' | 'render'): boolean => {
     if (gpuBusyRef.current !== 'idle') {
       setError(
@@ -466,9 +483,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
       )
       return false
     }
+    if (kind === 'llm') {
+      const why = modelLockViolation(modelLockRef.current, settings.model, settings.providerId)
+      if (why) { setError(why); return false }
+      const armed = armModelLock(modelLockRef.current, settings.model, settings.providerId)
+      if (armed !== modelLockRef.current) { modelLockRef.current = armed; setModelLock(armed) }
+    }
     gpuBusyRef.current = kind
     setGpuBusyState(kind)
     return true
+  }, [settings.model, settings.providerId])
+  /** Deliberate release — an accidental one is what the lock exists to prevent. */
+  const releaseModelLock = useCallback(() => {
+    modelLockRef.current = null
+    setModelLock(null)
   }, [])
   const endGpuUse = useCallback(() => {
     gpuBusyRef.current = 'idle'
@@ -2307,6 +2335,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     },
     reset,
     beginGpuUse,
+    modelLock,
+    modelLockLabel: describeModelLock(modelLock),
+    releaseModelLock,
     endGpuUse,
   }
 

@@ -7,7 +7,7 @@ import { classifyInput, findingsToText, lint, looksLikePrompt, standingToText } 
 import { continuationBudgetFor, streamChatComplete } from '../lib/llm'
 import type { ChatContentPart } from '../lib/llm'
 import { DEFAULT_PROVIDERS, loadProviders, probe, saveProviders, LOCAL_LLM_URL, LOCAL_LLM_MODEL} from '../lib/providers'
-import { SCHEMA_STAGES, STAGE_LABEL, fillTemplate, filmBlock, platesBlock, hasPromptBlock, nextRole, parseBreakdown, splitHandoff, splitPromptReplacement, splitReply, templateFor } from '../lib/stages'
+import { SCHEMA_STAGES, STAGE_LABEL, durationBlock, fillTemplate, fillTemplateWithDuration, filmBlock, platesBlock, hasPromptBlock, nextRole, parseBreakdown, splitHandoff, splitPromptReplacement, splitReply, templateFor } from '../lib/stages'
 import { h3ResponseFormat, joinH3Sections } from '../lib/schema'
 import { DEFAULT_ENDPOINTS, poll, pollChain, probeComfy, submit, uploadImage, viewUrl } from '../lib/comfy'
 import type { PollResult } from '../lib/comfy'
@@ -910,7 +910,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const takesEverything = selectionKey(stageSelection) === selectionKey(settings.selection)
       const ctx = takesEverything && context ? context : await buildContext(skills, stageSelection)
       const template = templateFor(settings.stageTemplates, stage)
-      const user = fillTemplate(template, {
+      // The operator's chosen length, snapped to the renderable grid, stated to the
+      // model. Without this the templates ask for timings that "sum to the declared
+      // duration" and never declare one — measured 2026-09-11.
+      const clipFrames = framesForSeconds(settings.seconds)
+      const user = fillTemplateWithDuration(template, {
+        duration: durationBlock(settings.seconds, clipFrames),
         story: sourceStory,
         current: working,
         previous: previousPrompt,

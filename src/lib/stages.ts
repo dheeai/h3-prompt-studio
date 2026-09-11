@@ -726,6 +726,21 @@ export function templateFor(overrides: Partial<Record<StageId, string>> | undefi
   return overrides?.[stage] ?? DEFAULT_TEMPLATES[stage]
 }
 
+/**
+ * The duration facts a stage needs, stated once.
+ *
+ * `seconds` is what the operator picked; `frames` is that snapped to H3's 17k+5 grid,
+ * and `actual` is what the clip will really run — picking 5s yields 124 frames = 5.167s.
+ * The prompt must carry the ACTUAL figure, because cut timecodes have to fit inside it
+ * and a grid-snapped clip is always slightly longer than the round number chosen.
+ */
+export function durationBlock(seconds: number, frames: number, fps = 24): string {
+  const actual = +(frames / fps).toFixed(3);
+  return `DURATION — this clip is ${frames} frames at ${fps}fps = ${actual}s.\n`
+       + `Every beat, cut timecode and held moment must fit inside ${actual}s, and the beat\n`
+       + `grid must sum to it. ${seconds !== actual ? `The operator selected ${seconds}s; ${frames} frames is the\nnearest length H3 can render, so ${actual}s is the real figure — use it, not ${seconds}s.` : ''}`.trim();
+}
+
 export function fillTemplate(
   template: string,
   vars: {
@@ -742,6 +757,18 @@ export function fillTemplate(
     previous?: string
     /** The wired reference plates — see `platesBlock`. */
     plates?: string
+    /**
+     * The clip's DURATION, as `durationBlock` renders it.
+     *
+     * Several stage templates instruct the model to make its timings "sum to the
+     * declared duration" and to work "within the configured duration" — and until
+     * 2026-09-11 the duration was never actually supplied. `fillTemplate` interpolated
+     * ten variables and none of them was the length, so a 5s selection produced a
+     * 15s-shaped prompt: the model was told to respect a declaration it never received
+     * and invented one (the templates' own "roughly 6-15 seconds" hint being the only
+     * number in scope). Founder caught it.
+     */
+    duration?: string
   },
 ): string {
   return template
@@ -755,7 +782,21 @@ export function fillTemplate(
     .replace(/\{\{standing\}\}/g, vars.standing?.trim() || '(not computed)')
     .replace(/\{\{previous\}\}/g, vars.previous?.trim() || '(none — this is the first clip)')
     .replace(/\{\{plates\}\}/g, vars.plates?.trim() || '(no reference plates are wired — do not cite any <Subject N> or <Video N> label)')
+    .replace(/\{\{duration\}\}/g, vars.duration?.trim() ?? '')
     .trim()
+}
+
+/**
+ * Fill a template and GUARANTEE the duration reaches the model. A template that names
+ * `{{duration}}` places it; one that does not gets it prepended, because stage templates
+ * are persisted per browser and an operator carrying a customised one would otherwise
+ * keep the bug this fixes.
+ */
+export function fillTemplateWithDuration(template: string, vars: Parameters<typeof fillTemplate>[1]): string {
+  const filled = fillTemplate(template, vars);
+  const d = vars.duration?.trim();
+  if (!d) return filled;
+  return template.includes('{{duration}}') ? filled : `${d}\n\n${filled}`;
 }
 
 /**

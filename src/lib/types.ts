@@ -119,6 +119,14 @@ export interface Version {
   truncated?: boolean
   /** Which clip of a breakdown this pass was directed for, if any. */
   clipIndex?: number
+  /**
+   * Written by the studio's OWN pipeline while the operator was watching a
+   * scene render, rather than in response to something they clicked — see
+   * "author the next clip while I watch this one" (2026-09-16). Never set by
+   * a manual Draft/Revise/Continue; surfaced so a prompt on the page can be
+   * told apart from one the operator actually asked for.
+   */
+  auto?: boolean
 }
 
 /** Where a clip sits in a longer film, when it is not standalone. */
@@ -226,6 +234,15 @@ export interface Settings {
    * There are no entry-mode doors any more — see `lib/entry.ts`'s module
    * comment — this is the only variable the operator chooses. */
   breakIntoScenes?: boolean
+  /**
+   * Author the next clip's draft in the background the instant a scene
+   * lands, so it is already on the page by the time the operator has
+   * finished watching what just rendered — see the module comment on
+   * `entry.ts`'s `canAutoAuthorNext`. Default ON; switchable off for an
+   * operator on a metered endpoint, or one who wants the GPU quiet between
+   * renders.
+   */
+  autoAuthorNext?: boolean
   /** Pre-redesign fields, read ONLY by `migrateBreakIntoScenes` on load to
    * seed `breakIntoScenes` for an existing profile, then left alone —
    * nothing in the current UI writes or reads these any more. */

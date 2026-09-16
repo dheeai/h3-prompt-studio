@@ -7,7 +7,7 @@ import { classifyInput, findingsToText, lint, looksLikePrompt, standingToText } 
 import { continuationBudgetFor, streamChatComplete } from '../lib/llm'
 import type { ChatContentPart } from '../lib/llm'
 import { DEFAULT_PROVIDERS, loadProviders, probe, saveProviders, LOCAL_LLM_URL, LOCAL_LLM_MODEL} from '../lib/providers'
-import { SCHEMA_STAGES, STAGE_LABEL, continuationFrameBlock, durationBlock, fillTemplateWithDuration, filmBlock, platesBlock, hasPromptBlock, nextRole, parseBreakdown, splitPromptReplacement, splitReply, templateFor } from '../lib/stages'
+import { PROMPT_STAGES, SCHEMA_STAGES, STAGE_LABEL, continuationFrameBlock, durationBlock, fillTemplateWithDuration, filmBlock, platesBlock, hasPromptBlock, latestPromptForClip, nextRole, parseBreakdown, splitPromptReplacement, splitReply, templateFor } from '../lib/stages'
 import { h3ResponseFormat, joinH3Sections } from '../lib/schema'
 import { DEFAULT_ENDPOINTS, lastFrameOf, poll, pollChain, probeComfy, submit, uploadImage, viewUrl } from '../lib/comfy'
 import type { PollResult } from '../lib/comfy'
@@ -16,14 +16,15 @@ import { padForOverlap } from '../lib/frames'
 import type { PaddedClip } from '../lib/frames'
 import { CHAIN_CONTEXT_LENGTH, ChainError, SINGULARITY_UNET, buildChainGraph, chainIssues, chainMinSteps, chainShotsForPlan, planNeedsPerSceneLoraSplit, chainWarnings} from '../lib/chain'
 import type { ChainPlate, ChainShot } from '../lib/chain'
-import { countFromIndex, dropFromIndex, externalVideoForReplace, scenesBefore, sceneRangeFor } from '../lib/chainEdit'
+import { countFromIndex, dropFromIndex, dropInvalidatedAutoDraft, externalVideoForReplace, scenesBefore, sceneRangeFor } from '../lib/chainEdit'
+import type { PendingAutoDraft } from '../lib/chainEdit'
 import { cumulativeFilm, sceneWorkLabel } from '../lib/chainDisplay'
 import type { SceneWorkLabel } from '../lib/chainDisplay'
 import { fetchBundledSkills, loadSkills, removeSkill, saveSkill } from '../lib/skills'
 import { estTokens } from '../lib/tokens'
-import { authoringModeForContent, authorContinuation, clearDraftContext, continuationSource, interruptedReasoningText, migrateBreakIntoScenes, previousPromptForClip, promptSourceForAuthoringMode, withContinuationFrame } from '../lib/entry'
+import { authoringModeForContent, authorContinuation, canAutoAuthorNext, clearDraftContext, continuationSource, interruptedReasoningText, migrateBreakIntoScenes, nextPlanClipToAuthor, previousPromptForClip, promptSourceForAuthoringMode, withContinuationFrame } from '../lib/entry'
 import type { AuthoringMode } from '../lib/entry'
-import { isSingleRequestStage, type StudioRunPhase } from '../lib/studio-workflow'
+import { clipsNeedingPrompt, isSingleRequestStage, type StudioRunPhase } from '../lib/studio-workflow'
 import { normalizeThinkingBudgets, resolveThinkingBudget } from '../lib/thinking'
 import type {
   Breakdown, ChatTurn, Clip, ClipChainInfo, ComfyEndpoint, FilmContext, Finding, LoraStackEntry, Plate, ProbeResult,
@@ -33,9 +34,6 @@ import type {
 const SETTINGS_SCHEMA = 6
 
 const DEFAULT_FILM: FilmContext = { role: 'standalone', spine: '', precedes: '', follows: '' }
-
-/** Stages whose output is a prompt, as opposed to a direction sheet or notes. */
-const PROMPT_STAGES = new Set<StageId>(['draft', 'revise', 'rebuild', 'freeform'])
 
 const DEFAULT_SETTINGS: Settings = {
   schema: SETTINGS_SCHEMA,
@@ -59,6 +57,7 @@ const DEFAULT_SETTINGS: Settings = {
   lockSeed: true,
   seed: 42,
   breakIntoScenes: false,
+  autoAuthorNext: true,
 }
 
 /** The deterministic name a plate uploads under — shared so a chain build
@@ -140,6 +139,17 @@ interface Session {
    * draft that used it lands, fails or is cancelled.
    */
   continuationFrame?: string
+  /**
+   * A pipeline-authored draft, not yet rendered, sitting at the position it
+   * would occupy once submitted — Task 1's own bookkeeping for HAZARD 1 (see
+   * `dropInvalidatedAutoDraft`'s module comment in `chainEdit.ts`). Only ever
+   * set by an AUTOMATIC `continueFrom` call (the no-plan background-authoring
+   * path); the plan path's background authoring doesn't need it — see
+   * `nextPlanClipToAuthor`'s module comment for why a plan clip's draft
+   * doesn't depend on the parent's actual rendered pixels the way a
+   * continuation's does.
+   */
+  pendingAutoDraft?: PendingAutoDraft
 }
 
 type ContinuationPhase = 'frame' | 'draft' | 'ready'
@@ -149,6 +159,9 @@ interface ContinuationStatus {
   phase: ContinuationPhase
   state: 'running' | 'ready' | 'failed' | 'cancelled'
   source?: string
+  /** Written by the background pipeline rather than an operator action —
+   * see `Version.auto`'s module comment. */
+  auto?: boolean
 }
 
 interface RunContextOverride {
@@ -164,6 +177,10 @@ interface RunContextOverride {
   clipIndex?: number
   /** Explicit Studio authoring contract for this pass. */
   studioMode?: AuthoringMode
+  /** Written by the background pipeline (Task 1, 2026-09-16) rather than an
+   * operator action — tags the resulting `Version`/`streaming` so the
+   * operator can tell a prompt on the page apart from one they asked for. */
+  auto?: boolean
 }
 
 /** A prompt version written by a deterministic surface such as Agent. */
@@ -258,6 +275,9 @@ export interface Api {
     continuations: number
     /** Set once a continuation round is actually underway. */
     phase?: StudioRunPhase
+    /** Written by the background pipeline rather than an operator action —
+     * see `Version.auto`'s module comment. */
+    auto?: boolean
   } | null
   chat: ChatTurn[]
   film: FilmContext
@@ -285,7 +305,7 @@ export interface Api {
   refreshProbe: (id: string) => Promise<void>
   run: (stage: StageId, note?: string, override?: RunContextOverride) => Promise<Version | null>
   /** Bounded generation for Scene/Clip; Prompt Rebuild is one LLM request. */
-  rebuild: (mode?: AuthoringMode) => Promise<void>
+  rebuild: (mode?: AuthoringMode, opts?: { auto?: boolean }) => Promise<void>
 
   // ── the render loop ─────────────────────────────────────────────────
   plates: Plate[]
@@ -376,7 +396,24 @@ export interface Api {
    * action. Works from ANY clip in a chain, not only the newest — rendering
    * the result (via `renderChain`) then invalidates every scene from its
    * target on, the same append-only consequence `replaceScene` has. */
-  continueFrom: (clipId: string, note?: string) => Promise<void>
+  continueFrom: (clipId: string, note?: string, opts?: { auto?: boolean }) => Promise<void>
+  /**
+   * Author every remaining plan clip that has no prompt yet, then submit the
+   * whole plan as one Contex-Loop chain — Task 2, "Generate the rest"
+   * (2026-09-16). The autonomous tail on an interactive head: gated in the UI
+   * behind a plan existing AND at least one scene already landed, and behind
+   * one confirmation stating the cost before anything is spent (`ClipPlan.tsx`'s
+   * `GenerateRestAction`, using the SAME `chainPlanPreview` numbers the manual
+   * submit button already shows, per the brief — never a second estimate that
+   * can drift). Stops the instant an authoring pass comes back empty
+   * (Stop/cancel, or a real failure) and leaves whatever already landed —
+   * authored or rendered — untouched; nothing here retries or rolls back.
+   */
+  generateRest: () => Promise<void>
+  /** A pipeline-authored draft still sitting on the page, not yet rendered —
+   * see HAZARD 1 in the 2026-09-16 brief and `dropInvalidatedAutoDraft`. Null
+   * once it renders, is discarded, or was never authored automatically. */
+  pendingAutoDraft: PendingAutoDraft | null
   /** Append a canonical prompt version without invoking an LLM stage. */
   appendPromptVersion: (input: PromptVersionInput) => Version | null
   /** Save the clip plan without invoking an LLM stage. */
@@ -445,6 +482,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     startedAt: number
     continuations: number
     phase?: StudioRunPhase
+    auto?: boolean
   } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [context, setContext] = useState<BuiltContext | null>(null)
@@ -458,6 +496,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [renderingId, setRenderingId] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const continuationAbortRef = useRef<AbortController | null>(null)
+  // ── pipeline (background) authoring — Task 1, 2026-09-16 ──────────────
+  //
+  // `pipelineAuthoringRef` holds the in-flight job (whichever of
+  // `continueFrom`/`rebuild` background authoring is currently running), so
+  // an operator action that must preempt it (Replace, Continue, typing —
+  // HAZARD 2) can abort it AND wait for the GPU mutex it holds to actually
+  // release before proceeding — see `abortPipelineAuthoring`. Every call site
+  // that starts a background job is responsible for clearing its OWN entry
+  // once it settles (compare-and-clear against the promise object itself, so
+  // a job that started a later one never clobbers it).
+  //
+  // `authorNextAfterLandingRef` exists purely for ordering: the function it
+  // holds needs `continueFrom` and `rebuild`, both defined later in this
+  // component than `renderChain`/`renderChainPlan`, which need to CALL it.
+  // Reading it through a ref — assigned once, right after its real
+  // definition below — sidesteps having to hoist half this file.
+  const pipelineAuthoringRef = useRef<Promise<unknown> | null>(null)
+  const authorNextAfterLandingRef = useRef<(landed: { clipId?: string; sceneIndex: number }) => Promise<void>>(
+    async () => {},
+  )
+  // Same forward-ref reasoning as `authorNextAfterLandingRef`: `setStory` is
+  // declared well before `abortPipelineAuthoring` (which itself needs
+  // `cancel`), and a dependency array reads its identifier immediately, not
+  // lazily — so a direct reference would throw before either is defined.
+  const abortPipelineAuthoringRef = useRef<() => Promise<void>>(async () => {})
   // ── the GPU mutex ──────────────────────────────────────────────────────
   //
   // The gateway single-flights the GPU, and the two directions are NOT
@@ -707,7 +770,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const patchSettings = useCallback((p: Partial<Settings>) => setSettings((s) => ({ ...s, ...p })), [])
   const setBreakIntoScenes = useCallback((v: boolean) => patchSettings({ breakIntoScenes: v }), [patchSettings])
 
-  const setStory = useCallback((story: string) => setSession((s) => ({ ...s, story })), [])
+  const setStory = useCallback((story: string) => {
+    // HAZARD 2 (2026-09-16 brief): typing into the composer while pipeline
+    // authoring is in flight must win the race, not lose it to whatever the
+    // background draft writes back a moment later — see
+    // `abortPipelineAuthoring`. Cheap on every keystroke: a null ref is a
+    // single property read, and the abort only does real work the one time
+    // it is actually needed.
+    if (pipelineAuthoringRef.current) void abortPipelineAuthoringRef.current()
+    setSession((s) => ({ ...s, story }))
+  }, [])
 
   const setFilm = useCallback((f: Partial<FilmContext>) => {
     setSession((s) => ({ ...s, film: { ...DEFAULT_FILM, ...s.film, ...f } }))
@@ -841,6 +913,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setStreaming(null)
   }, [streaming?.reasoning])
 
+  /**
+   * Abort any in-flight PIPELINE (background) authoring and wait for the GPU
+   * mutex it holds to actually release, before the operator's own action —
+   * Replace, Continue, or typing into the composer — proceeds. HAZARD 2,
+   * 2026-09-16 brief: a plain `cancel()` only asks the request to stop; the
+   * mutex is not free until `run()`'s own `finally` runs `endGpuUse()`, which
+   * happens on the NEXT tick once the abort actually rejects the in-flight
+   * fetch — so this awaits the tracked job rather than firing the abort and
+   * continuing, or the caller's own `beginGpuUse('llm')`/`('render')` could
+   * still lose the race and surface a spurious "already busy" error instead
+   * of just... going next.
+   */
+  const abortPipelineAuthoring = useCallback(async () => {
+    const inFlight = pipelineAuthoringRef.current
+    if (!inFlight) return
+    cancel()
+    try {
+      await inFlight
+    } catch {
+      // Aborted — exactly what was asked for.
+    }
+  }, [cancel])
+  abortPipelineAuthoringRef.current = abortPipelineAuthoring
+
   const run = useCallback(
     async (stage: StageId, note?: string, override?: RunContextOverride): Promise<Version | null> => {
       const snap = sessionRef.current
@@ -968,7 +1064,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       abortRef.current = ac
       setFailedReasoning(null)
       setInterruptedReasoning(null)
-      setStreaming({ stage, text: '', reasoning: '', startedAt: Date.now(), continuations: 0, phase: 'thinking' })
+      setStreaming({ stage, text: '', reasoning: '', startedAt: Date.now(), continuations: 0, phase: 'thinking', auto: override?.auto })
       setError(null)
 
       try {
@@ -1063,6 +1159,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             continuations: result.continuations || undefined,
             truncated: result.truncated || undefined,
             clipIndex,
+            auto: override?.auto,
           }
           const carriedBreakdown = carryLoraStacksInto(parsed, sessionRef.current.breakdown) ?? sessionRef.current.breakdown
           const nextSession = {
@@ -1149,6 +1246,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           continuations: result.continuations || undefined,
           truncated: result.truncated || undefined,
           clipIndex,
+          auto: override?.auto,
         }
         // The composer is the ONE box — a pass that produced a canonical
         // prompt (Draft/Revise/Rebuild/a prompt-bearing freeform note) writes
@@ -1212,12 +1310,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [providers, settings, context, skills, findings, breakIntoScenes, beginGpuUse, endGpuUse],
   )
 
-  const rebuild = useCallback(async (mode?: AuthoringMode) => {
+  const rebuild = useCallback(async (mode?: AuthoringMode, opts?: { auto?: boolean }) => {
     const studioModeOverride = mode ?? authoringModeForContent(classifyInput(sessionRef.current.story).kind, breakIntoScenes)
     if (studioModeOverride === 'prompt') {
       // Prompt Rebuild is its own finite operation. It deliberately does not
       // route through the Scene/Clip Direct → Draft quality sequence.
-      await run('rebuild', undefined, { studioMode: 'prompt' })
+      await run('rebuild', undefined, { studioMode: 'prompt', auto: opts?.auto })
       return
     }
     // ONE pass. `draft` now works the directing gates internally and writes the
@@ -1225,7 +1323,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // straight back in — which cost a second reasoning warm-up, a second round
     // trip, and the sheet's own tokens twice. `direct` remains its own stage
     // for anyone who wants the sheet itself.
-    await run('draft', undefined, { studioMode: studioModeOverride })
+    await run('draft', undefined, { studioMode: studioModeOverride, auto: opts?.auto })
   }, [run, breakIntoScenes])
 
   const reset = useCallback(async () => {
@@ -1881,20 +1979,35 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
 
     if (!beginGpuUse('render')) return
+    // The highest plan-clip index actually landed by this call — "next" for
+    // Task 1's background author is this plus one, regardless of which of
+    // the three submit shapes below ran (a redo of one scene, the whole-plan
+    // fast path, or the per-scene split loop). See `authorNextAfterLanding`.
+    let lastLandedIndex: number | undefined
     try {
       if (sceneIndex !== undefined) {
         await submitOne(sceneIndex, plan.find((p) => p.index === sceneIndex)?.loraStack)
+        lastLandedIndex = sceneIndex
       } else if (!planNeedsPerSceneLoraSplit(plan.map((p) => p.loraStack))) {
         // Uniform (including "nobody customized anything") — the fast, single-job path.
         await submitOne(undefined, plan[0]?.loraStack)
+        lastLandedIndex = plan[plan.length - 1]?.index
       } else {
         // Differing stacks — one job per scene, in order, still one held GPU claim.
-        for (const p of plan) await submitOne(p.index, p.loraStack)
+        for (const p of plan) {
+          await submitOne(p.index, p.loraStack)
+          lastLandedIndex = p.index
+        }
       }
     } catch (e) {
       setError(e instanceof ChainError ? e.message : String((e as Error).message || e))
     } finally {
       endGpuUse()
+      // Task 1, 2026-09-16 — see the identical comment in `renderChain`. No
+      // `clipId` here: `authorNextAfterLanding` only needs one when there is
+      // NO plan, and `renderChainPlan` always has one (it errors out above
+      // otherwise).
+      if (lastLandedIndex !== undefined) void authorNextAfterLandingRef.current({ sceneIndex: lastLandedIndex })
     }
   }, [
     endpoint, chainRecipe, settings.width, settings.height, settings.steps,
@@ -2033,6 +2146,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setCurrentClipId(id)
     setRenderingId(id)
 
+    // HAZARD 1 (2026-09-16 brief): a scene at or before `sceneIndex` being
+    // (re)written invalidates a pipeline-authored draft that was written
+    // against an OLDER version of it — see `dropInvalidatedAutoDraft`'s
+    // module comment. Writing AT `sceneIndex` itself (rendering the draft as
+    // the operator found it, or overwriting it with something fresh) is
+    // ordinary consumption, never a discard.
+    const draftGate = dropInvalidatedAutoDraft(sessionRef.current.versions, sessionRef.current.pendingAutoDraft, sceneIndex)
+    if (draftGate.discarded) {
+      const withoutStaleDraft = { ...sessionRef.current, versions: draftGate.versions, pendingAutoDraft: undefined }
+      sessionRef.current = withoutStaleDraft
+      setSession(withoutStaleDraft)
+    }
+
+    let landed = false
     try {
       // Same upload contract as `render()`/`renderChainPlan`: a plate
       // already on THIS box (picked, or uploaded by an earlier clip) is
@@ -2070,7 +2197,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const promptId = await submit(endpoint, built.graph)
       patchClip(id, { state: 'rendering', promptId })
       const output = await pollToDone(endpoint, promptId, (e, p) => pollChain(e, p, runName))
-      patchClip(id, { state: 'done', output, ms: Date.now() - t0 })
+      const donePatch = { state: 'done' as const, output, ms: Date.now() - t0 }
+      patchClip(id, donePatch)
+      // `patchClip` queues a `setClips` update that React has not necessarily
+      // flushed by the time the finally block below reads `clipsRef.current`
+      // (a background `continueFrom` call reads it synchronously) — mirror it
+      // the same way `setFilm`'s own comment does for `sessionRef`.
+      clipsRef.current = clipsRef.current.map((c) => (c.id === id ? { ...c, ...donePatch } : c))
       // The composer is always "the next thing": once a scene lands, this
       // scene becomes the implicit predecessor for whatever gets typed next,
       // and the box clears so last scene's text is never mistaken for the
@@ -2079,6 +2212,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const advanced = { ...sessionRef.current, story: '', parentClipId: id, parentPrompt: prompt, externalVideo: null }
       setSession(advanced)
       sessionRef.current = advanced
+      landed = true
     } catch (e) {
       const msg = e instanceof ChainError ? e.message : String((e as Error).message || e)
       patchClip(id, { state: 'failed', error: msg, ms: Date.now() - t0 })
@@ -2086,6 +2220,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } finally {
       setRenderingId(null)
       endGpuUse()
+      // Task 1, 2026-09-16: begin authoring the next clip's draft the
+      // instant this one lands, so it is on the page by the time the
+      // operator has finished watching it — see `authorNextAfterLanding`.
+      // Fires only AFTER `endGpuUse()` above, never before — `run()`'s own
+      // `beginGpuUse('llm')` must find the box idle, not still marked
+      // 'render' from this call.
+      if (landed) void authorNextAfterLandingRef.current({ clipId: id, sceneIndex })
     }
   }, [
     endpoint, chainRecipe, settings.width, settings.height, settings.steps,
@@ -2106,6 +2247,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   /** Replace one already-rendered scene in place — see the module comment on
    * `Api.replaceScene`. */
   const replaceScene = useCallback(async (clipId: string, opts?: { keepSeed?: boolean }) => {
+    // HAZARD 2 (2026-09-16 brief): Replace is always an operator action, so
+    // preempt any in-flight pipeline authoring rather than losing the race to
+    // whatever it is about to write back, or having `renderChain`'s own
+    // `beginGpuUse('render')` below refuse outright because the box still
+    // reads busy.
+    await abortPipelineAuthoring()
     const target = clipsRef.current.find((c) => c.id === clipId)
     if (!target?.chain) {
       setError('That scene is not part of a chain.')
@@ -2136,7 +2283,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       seedOverride: opts?.keepSeed ? target.seed : Math.floor(Math.random() * 2 ** 31),
       runNameOverride: runName,
     })
-  }, [renderChain])
+  }, [renderChain, abortPipelineAuthoring])
 
   /**
    * Close the loop end to end.
@@ -2160,7 +2307,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
    * carries the parent prompt, plates, seed and film context into render.
    */
   const continueFrom = useCallback(
-    async (clipId: string, note?: string) => {
+    async (clipId: string, note?: string, opts?: { auto?: boolean }) => {
       const c = clipsRef.current.find((x) => x.id === clipId)
       if (!c) return
       const url = clipUrl(c)
@@ -2168,6 +2315,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setError('That clip has no file yet.')
         return
       }
+
+      // HAZARD 2 (2026-09-16 brief): a MANUAL Continue must preempt any
+      // pipeline (background) authoring already in flight, rather than lose
+      // the race to it. Skipped when THIS call IS the background job
+      // (`opts.auto`) — `abortPipelineAuthoring` awaits the very promise this
+      // call itself is running as, which would deadlock.
+      if (!opts?.auto) await abortPipelineAuthoring()
 
       // Continuation has work to cancel before the model is called: frame
       // extraction is asynchronous. Abort any stale run before installing
@@ -2268,12 +2422,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       sessionRef.current = nextSession
       setCurrentClipId(clipId)
 
-      setContinuation({ clipId, phase: 'draft', state: 'running', source: nextSource })
+      setContinuation({ clipId, phase: 'draft', state: 'running', source: nextSource, auto: opts?.auto })
+      let authoredVersion: Version | null = null
       let authored: 'ready' | 'aborted'
       try {
         authored = await authorContinuation(async (stage) => {
           if (isCancelled()) return null
-          return run(stage, undefined, { studioMode: 'story' })
+          const v = await run(stage, undefined, { studioMode: 'story', auto: opts?.auto })
+          authoredVersion = v
+          return v
         }, isCancelled)
       } catch (e) {
         // `run()` normally turns provider failures into null, but preserve an
@@ -2281,19 +2438,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const message = String((e as Error).message || e)
         setError(message)
         clearContinuationFrame()
-        setContinuation({ clipId, phase: 'draft', state: 'failed', source: nextSource })
+        setContinuation({ clipId, phase: 'draft', state: 'failed', source: nextSource, auto: opts?.auto })
         return
       }
       clearContinuationFrame()
       if (isCancelled()) {
-        setContinuation({ clipId, phase: 'draft', state: 'cancelled', source: nextSource })
+        setContinuation({ clipId, phase: 'draft', state: 'cancelled', source: nextSource, auto: opts?.auto })
         return
       }
       if (authored !== 'ready') {
-        setContinuation({ clipId, phase: 'draft', state: 'failed', source: nextSource })
+        setContinuation({ clipId, phase: 'draft', state: 'failed', source: nextSource, auto: opts?.auto })
         return
       }
-      setContinuation({ clipId, phase: 'ready', state: 'ready', source: nextSource })
+      // Track the freshly-authored, not-yet-rendered draft so a later
+      // Replace/Continue on its own parent (or anything earlier) can find
+      // and discard it — see HAZARD 1 and `dropInvalidatedAutoDraft`. Scoped
+      // to `opts.auto`: a MANUAL continuation was the operator's own request,
+      // never silently discarded by this mechanism.
+      if (opts?.auto && authoredVersion) {
+        const pendingSceneIndex = (c.chain?.sceneIndex ?? c.index) + 1
+        const withPending = {
+          ...sessionRef.current,
+          pendingAutoDraft: { versionId: (authoredVersion as Version).id, sceneIndex: pendingSceneIndex },
+        }
+        sessionRef.current = withPending
+        setSession(withPending)
+      }
+      setContinuation({ clipId, phase: 'ready', state: 'ready', source: nextSource, auto: opts?.auto })
       } catch (e) {
         if (isCancelled() || (e as Error).name === 'AbortError') {
           markCancelled('frame')
@@ -2307,8 +2478,87 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (continuationAbortRef.current === controller) continuationAbortRef.current = null
       }
     },
-    [clearReplacedPlates, clearContinuationFrame, clipUrl, run],
+    [clearReplacedPlates, clearContinuationFrame, clipUrl, run, abortPipelineAuthoring],
   )
+
+  /**
+   * The real implementation behind `authorNextAfterLandingRef` — see that
+   * ref's own comment for why this is reached through a ref rather than
+   * called directly from `renderChain`/`renderChainPlan`, both defined
+   * earlier in this file than `continueFrom`/`rebuild`, which this needs.
+   *
+   * "The next clip" means two different things depending on whether this
+   * session is working a Break-down plan or a manual Continue-from-here
+   * chain — see the module comment on `nextPlanClipToAuthor` in `entry.ts`.
+   * Tracked through the SAME `pipelineAuthoringRef` HAZARD 2's preemption
+   * (Replace / a manual Continue / typing) already reads, so Stop and a race
+   * with the operator cancel this exactly the way they cancel a manual
+   * continuation.
+   */
+  const authorNextAfterLanding = useCallback(
+    async (landed: { clipId?: string; sceneIndex: number }) => {
+      if (!canAutoAuthorNext({ enabled: !!settings.autoAuthorNext, gpuBusy: gpuBusyRef.current })) return
+      const breakdown = sessionRef.current.breakdown
+      const job: Promise<unknown> = breakdown
+        ? (async () => {
+            const next = nextPlanClipToAuthor(breakdown, sessionRef.current.versions, landed.sceneIndex)
+            if (!next) return
+            setFilm({
+              role: next.role,
+              spine: breakdown.spine,
+              precedes: next.precedes,
+              follows: next.follows,
+              covers: next.covers,
+              title: next.title,
+              clipIndex: next.index,
+            })
+            await rebuild('story', { auto: true })
+          })()
+        : landed.clipId
+          ? continueFrom(landed.clipId, undefined, { auto: true })
+          : Promise.resolve()
+      pipelineAuthoringRef.current = job
+      try {
+        await job
+      } finally {
+        if (pipelineAuthoringRef.current === job) pipelineAuthoringRef.current = null
+      }
+    },
+    [settings.autoAuthorNext, setFilm, rebuild, continueFrom],
+  )
+  authorNextAfterLandingRef.current = authorNextAfterLanding
+
+  /**
+   * "Generate the rest" (Task 2, 2026-09-16) — see the module comment on
+   * `Api.generateRest`. Wiring plus a gate over two things that already
+   * exist: `clipsNeedingPrompt` (the same "has a prompt" notion as
+   * everywhere else) drives the authoring loop, and `renderChainPlan()`
+   * submits the whole plan exactly as the manual "Submit all" button does.
+   */
+  const generateRest = useCallback(async () => {
+    const breakdown = sessionRef.current.breakdown
+    if (!breakdown) return
+    setError(null)
+    for (const c of clipsNeedingPrompt(breakdown, sessionRef.current.versions)) {
+      setFilm({
+        role: c.role,
+        spine: breakdown.spine,
+        precedes: c.precedes,
+        follows: c.follows,
+        covers: c.covers,
+        title: c.title,
+        clipIndex: c.index,
+      })
+      await rebuild('story')
+      // `rebuild` swallows a provider failure or a Stop into `error`/`null`
+      // rather than throwing, so the only way to tell those apart from
+      // success is whether this clip actually got a prompt. Stopping here
+      // leaves every earlier clip's authoring AND every already-rendered
+      // scene untouched — nothing in this loop retries or rewinds.
+      if (!latestPromptForClip(sessionRef.current.versions, c.index)) return
+    }
+    await renderChainPlan()
+  }, [rebuild, renderChainPlan, setFilm])
 
   const api: Api = {
     ready,
@@ -2375,6 +2625,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     scenesFrom,
     replaceScene,
     continueFrom,
+    generateRest,
+    pendingAutoDraft: session.pendingAutoDraft ?? null,
     appendPromptVersion,
     setBreakdown,
     setClipLoraStack,

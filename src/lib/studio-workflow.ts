@@ -1,5 +1,6 @@
 import type { AuthoringMode } from './entry'
-import type { StageId } from './types'
+import type { Breakdown, BreakdownClip, StageId, Version } from './types'
+import { latestPromptForClip } from './stages'
 
 // The parser lives with the stage templates, but re-exporting the strict
 // replacement contract here keeps the Studio workflow helpers as one small
@@ -68,6 +69,16 @@ export function displayedStudioPass(
   if (streaming?.text.trim()) return { stage: streaming.stage, text: streaming.text }
   if (streaming) return { stage: current?.stage ?? fallbackStage, text: '' }
   return { stage: current?.stage ?? fallbackStage, text: current?.text ?? '' }
+}
+
+/**
+ * Every plan clip that still needs a prompt authored, in index order — the
+ * gate behind "Generate the rest" (Task 2, 2026-09-16): skip any clip
+ * `latestPromptForClip` already covers, so a resume never re-authors — and
+ * re-spends — a clip that already has one.
+ */
+export function clipsNeedingPrompt(breakdown: Breakdown, versions: readonly Version[]): BreakdownClip[] {
+  return breakdown.clips.filter((c) => !latestPromptForClip(versions, c.index))
 }
 
 export type StudioRunPhase = 'thinking' | 'writing' | 'continuing' | 'thinking-recovery'

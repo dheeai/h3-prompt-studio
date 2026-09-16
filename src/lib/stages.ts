@@ -1,4 +1,4 @@
-import type { Breakdown, BreakdownClip, ClipRole, FilmContext, StageId } from './types'
+import type { Breakdown, BreakdownClip, ClipRole, FilmContext, StageId, Version } from './types'
 
 export const STAGE_ORDER: StageId[] = ['direct', 'draft', 'critique', 'revise']
 
@@ -8,6 +8,22 @@ export const STAGE_ORDER: StageId[] = ['direct', 'draft', 'critique', 'revise']
  * return one undivided document; Handoff and Breakdown have their own shapes.
  */
 export const SCHEMA_STAGES = new Set<StageId>(['draft', 'revise', 'rebuild'])
+
+/**
+ * Stages whose output is a canonical prompt, as opposed to a direction sheet,
+ * critique prose, or breakdown JSON — the one notion of "this clip already has
+ * a prompt". Shared by the composer's own version history, the clip plan's
+ * "ready"/"no prompt yet" badge, the background pipeline author (Task 1,
+ * 2026-09-16) and "Generate the rest" (Task 2), so they can never quietly
+ * disagree about what counts as authored.
+ */
+export const PROMPT_STAGES = new Set<StageId>(['draft', 'revise', 'rebuild', 'freeform'])
+
+/** The latest canonical prompt version authored for one plan clip, or
+ * undefined if it has none yet. */
+export function latestPromptForClip(versions: readonly Version[], clipIndex: number): Version | undefined {
+  return [...versions].reverse().find((v) => v.clipIndex === clipIndex && PROMPT_STAGES.has(v.stage))
+}
 
 /** Stages that are actions rather than steps in the chain. */
 export const OFF_CHAIN: StageId[] = ['rebuild', 'freeform', 'handoff', 'breakdown']

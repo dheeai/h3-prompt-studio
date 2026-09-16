@@ -53,7 +53,7 @@ export function Composer({
   onOpenCheck: () => void
 }) {
   const app = useApp()
-  const { story, setStory, settings, patchSettings, breakIntoScenes, setBreakIntoScenes, streaming, providers, probes, clip, isFreshChainStart, externalVideo, plates, chainBlockers, rendering, gpuBusy, findings, scenesFrom, setLoraStack, chainRecipe, endpoint, loraStack } = app
+  const { story, setStory, settings, patchSettings, breakIntoScenes, setBreakIntoScenes, streaming, providers, probes, clip, isFreshChainStart, externalVideo, plates, chainBlockers, rendering, gpuBusy, findings, scenesFrom, setLoraStack, chainRecipe, endpoint, loraStack, pendingAutoDraft } = app
   const ref = useRef<HTMLTextAreaElement>(null)
   // The box's own LoRA folder — `/object_info` is on ComfyUI's light paths, so
   // listing it never forces a GPU backend switch.
@@ -200,6 +200,9 @@ export function Composer({
           {confirmingRender && laterDiscarded > 0 && (
             <div className="composer-blockers" style={{ color: 'var(--ox)', maxWidth: 260, marginBottom: 8 }}>
               Writing scene {targetSceneIndex} here discards {laterDiscarded} later scene{laterDiscarded === 1 ? '' : 's'} — they no longer resume against a checkpoint that will still exist.
+              {pendingAutoDraft && pendingAutoDraft.sceneIndex > targetSceneIndex && (
+                <> It also discards the prompt already drafted for scene {pendingAutoDraft.sceneIndex} — it was written against this scene's old ending.</>
+              )}
             </div>
           )}
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>

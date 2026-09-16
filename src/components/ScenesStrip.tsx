@@ -26,7 +26,7 @@ const WORK_DOT: Record<string, string> = {
  * and confirmed before anything is sent, free when there is nothing to lose.
  */
 export function ScenesStrip() {
-  const { chainFilm, rendering, gpuBusy, scenesFrom, replaceScene, prepareContinuation } = useApp()
+  const { chainFilm, rendering, gpuBusy, scenesFrom, replaceScene, prepareContinuation, pendingAutoDraft } = useApp()
   const [expanded, setExpanded] = useState<string | null>(null)
   const [confirming, setConfirming] = useState<{ clipId: string; action: 'replace' } | null>(null)
   const [keepSeed, setKeepSeed] = useState(false)
@@ -113,6 +113,10 @@ export function ScenesStrip() {
                         they no longer resume against a checkpoint that will still exist.
                         {row.sceneIndex === 1 && row.clip.chain?.externalVideo && (
                           <> Re-attaches the original footage <code>{row.clip.chain.externalVideo.filename}</code>.</>
+                        )}
+                        {pendingAutoDraft && pendingAutoDraft.sceneIndex > row.sceneIndex && (
+                          <> It also discards the prompt already drafted for scene {pendingAutoDraft.sceneIndex} — it was written
+                          against this scene's old ending.</>
                         )}
                       </div>
                       <label className="tok" style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>

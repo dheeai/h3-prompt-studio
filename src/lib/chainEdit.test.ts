@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { countFromIndex, dropFromIndex, externalVideoForReplace, scenesBefore, sceneRangeFor } from './chainEdit'
+import { countFromIndex, dropFromIndex, dropInvalidatedAutoDraft, externalVideoForReplace, scenesBefore, sceneRangeFor } from './chainEdit'
 import type { ClipChainInfo } from './types'
 
 type FakeClip = { id: string; prompt: string; frames: number; steps?: number; seed?: number; chain?: ClipChainInfo }
@@ -99,4 +99,45 @@ test('externalVideoForReplace: any scene other than 1 never re-passes one, even 
 
 test('externalVideoForReplace: a clip with no chain at all re-passes nothing', () => {
   assert.equal(externalVideoForReplace({ chain: undefined }), null)
+})
+
+// ── dropInvalidatedAutoDraft — HAZARD 1: a pre-authored draft goes stale ───
+// ── the moment its parent is replaced or continued-from-early ─────────────
+
+test('dropInvalidatedAutoDraft: no pending draft is a no-op', () => {
+  const versions = [{ id: 'v1' }, { id: 'v2' }]
+  const result = dropInvalidatedAutoDraft(versions, null, 2)
+  assert.equal(result.discarded, false)
+  assert.deepEqual(result.versions, versions)
+})
+
+test('dropInvalidatedAutoDraft: replacing the draft\'s parent scene discards it', () => {
+  // Scene 2 landed, a draft for scene 3 was pre-authored, then the operator
+  // replaces scene 2 — the draft assumed scene 2's old frame/prompt.
+  const versions = [{ id: 'v1' }, { id: 'v-draft-3' }]
+  const result = dropInvalidatedAutoDraft(versions, { versionId: 'v-draft-3', sceneIndex: 3 }, 2)
+  assert.equal(result.discarded, true)
+  assert.deepEqual(result.versions.map((v) => v.id), ['v1'])
+})
+
+test('dropInvalidatedAutoDraft: continuing from an EARLIER scene than the draft\'s parent also discards it', () => {
+  // Draft pre-authored for scene 4 (parent: scene 3). Operator continues from
+  // scene 1 instead, which will (re)write scene 2 next — scene 4's draft no
+  // longer has a valid scene 3 to follow.
+  const versions = [{ id: 'v-draft-4' }]
+  const result = dropInvalidatedAutoDraft(versions, { versionId: 'v-draft-4', sceneIndex: 4 }, 2)
+  assert.equal(result.discarded, true)
+})
+
+test('dropInvalidatedAutoDraft: rendering the draft itself, at its own position, is consumption — never a discard', () => {
+  const versions = [{ id: 'v-draft-3' }]
+  const result = dropInvalidatedAutoDraft(versions, { versionId: 'v-draft-3', sceneIndex: 3 }, 3)
+  assert.equal(result.discarded, false)
+  assert.deepEqual(result.versions, versions)
+})
+
+test('dropInvalidatedAutoDraft: writing an EARLIER, unrelated scene leaves a later draft alone', () => {
+  const versions = [{ id: 'v-draft-3' }]
+  const result = dropInvalidatedAutoDraft(versions, { versionId: 'v-draft-3', sceneIndex: 3 }, 4)
+  assert.equal(result.discarded, false)
 })

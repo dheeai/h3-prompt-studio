@@ -59,3 +59,36 @@ export function externalVideoForReplace(target: Pick<Clip, 'chain'>): ClipChainI
   if (!target.chain || target.chain.sceneIndex !== 1 || !target.chain.externalVideo) return null
   return { ...target.chain.externalVideo }
 }
+
+/** A pipeline-authored draft, not yet rendered, pending at the position it
+ * would occupy once submitted — see `dropInvalidatedAutoDraft`. */
+export interface PendingAutoDraft {
+  versionId: string
+  sceneIndex: number
+}
+
+/**
+ * Discard a pipeline-authored draft once its parent scene is replaced or
+ * continued-from-early — HAZARD 1 in the 2026-09-16 brief. A pre-authored,
+ * not-yet-rendered draft for `pending.sceneIndex` was written against its
+ * parent's OLD frame and OLD prompt, so it goes stale the moment something
+ * AT OR BEFORE that position gets rewritten — exactly the append-only
+ * condition `dropFromIndex`/`countFromIndex` already apply to RENDERED
+ * scenes.
+ *
+ * `fromIndex` is the scene actually being (re)written right now (Replace's
+ * own target, or the scene a fresh Continue-from-here is about to submit).
+ * Note the boundary is `pending.sceneIndex > fromIndex`, not `>=`: writing
+ * AT `pending.sceneIndex` is the ordinary case of rendering the pre-authored
+ * draft itself (or overwriting it with something fresh) — that is
+ * consumption, not invalidation, so it must never be discarded out from
+ * under a render already in flight for it.
+ */
+export function dropInvalidatedAutoDraft<V extends { id: string }>(
+  versions: readonly V[],
+  pending: PendingAutoDraft | null | undefined,
+  fromIndex: number,
+): { versions: V[]; discarded: boolean } {
+  if (!pending || pending.sceneIndex <= fromIndex) return { versions: versions as V[], discarded: false }
+  return { versions: versions.filter((v) => v.id !== pending.versionId), discarded: true }
+}

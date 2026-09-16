@@ -33,6 +33,11 @@ export function DraftingStatus({ streaming }: { streaming: NonNullable<ReturnTyp
       <div className="composer-drafting-head">
         <span className="dot err" />
         <span className="lbl">{streaming.stage} · {label}</span>
+        {streaming.auto && (
+          <span className="tok" style={{ color: 'var(--ink3)' }} title="Started automatically while a scene rendered — not something you clicked.">
+            automatic
+          </span>
+        )}
         <span className="tok">{secs}s</span>
         {!streaming.text && streaming.reasoning ? <span className="tok">reasoning {streaming.reasoning.length} chars</span> : null}
         <span className="studio-grow" />

@@ -3,12 +3,15 @@ import assert from 'node:assert/strict'
 import {
   authoringModeForContent,
   authorContinuation,
+  canAutoAuthorNext,
   clearDraftContext,
   continuationSource,
   migrateBreakIntoScenes,
+  nextPlanClipToAuthor,
   promptSourceForAuthoringMode,
   withContinuationFrame,
 } from './entry'
+import type { Breakdown, BreakdownClip, Version } from './types'
 
 // ── authoringModeForContent — the composer's TEXT decides the contract, ───
 // ── never a picked door ─────────────────────────────────────────────────
@@ -169,4 +172,56 @@ test('withContinuationFrame: a frame is appended to a NEW array, never spliced i
   assert.equal(withFrame.length, 2)
   assert.deepEqual(withFrame[0], plateImages[0])
   assert.deepEqual(withFrame[1], { type: 'image_url', image_url: { url: 'data:image/png;base64,FRAME' } })
+})
+
+// ── canAutoAuthorNext — pipeline authoring's own gate ──────────────────────
+
+test('canAutoAuthorNext: refuses to start while a render is in flight, even with the setting on', () => {
+  assert.equal(canAutoAuthorNext({ enabled: true, gpuBusy: 'render' }), false)
+})
+
+test('canAutoAuthorNext: refuses to start while an LLM call already holds the GPU', () => {
+  assert.equal(canAutoAuthorNext({ enabled: true, gpuBusy: 'llm' }), false)
+})
+
+test('canAutoAuthorNext: refuses to start when the operator has switched it off, even with the GPU idle', () => {
+  assert.equal(canAutoAuthorNext({ enabled: false, gpuBusy: 'idle' }), false)
+})
+
+test('canAutoAuthorNext: starts only when enabled AND the GPU is idle', () => {
+  assert.equal(canAutoAuthorNext({ enabled: true, gpuBusy: 'idle' }), true)
+})
+
+// ── nextPlanClipToAuthor — the plan-path notion of "the next clip" ────────
+
+function planClip(index: number, over: Partial<BreakdownClip> = {}): BreakdownClip {
+  return { index, title: `clip ${index}`, role: 'rising', seconds: 7, covers: '', precedes: '', follows: '', ...over }
+}
+
+function draftVersion(clipIndex: number): Version {
+  return {
+    id: `v${clipIndex}`, stage: 'draft', label: 'Draft', text: `prompt ${clipIndex}`,
+    model: 'm', providerId: 'p', at: 0, ms: 0, clipIndex,
+  }
+}
+
+test('nextPlanClipToAuthor: no breakdown at all means nothing to author', () => {
+  assert.equal(nextPlanClipToAuthor(undefined, [], 1), undefined)
+})
+
+test('nextPlanClipToAuthor: the plan clip right after the one that just landed, when it has no prompt yet', () => {
+  const breakdown: Breakdown = { spine: 'a film', at: 0, clips: [planClip(1), planClip(2), planClip(3)] }
+  const next = nextPlanClipToAuthor(breakdown, [draftVersion(1)], 1)
+  assert.equal(next?.index, 2)
+})
+
+test('nextPlanClipToAuthor: already authored — nothing to do', () => {
+  const breakdown: Breakdown = { spine: 'a film', at: 0, clips: [planClip(1), planClip(2)] }
+  const next = nextPlanClipToAuthor(breakdown, [draftVersion(1), draftVersion(2)], 1)
+  assert.equal(next, undefined)
+})
+
+test('nextPlanClipToAuthor: nothing past the end of the plan', () => {
+  const breakdown: Breakdown = { spine: 'a film', at: 0, clips: [planClip(1), planClip(2)] }
+  assert.equal(nextPlanClipToAuthor(breakdown, [draftVersion(1), draftVersion(2)], 2), undefined)
 })

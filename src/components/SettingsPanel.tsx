@@ -185,6 +185,23 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                 </div>
               )}
 
+              <div className="lbl" style={{ margin: '22px 0 9px' }}>While rendering</div>
+              <label className="tok" style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={settings.autoAuthorNext ?? true}
+                  onChange={(e) => patchSettings({ autoAuthorNext: e.target.checked })}
+                />
+                author the next clip while I watch this one
+              </label>
+              <div className="tok" style={{ marginTop: 6, lineHeight: 1.55 }}>
+                The instant a scene lands, the next clip's draft starts writing in the background, so it is
+                already on the page once you have finished watching what just rendered. Goes through the same
+                one-model-call-at-a-time GPU lock as everything else — it never starts mid-render, and Replace,
+                Continue, or typing a note all cancel it the moment they need the box. Turn this off on a
+                metered endpoint, or to keep the GPU quiet between renders.
+              </div>
+
               <div className="lbl" style={{ margin: '22px 0 9px' }}>This draft</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <span className="tok" style={{ flexGrow: 1 }}>

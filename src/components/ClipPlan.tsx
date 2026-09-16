@@ -3,10 +3,8 @@ import { useApp } from '../app/state'
 import { LoraStackEditor } from './LoraStackEditor'
 import { listLoraNames } from '../lib/comfy'
 import { localLoraStackOverride, planNeedsPerSceneLoraSplit, readBakedLoraStack, selectableStyleLoras } from '../lib/chain'
-import type { LoraStackEntry, Version } from '../lib/types'
-
-/** Stages whose output is a prompt — the only ones that count as "ready" for a clip. */
-const PROMPT_STAGES = new Set(['draft', 'revise', 'rebuild', 'freeform'])
+import { clipsNeedingPrompt } from '../lib/studio-workflow'
+import { latestPromptForClip } from '../lib/stages'
 
 
 /**
@@ -49,8 +47,7 @@ export function ClipPlan() {
 
   if (!breakdown) return null
 
-  const latestFor = (clipIndex: number): Version | undefined =>
-    [...versions].reverse().find((v) => v.clipIndex === clipIndex && PROMPT_STAGES.has(v.stage))
+  const latestFor = (clipIndex: number) => latestPromptForClip(versions, clipIndex)
 
   // Whether THIS plan clip's scene has already landed as part of the plan's
   // own chain (as opposed to some other manually-continued chain) — the
@@ -148,6 +145,7 @@ export function ClipPlan() {
       })}
 
       <ChainPlanSubmit />
+      <GenerateRestAction />
     </div>
   )
 }
@@ -234,6 +232,74 @@ function ChainPlanSubmit() {
           {rendering ? 'Rendering…' : splitting ? `Submit all ${clips.length} as ${clips.length} scene jobs` : `Submit all ${clips.length} as one chain`}
         </button>
       </div>
+    </div>
+  )
+}
+
+/**
+ * "Generate the rest" (Task 2, 2026-09-16) — the autonomous tail on this
+ * plan's interactive head. Only shown once there is something to run
+ * unattended AND at least one scene has already landed (an operator's first
+ * few scenes reviewed clean is the whole point — this is never the FIRST
+ * action on a fresh plan). Wiring plus a gate over what already exists:
+ * `clipsNeedingPrompt` for the authoring loop, `chainPlanPreview` for the
+ * cost shown before anything is spent (never a second estimate that can
+ * drift from what `generateRest` actually submits), and `generateRest`
+ * itself for the run.
+ */
+function GenerateRestAction() {
+  const app = useApp()
+  const { breakdown, versions, clips, chainPlanPreview, streaming, rendering, generateRest } = app
+  const [confirming, setConfirming] = useState(false)
+  const [running, setRunning] = useState(false)
+  if (!breakdown || !chainPlanPreview) return null
+
+  const anyLanded = clips.some((c) => c.chain?.runName === chainPlanPreview.runName && c.state === 'done')
+  if (!anyLanded) return null
+
+  const remaining = clipsNeedingPrompt(breakdown, versions)
+  if (!remaining.length) return null
+
+  const busy = running || !!streaming || !!rendering
+
+  const run = async () => {
+    setConfirming(false)
+    setRunning(true)
+    try {
+      await generateRest()
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  return (
+    <div className="card" style={{ marginTop: 4, marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 9 }}>
+        <span className="lbl">Generate the rest</span>
+        <div style={{ flexGrow: 1 }} />
+        <span className="tok">{remaining.length} clip{remaining.length === 1 ? '' : 's'} left unauthored</span>
+      </div>
+      {confirming ? (
+        <>
+          <div className="tok" style={{ marginTop: 8, lineHeight: 1.6 }}>
+            Authors {remaining.length} clip{remaining.length === 1 ? '' : 's'}, then renders all {chainPlanPreview.clips.length} scene
+            {chainPlanPreview.clips.length === 1 ? '' : 's'} as one chain — ≈{chainPlanPreview.totalSeconds.toFixed(1)}s delivered.
+            Stoppable mid-run; whatever is already authored or rendered stays exactly as it is.
+          </div>
+          <div style={{ display: 'flex', gap: 9, marginTop: 10 }}>
+            <button className="btn pri" onClick={() => void run()}>
+              Author {remaining.length} and render everything
+            </button>
+            <button className="btn sm ghost" onClick={() => setConfirming(false)}>Cancel</button>
+          </div>
+        </>
+      ) : (
+        <div style={{ marginTop: 10 }}>
+          <button className="btn" disabled={busy} onClick={() => setConfirming(true)}>
+            {running ? 'Generating…' : 'Generate the rest'}
+          </button>
+        </div>
+      )}
     </div>
   )
 }

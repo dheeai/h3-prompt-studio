@@ -1,6 +1,7 @@
-import type { FilmContext } from './types'
+import type { Breakdown, BreakdownClip, FilmContext, Version } from './types'
 import type { Standing } from './lint'
 import type { ChatContentPart } from './llm'
+import { latestPromptForClip } from './stages'
 
 /**
  * There is no entry-mode picker any more (2026-09-07 redesign — "the system
@@ -155,6 +156,9 @@ export interface DraftContextState {
   /** The continuation's vision frame — see `withContinuationFrame`. Never
    * meaningful outside the one draft call it was fetched for. */
   continuationFrame?: string
+  /** A pending pipeline-authored draft — see `dropInvalidatedAutoDraft` in
+   * `chainEdit.ts`. Scoped to the draft it came from, same as the frame. */
+  pendingAutoDraft?: unknown
 }
 
 /**
@@ -177,6 +181,7 @@ export function clearDraftContext<T extends DraftContextState>(session: T): T {
     breakdown: undefined,
     externalVideo: null,
     continuationFrame: undefined,
+    pendingAutoDraft: undefined,
   }
 }
 
@@ -230,4 +235,41 @@ export function continuationPlateIsFresh(plate: { mode: 'carried' | 'replaced'; 
  */
 export function withContinuationFrame(images: ChatContentPart[], frame: string | undefined): ChatContentPart[] {
   return frame ? [...images, { type: 'image_url', image_url: { url: frame } }] : images
+}
+
+/**
+ * Whether the studio may kick off pipeline (background) authoring right now
+ * — "author the next clip while the operator watches the one that just
+ * landed" (2026-09-16). Two independent gates, both required:
+ *
+ * - `enabled` is the operator's own switch (`Settings.autoAuthorNext`,
+ *   default on) — an operator on a metered endpoint, or one who wants the
+ *   GPU quiet, must be able to turn this off.
+ * - `gpuBusy` must be `'idle'`. The gateway single-flights the GPU the same
+ *   way every other LLM call in this app already respects (`beginGpuUse`) —
+ *   a model call fired while a render is still draining can get ComfyUI
+ *   hard-killed, so this must never fire mid-render, and never race a
+ *   manual LLM call either.
+ */
+export function canAutoAuthorNext(opts: { enabled: boolean; gpuBusy: 'idle' | 'llm' | 'render' }): boolean {
+  return opts.enabled && opts.gpuBusy === 'idle'
+}
+
+/**
+ * The plan clip pipeline authoring should write next, once `landedIndex` has
+ * just rendered — the next clip BY INDEX, and only when it has no prompt yet
+ * (`latestPromptForClip` — the same notion ClipPlan's "ready"/"no prompt yet"
+ * badge already uses, so this can never disagree with what the operator sees
+ * there). Returns undefined when there is no next clip, or it is already
+ * authored — either way there is nothing to do.
+ */
+export function nextPlanClipToAuthor(
+  breakdown: Breakdown | undefined,
+  versions: readonly Version[],
+  landedIndex: number,
+): BreakdownClip | undefined {
+  if (!breakdown) return undefined
+  const next = breakdown.clips.find((c) => c.index === landedIndex + 1)
+  if (!next) return undefined
+  return latestPromptForClip(versions, next.index) ? undefined : next
 }

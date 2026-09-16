@@ -102,6 +102,7 @@ export function Marginalia() {
                   <span style={{ fontSize: 11.5, color: 'var(--ink2)', flexGrow: 1 }}>
                     {STAGE_LABEL[v.stage]}
                     {v.note ? <span style={{ color: 'var(--ink3)' }}> · {v.note.slice(0, 30)}</span> : null}
+                    {v.auto ? <span style={{ color: 'var(--ink3)' }} title="Authored automatically while a scene rendered"> · auto</span> : null}
                   </span>
                   <span className="tok">{ago(v.at)}</span>
                 </button>

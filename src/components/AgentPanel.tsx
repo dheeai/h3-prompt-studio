@@ -159,7 +159,7 @@ export function AgentPanel({ onOpenStudio }: AgentPanelProps) {
     const action = pending
     setPending(null)
     setStatus(action === 'render_current' ? 'Submitting the canonical prompt to ComfyUI…' : 'Submitting the clip plan to ComfyUI…')
-    if (action === 'render_current') await app.render()
+    if (action === 'render_current') await app.renderExtender()
     else await app.renderExtenderPlan('clip_by_clip')
     setStatus('Submission requested. Follow progress in Studio.')
   }

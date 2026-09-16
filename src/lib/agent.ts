@@ -175,7 +175,7 @@ const textResult = (details: AgentToolDetails, text: string, terminate = false):
 type Bridge = Pick<
   Api,
   | 'story' | 'versions' | 'current' | 'film' | 'breakdown' | 'clips' | 'clip' | 'settings' | 'skills'
-  | 'appendPromptVersion' | 'setBreakdown' | 'prepareContinuation' | 'render' | 'renderExtenderPlan'
+  | 'appendPromptVersion' | 'setBreakdown' | 'prepareContinuation' | 'renderExtender' | 'renderExtenderPlan'
 >
 
 function stateText(app: Bridge): string {
@@ -299,7 +299,7 @@ export function buildAgentTools(app: Bridge, onConfirmation?: (type: AgentConfir
   const renderCurrent: AgentTool<typeof renderParameters, AgentToolDetails> = {
     name: 'render_current',
     label: 'Render current prompt',
-    description: 'Render the current canonical prompt in ComfyUI. Always ask for explicit user confirmation before passing confirmed=true.',
+    description: 'Render the current canonical prompt as one Master Extender scene in ComfyUI. Always ask for explicit user confirmation before passing confirmed=true.',
     parameters: renderParameters,
     executionMode: 'sequential',
     async execute(_id, params) {
@@ -307,7 +307,7 @@ export function buildAgentTools(app: Bridge, onConfirmation?: (type: AgentConfir
         onConfirmation?.('render_current')
         return textResult({ operation: 'render_current', requiresConfirmation: 'render_current', message: 'Waiting for explicit confirmation.' }, 'Rendering requires confirmation in the Agent panel.', true)
       }
-      await app.render()
+      await app.renderExtender()
       return textResult({ operation: 'render_current' }, 'Render submitted from the canonical prompt.', true)
     },
   }

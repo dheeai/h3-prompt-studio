@@ -250,24 +250,25 @@ export interface Settings {
   // ── the render loop ───────────────────────────────────────────────────
   /** Which ComfyUI to render on. */
   comfyEndpointId?: string
-  /** Which stored recipe to render with — the plain single-clip path
-   * (`render()`), independent of the Master Extender's own fixed, shipped
-   * workflow (`lib/extender.ts`), which needs no recipe at all. */
-  recipeId?: string
   /** Target clip length before the frame grid snaps it. */
   seconds: number
   /** A film normally wants one seed the whole way down. */
   lockSeed: boolean
   seed: number
-  /** Override the recipe's own step count when set. */
-  steps?: number
   /**
-   * Geometry override. Left unset, the recipe's OWN defaults win — a workflow
-   * swap must not silently keep stale geometry, so these are never copied from
-   * `recipe.defaults` on load, only written when the operator picks one.
+   * Operator overrides onto the shipped Master Extender graph's own baked
+   * master-node inputs — ONLY fields that differ from the graph's baked
+   * value are ever stored here (see `extenderSettings.ts`'s
+   * `withExtenderOverride`), so an untouched install sends nothing and a
+   * later graph update is never silently shadowed by a stale copy. Keyed by
+   * the node's own field names (`EXTENDER_SIGNATURE_FIELDS` in
+   * `lib/extender.ts`) — e.g. `pass2_resolution`, `pass2_steps`,
+   * `context_length`, `sla_sparsity`. Applied at build time via
+   * `buildExtenderGraph`'s existing `overrides` argument, which is also what
+   * the settings-signature guard hashes — this is never a second gate on top
+   * of it.
    */
-  width?: number
-  height?: number
+  extenderOverrides?: Record<string, unknown>
 }
 
 export type Severity = 'error' | 'warn' | 'pass'
@@ -362,43 +363,6 @@ export interface ComfyEndpoint {
   builtIn: boolean
 }
 
-/** Where one value lives inside a user-supplied workflow graph. */
-export interface Binding {
-  /** Node id in the API-format graph. */
-  node: string
-  /** Input key on that node. Dotted keys (ref_images.ref_image_0) are literal. */
-  field: string
-  /** class_type of the node, for display and for re-detection. */
-  classType: string
-}
-
-export type BindingSlot = 'prompt' | 'width' | 'height' | 'length' | 'seed' | 'steps' | 'output'
-
-/**
- * A ComfyUI workflow plus the map of which node holds what.
- *
- * Bindings are detected by node CLASS TYPE, never by node number, so every
- * variant of a graph — turbo, 8-step, SLA, hybrid — binds without configuration.
- */
-export interface Recipe {
-  id: string
-  name: string
-  /** API-format graph, exactly as exported. Stored whole and passed through. */
-  graph: Record<string, ComfyNode>
-  bindings: Partial<Record<BindingSlot, Binding>>
-  /** Candidates the detector could not choose between, for the UI to ask about. */
-  ambiguous: Partial<Record<BindingSlot, Binding[]>>
-  /**
-   * Which node carries each autogrow reference group, found by its prefix.
-   * H3 has four: images (max 9), videos (max 3), the videos' soundtracks, and
-   * standalone audio.
-   */
-  refHost?: string
-  refHosts?: Partial<Record<'ref_image_' | 'ref_video_' | 'ref_video_audio_' | 'ref_audio_', string>>
-  defaults: { width: number; height: number; fps: number; seconds: number }
-  addedAt: number
-}
-
 export interface ComfyNode {
   class_type: string
   inputs: Record<string, unknown>
@@ -419,7 +383,6 @@ export interface Clip {
   /** The film context this clip was directed under. */
   film?: FilmContext
   plateIds: string[]
-  recipeId?: string
   endpointId?: string
   seed?: number
   frames?: number

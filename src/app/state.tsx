@@ -11,8 +11,10 @@ import { PROMPT_STAGES, SCHEMA_STAGES, STAGE_LABEL, continuationFrameBlock, dura
 import { h3ResponseFormat, joinH3Sections } from '../lib/schema'
 import { DEFAULT_ENDPOINTS, lastFrameOf, poll, pollExtender, probeComfy, submit, uploadImage, viewUrl } from '../lib/comfy'
 import type { PollResult } from '../lib/comfy'
-import { applyRecipe, framesForSeconds, oomRisk, parseWorkflow, recipeIssues } from '../lib/recipe'
-import { EXTENDER_REF_SLOTS, ExtenderError, buildExtenderGraph, extenderCostEstimate, readExtenderDefaults } from '../lib/extender'
+import { framesForSeconds } from '../lib/geometry'
+import { parseWorkflow } from '../lib/workflow'
+import { EXTENDER_REF_SLOTS, ExtenderError, buildExtenderGraph, extenderCostEstimate, extenderGeometryFromInputs, readExtenderMasterInputs } from '../lib/extender'
+import { mergeExtenderInputs } from '../lib/extenderSettings'
 import { readBakedLoraStack } from '../lib/loras'
 import type { ExtenderClipInput, ExtenderCostEstimate, ExtenderPlate, ExtenderPreviewInfo } from '../lib/extender'
 import { countFromIndex, dropFromIndex, dropInvalidatedAutoDraft, redoSeed, validatedClipAt } from '../lib/filmEdit'
@@ -27,7 +29,7 @@ import { clipsNeedingPrompt, isSingleRequestStage, type StudioRunPhase } from '.
 import { normalizeThinkingBudgets, resolveThinkingBudget } from '../lib/thinking'
 import type {
   Breakdown, ChatTurn, Clip, ComfyEndpoint, ComfyNode, FilmContext, Finding, LoraStackEntry, Plate, ProbeResult,
-  Provider, Recipe, Selection, Settings, Skill, StageId, Version,
+  Provider, Selection, Settings, Skill, StageId, Version,
 } from '../lib/types'
 
 const SETTINGS_SCHEMA = 6
@@ -248,7 +250,7 @@ interface ExtenderPlanPreview {
   nodeId: string
   clips: ExtenderPlanPreviewClip[]
   cost: ExtenderCostEstimate
-  /** Every blocking problem — same contract as `blockers`. */
+  /** Every blocking problem — same contract as `sceneBlockers`. */
   issues: string[]
 }
 
@@ -303,12 +305,6 @@ export interface Api {
 
   // ── the render loop ─────────────────────────────────────────────────
   plates: Plate[]
-  recipes: Recipe[]
-  /** The plain single-clip recipe — an operator-dropped ComfyUI workflow,
-   * bound by `recipe.ts`'s slot detection. Used only by `render()`; the
-   * Master Extender path (the studio's actual multi-clip render path) ships
-   * its own fixed workflow and needs no Recipe at all. */
-  recipe: Recipe | null
   endpoints: ComfyEndpoint[]
   endpoint: ComfyEndpoint | null
   comfyProbes: Record<string, ProbeResult>
@@ -319,26 +315,24 @@ export interface Api {
    * render. Both `run()` and every render path refuse to start while the
    * other holds it — see the module comment beside `gpuBusyRef`. */
   gpuBusy: 'idle' | 'llm' | 'render'
-  /** Why the plain single-clip `render()` cannot start yet — empty when it can. */
-  blockers: string[]
-  /** Non-blocking — an OOM risk at the chosen geometry for the single-clip render. */
-  warnings: string[]
-  /** Why the primary "Make scene N" action (the Master Extender path)
-   * cannot start yet — the render-loop equivalent of `blockers`, which gates
-   * the plain single-clip `render()` path instead. Empty when it can render. */
+  /** Why the primary "Make scene N" action (the Master Extender path, the
+   * studio's only render path) cannot start yet. Empty when it can render. */
   sceneBlockers: string[]
-  /** Whether the shipped `MiniMaxH3MasterExtender` workflow loaded — the
-   * Master Extender path has no operator-supplied-recipe UI (unlike
-   * `recipe`): the graph ships fixed at `public/workflows/`, so this is a
-   * readiness flag rather than a picker. */
+  /** Whether the shipped `MiniMaxH3MasterExtender` workflow loaded — there is
+   * no operator-supplied-workflow UI: the graph ships fixed at
+   * `public/workflows/`, so this is a readiness flag rather than a picker. */
   extenderReady: boolean
-  /** The geometry/steps the Master Extender will ACTUALLY render at, read
-   * off its own loaded graph (`readExtenderDefaults`) — never a Recipe's
-   * settings standing in for it (issue #30: the topbar used to report a
-   * Contex-Loop recipe's geometry while the node rendered at its own baked
-   * resolution). Null before the graph has loaded. There is no operator
-   * override here — it is baked into the shipped workflow. */
+  /** The geometry/steps the Master Extender will ACTUALLY render at — the
+   * graph's own baked value, with any operator override
+   * (`Settings.extenderOverrides`) already applied (issue #30: the topbar
+   * must report what will actually be sent, never a stale or nominal
+   * number). Null before the graph has loaded. */
   extenderDefaults: { width: number; height: number; steps: number } | null
+  /** The shipped graph's own baked master-node inputs, none of the
+   * operator's overrides applied — what the settings panel seeds every
+   * control from and compares an edit against (`readExtenderMasterInputs`).
+   * Null before the graph has loaded. */
+  extenderMasterDefaults: Record<string, unknown> | null
   /** The Master Extender's own baked style-stack default
    * (`LTX_lora_loader.stack_data` on the shipped graph) — what
    * `LoraStackEditor` seeds an edit from before the operator customizes it. */
@@ -362,12 +356,9 @@ export interface Api {
   updatePlate: (id: string, patch: Partial<Plate>) => Promise<void>
   deletePlate: (id: string) => Promise<void>
   reorderPlate: (id: string, delta: number) => Promise<void>
-  addRecipe: (r: Recipe) => Promise<void>
-  deleteRecipe: (id: string) => Promise<void>
   setEndpoints: (e: ComfyEndpoint[]) => Promise<void>
   refreshComfyProbe: (id: string) => Promise<void>
   clipUrl: (c: Clip) => string | null
-  render: () => Promise<void>
   /**
    * Submit the clip plan as ONE Master Extender job — the studio's only
    * multi-clip render path. `runMode` is the node's own switch:
@@ -510,18 +501,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [interruptedReasoning, setInterruptedReasoning] = useState<string | null>(null)
   const [continuation, setContinuation] = useState<ContinuationStatus | null>(null)
   const [plates, setPlates] = useState<Plate[]>([])
-  const [recipes, setRecipes] = useState<Recipe[]>([])
   const [endpoints, setEndpointsState] = useState<ComfyEndpoint[]>(DEFAULT_ENDPOINTS)
   const [comfyProbes, setComfyProbes] = useState<Record<string, ProbeResult>>({})
   const [renderingId, setRenderingId] = useState<string | null>(null)
-  // ── Master Extender (the studio's only multi-clip render path) ─────────
+  // ── Master Extender (the studio's only render path) ────────────────────
   //
   // The graph ships fixed at `public/workflows/minimax_h3_master_extender_api.json`
-  // — there is no operator-drop-your-own-workflow UI for this path, unlike
-  // `recipes` (the plain single-clip `render()` path) — so it is fetched
-  // once at boot (below) rather than going through the Recipe/idb system,
-  // which exists for the Binding-detection machinery this single fixed node
-  // has no use for.
+  // — there is no operator-drop-your-own-workflow UI for this path — so it is
+  // fetched once at boot (below) as a plain asset, never through an idb store.
   const [extenderGraph, setExtenderGraph] = useState<Record<string, ComfyNode> | null>(null)
   const [extenderProgress, setExtenderProgress] = useState<ExtenderPreviewInfo | null>(null)
   // What was actually recorded as each film's frozen settings the last time a
@@ -730,20 +717,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
         merged.selection = sel
       }
 
-      const [savedRecipes, savedEndpoints] = await Promise.all([
-        idb.all<Recipe>('recipes'),
-        idb.get<ComfyEndpoint[]>('settings', 'comfyEndpoints'),
-      ])
-
-      setRecipes(savedRecipes.sort((a, b) => a.addedAt - b.addedAt))
+      const savedEndpoints = await idb.get<ComfyEndpoint[]>('settings', 'comfyEndpoints')
       if (savedEndpoints?.length) setEndpointsState(savedEndpoints)
 
       // A refresh starts clean. The draft, its passes, the film context, the
       // plates and the clips are all WORK, and work that reappears by itself
       // is work you have to remember to throw away before you can trust what
       // is on the page. Only the CONFIGURATION persists: settings, providers,
-      // skills, recipes and endpoints. Whatever an earlier visit wrote is
-      // cleared here rather than merely ignored, so nothing lingers on disk.
+      // skills and endpoints. Whatever an earlier visit wrote is cleared here
+      // rather than merely ignored, so nothing lingers on disk. The retired
+      // `recipes` store itself is dropped one layer down, in `db.ts`'s own
+      // upgrade migration — never recreated here.
       await Promise.all([idb.clear('sessions'), idb.clear('plates'), idb.clear('clips')])
 
       setSkills(stored)
@@ -756,10 +740,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
-  // Fetch the shipped Master Extender workflow once — a plain fixed asset,
-  // fetched raw (no Recipe/Binding wrapping — this single fixed node has no
-  // use for it). Never throws: a missing/malformed asset just leaves the
-  // path unavailable (`extenderReady: false`).
+  // Fetch the shipped Master Extender workflow once — a plain fixed asset.
+  // Never throws: a missing/malformed asset just leaves the path unavailable
+  // (`extenderReady: false`).
   useEffect(() => {
     let live = true
     void fetch(new URL('workflows/minimax_h3_master_extender_api.json', document.baseURI).toString(), { cache: 'no-cache' })
@@ -1429,10 +1412,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setSession(next)
   }, [])
 
-  const recipe = useMemo(
-    () => recipes.find((r) => r.id === settings.recipeId) ?? recipes[0] ?? null,
-    [recipes, settings.recipeId],
-  )
   const endpoint = useMemo(
     () => endpoints.find((e) => e.id === settings.comfyEndpointId) ?? endpoints[0] ?? null,
     [endpoints, settings.comfyEndpointId],
@@ -1477,55 +1456,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const lastPromptText = useMemo(() => {
-    // Rendering, linting and copying all consume the one canonical prompt.
-    // Selecting a prose pass (Direct/Critique) for inspection must not make
-    // that prose accidentally become the render payload.
-    const selected = session.versions.find((x) => x.id === session.currentId)
-    if (selected && PROMPT_STAGES.has(selected.stage)) return selected.text
-    const v = [...session.versions].reverse().find((x) => PROMPT_STAGES.has(x.stage))
-    return v?.text ?? (looksLikePrompt(session.story) ? session.story : '')
-  }, [session.versions, session.currentId, session.story])
-
-  const blockers = useMemo(() => {
-    const out: string[] = []
-    if (!endpoint) out.push('No ComfyUI endpoint. Add one under “Where it renders”.')
-    else if (comfyProbes[endpoint.id] && comfyProbes[endpoint.id].state !== 'ok') {
-      out.push(`${endpoint.label} is not reachable — ${comfyProbes[endpoint.id].detail}`)
-    }
-    out.push(...recipeIssues(recipe))
-    if (!lastPromptText.trim()) out.push('No prompt to render yet. Run Draft, or paste one.')
-    const jobless = plates.filter((p) => !p.job.trim())
-    if (jobless.length) out.push(`${jobless.length} plate(s) have no job written. An unexplained reference drifts.`)
-    return out
-  }, [endpoint, comfyProbes, recipe, lastPromptText, plates])
-
-  const warnings = useMemo(() => {
-    const out: string[] = []
-    // The plain single-clip `recipe`/`render()` path is the only render path
-    // this geometry override still governs (the Master Extender's own
-    // geometry is baked into its shipped graph — see `extenderDefaults`).
-    if (recipe) {
-      const width = settings.width ?? recipe.defaults.width
-      const height = settings.height ?? recipe.defaults.height
-      const frames = framesForSeconds(settings.seconds, 24)
-      if (oomRisk(width, height, frames)) {
-        out.push(
-          `${width}×${height} at ${frames} frames has been measured to OOM — the box runs out of memory around ` +
-            `362 frames at this tier, and an OOM takes ComfyUI down and leaves no trace (\`/history\` comes back ` +
-            `empty either way). Trade resolution for length, or accept the risk.`,
-        )
-      }
-    }
-    return out
-  }, [recipe, settings.width, settings.height, settings.seconds])
-
   /**
-   * Gates the primary "Make scene N" action — the render-loop equivalent of
-   * `blockers`, above, for the Master Extender path. Checks the COMPOSER'S
-   * text directly (`session.story`), since that is what `renderExtender`
-   * actually sends: nothing here gates rendering behind an LLM stage having
-   * run.
+   * Gates the primary "Make scene N" action — the studio's only render path.
+   * Checks the COMPOSER'S text directly (`session.story`), since that is
+   * what `renderExtender` actually sends: nothing here gates rendering
+   * behind an LLM stage having run.
    */
   const sceneBlockers = useMemo(() => {
     const out: string[] = []
@@ -1652,17 +1587,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setPlates(stamped)
   }, [])
 
-  const addRecipe = useCallback(async (r: Recipe) => {
-    await idb.set('recipes', r.id, r)
-    setRecipes((prev) => [...prev.filter((x) => x.id !== r.id), r])
-    setSettings((s) => ({ ...s, recipeId: r.id }))
-  }, [])
-
-  const deleteRecipe = useCallback(async (id: string) => {
-    await idb.del('recipes', id)
-    setRecipes((prev) => prev.filter((r) => r.id !== id))
-  }, [])
-
   const setEndpoints = useCallback(async (next: ComfyEndpoint[]) => {
     setEndpointsState(next)
     await idb.set('settings', 'comfyEndpoints', next)
@@ -1696,94 +1620,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const patchClip = useCallback((id: string, patch: Partial<Clip>) => {
     setClips((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)))
   }, [])
-
-  const render = useCallback(async () => {
-    if (!endpoint || !recipe) {
-      setError('Pick an endpoint and a recipe first.')
-      return
-    }
-    const prompt = lastPromptText
-    if (!prompt.trim()) {
-      setError('Nothing to render — there is no prompt yet.')
-      return
-    }
-    if (!beginGpuUse('render')) return
-
-    const id = `c${Date.now().toString(36)}`
-    const index = clipsRef.current.length + 1
-    const seed = settings.lockSeed ? settings.seed : Math.floor(Math.random() * 2 ** 31)
-    const frames = framesForSeconds(settings.seconds, 24)
-    const snap = platesRef.current
-
-    const draft: Clip = {
-      id,
-      index,
-      parentId: sessionRef.current.parentClipId ?? null,
-      state: 'queued',
-      prompt,
-      film: sessionRef.current.film,
-      plateIds: snap.map((p) => p.id),
-      recipeId: recipe.id,
-      endpointId: endpoint.id,
-      seed,
-      frames,
-      fps: 24,
-      at: Date.now(),
-    }
-    setClips((prev) => [...prev, draft])
-    setCurrentClipId(id)
-    setRenderingId(id)
-    setError(null)
-    const t0 = Date.now()
-
-    try {
-      // Plates are uploaded once per box and then cited by name — and a plate
-      // PICKED from the box is already there, so it is never sent back to it.
-      const refs: Array<{ filename: string; subfolder: string }> = []
-      const videoRefs: Array<{ filename: string; subfolder: string }> = []
-      for (const p of snap) {
-        const into = p.kind === 'video' ? videoRefs : refs
-        if (p.boxFile?.endpointId === endpoint.id) {
-          into.push({ filename: p.boxFile.filename, subfolder: p.boxFile.subfolder })
-          continue
-        }
-        if (p.uploaded?.endpointId === endpoint.id) {
-          into.push({ filename: p.uploaded.filename, subfolder: p.uploaded.subfolder })
-          continue
-        }
-        if (!p.dataUrl) throw new Error(`Plate “${p.name}” has no file on this box and nothing to upload.`)
-        const up = await uploadImage(endpoint, p.dataUrl, plateFilename(p))
-        into.push(up)
-        await savePlate({ ...p, uploaded: { endpointId: endpoint.id, ...up } })
-      }
-
-      const graph = applyRecipe(recipe, {
-        prompt,
-        refs,
-        videoRefs,
-        width: settings.width ?? recipe.defaults.width,
-        height: settings.height ?? recipe.defaults.height,
-        frames,
-        seed,
-        steps: settings.steps,
-      })
-
-      const promptId = await submit(endpoint, graph)
-      patchClip(id, { state: 'rendering', promptId })
-      const output = await pollToDone(endpoint, promptId)
-      patchClip(id, { state: 'done', output, ms: Date.now() - t0, loraStack: sessionRef.current.loraStack })
-    } catch (e) {
-      const msg = String((e as Error).message || e)
-      patchClip(id, { state: 'failed', error: msg, ms: Date.now() - t0 })
-      setError(msg)
-    } finally {
-      setRenderingId(null)
-      endGpuUse()
-    }
-  }, [
-    endpoint, recipe, lastPromptText, settings.lockSeed, settings.seed, settings.seconds, settings.steps,
-    settings.width, settings.height, patchClip, savePlate, beginGpuUse, endGpuUse,
-  ])
 
   /**
    * Submit the clip plan as ONE Master Extender job — see `Api.renderExtenderPlan`'s
@@ -1917,6 +1753,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           clips: extClips,
           plates: extPlates,
           runMode,
+          overrides: settings.extenderOverrides,
           priorMasterInputs: extenderFrozenRef.current[nodeId],
           validatedCount,
         })
@@ -1971,7 +1808,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         endGpuUse()
       }
     },
-    [endpoint, extenderGraph, settings.lockSeed, settings.seed, savePlate, beginGpuUse, endGpuUse],
+    [endpoint, extenderGraph, settings.lockSeed, settings.seed, settings.extenderOverrides, savePlate, beginGpuUse, endGpuUse],
   )
 
   /**
@@ -2100,9 +1937,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     let landed = false
     try {
-      // Same upload contract as `render()`/`renderExtenderPlan`: a plate
-      // already on THIS box (picked, or uploaded by an earlier clip) is
-      // cited by name and never sent back.
+      // Same upload contract as `renderExtenderPlan`: a plate already on
+      // THIS box (picked, or uploaded by an earlier clip) is cited by name
+      // and never sent back.
       const extPlates: ExtenderPlate[] = []
       for (const p of imagePlates) {
         if (p.boxFile?.endpointId === endpoint.id) {
@@ -2125,6 +1962,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         clips: extClips,
         plates: extPlates,
         runMode: 'clip_by_clip',
+        overrides: settings.extenderOverrides,
         priorMasterInputs: extenderFrozenRef.current[nodeId],
         validatedCount: priorClips.length,
       })
@@ -2181,7 +2019,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // 'render' from this call.
       if (landed) void authorNextAfterLandingRef.current({ clipId: id, sceneIndex })
     }
-  }, [endpoint, extenderGraph, settings.lockSeed, settings.seed, settings.seconds, patchClip, savePlate, beginGpuUse, endGpuUse])
+  }, [endpoint, extenderGraph, settings.lockSeed, settings.seed, settings.seconds, settings.extenderOverrides, patchClip, savePlate, beginGpuUse, endGpuUse])
 
   const selectClip = useCallback((id: string) => setCurrentClipId(id), [])
 
@@ -2533,7 +2371,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await renderExtenderPlan('full_batch')
   }, [rebuild, renderExtenderPlan, setFilm])
 
-  const extenderDefaults = useMemo(() => readExtenderDefaults(extenderGraph), [extenderGraph])
+  // The graph's own baked master-node inputs — what the settings panel seeds
+  // every control from — with the operator's overrides merged on top for
+  // `extenderDefaults`, so the topbar's geometry line reports what will
+  // ACTUALLY render (issue #30), never the baked value alone once an
+  // override is set.
+  const extenderMasterDefaults = useMemo(() => readExtenderMasterInputs(extenderGraph), [extenderGraph])
+  const extenderEffectiveInputs = useMemo(
+    () => mergeExtenderInputs(extenderMasterDefaults, settings.extenderOverrides),
+    [extenderMasterDefaults, settings.extenderOverrides],
+  )
+  const extenderDefaults = useMemo(() => extenderGeometryFromInputs(extenderEffectiveInputs), [extenderEffectiveInputs])
   const extenderDefaultLoraStack = useMemo(() => readBakedLoraStack(extenderGraph), [extenderGraph])
 
   const api: Api = {
@@ -2569,8 +2417,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     run,
     rebuild,
     plates,
-    recipes,
-    recipe,
     endpoints,
     endpoint,
     comfyProbes,
@@ -2578,11 +2424,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     clip,
     rendering,
     gpuBusy,
-    blockers,
-    warnings,
     sceneBlockers,
     extenderReady: !!extenderGraph,
     extenderDefaults,
+    extenderMasterDefaults,
     extenderDefaultLoraStack,
     extenderPlanPreview,
     extenderFilm,
@@ -2592,12 +2437,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     updatePlate,
     deletePlate,
     reorderPlate,
-    addRecipe,
-    deleteRecipe,
     setEndpoints,
     refreshComfyProbe,
     clipUrl,
-    render,
     renderExtender,
     redoScene,
     redoPlanClip,

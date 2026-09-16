@@ -4,7 +4,7 @@ import { ConnectPanel } from '../components/ConnectPanel'
 import { SkillsPanel } from '../components/SkillsPanel'
 import { SettingsPanel } from '../components/SettingsPanel'
 import { PlatesPanel } from '../components/PlatesPanel'
-import { RecipePanel } from '../components/RecipePanel'
+import { ExtenderSettingsPanel } from '../components/ExtenderSettingsPanel'
 import { EndpointPanel } from '../components/RenderPanel'
 import { ClipPlan } from '../components/ClipPlan'
 import { DraftingStatus } from '../components/DraftingStatus'
@@ -14,7 +14,7 @@ import { ScenesStrip } from '../components/ScenesStrip'
 import { Composer } from '../components/Composer'
 import { AgentPanel } from '../components/AgentPanel'
 
-type Modal = 'connect' | 'skills' | 'settings' | 'plates' | 'recipe' | 'endpoint' | 'check' | null
+type Modal = 'connect' | 'skills' | 'settings' | 'plates' | 'extender-settings' | 'endpoint' | 'check' | null
 
 /**
  * ONE COMPOSER. There are no entry-mode doors — see the module comment on
@@ -89,8 +89,11 @@ export function App() {
                 <button onClick={() => { setModal('endpoint'); setSetupOpen(false) }}>
                   ComfyUI endpoint <span className="tok"><span className={`dot ${endpointOk ? 'ok' : 'idle'}`} /> {app.endpoint?.label || 'none'}</span>
                 </button>
-                <button onClick={() => { setModal('recipe'); setSetupOpen(false) }}>
-                  Recipe (single-clip render) <span className="tok">{app.recipe?.name || 'not loaded'}</span>
+                <button onClick={() => { setModal('extender-settings'); setSetupOpen(false) }}>
+                  Render settings <span className="tok">
+                    {width && height ? `${width}×${height}` : 'not loaded'}
+                    {Object.keys(app.settings.extenderOverrides ?? {}).length ? ' · customized' : ''}
+                  </span>
                 </button>
                 <button onClick={() => { setModal('skills'); setSetupOpen(false) }}>
                   Skills / reading <span className="tok">{loadedSkills.length} loaded</span>
@@ -140,7 +143,7 @@ export function App() {
       {modal === 'skills' && <SkillsPanel onClose={() => setModal(null)} />}
       {modal === 'settings' && <SettingsPanel onClose={() => setModal(null)} />}
       {modal === 'plates' && <PlatesPanel onClose={() => setModal(null)} />}
-      {modal === 'recipe' && <RecipePanel onClose={() => setModal(null)} />}
+      {modal === 'extender-settings' && <ExtenderSettingsPanel onClose={() => setModal(null)} />}
       {modal === 'endpoint' && <EndpointPanel onClose={() => setModal(null)} />}
       {modal === 'check' && (
         <div className="backdrop" onClick={() => setModal(null)}>

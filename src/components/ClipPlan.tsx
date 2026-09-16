@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useApp } from '../app/state'
 import { LoraStackEditor } from './LoraStackEditor'
 import { listLoraNames } from '../lib/comfy'
-import { localLoraStackOverride, planNeedsPerSceneLoraSplit, readBakedLoraStack, selectableStyleLoras } from '../lib/chain'
+import { localLoraStackOverride, planNeedsPerSceneLoraSplit, readBakedLoraStack } from '../lib/chain'
 import { clipsNeedingPrompt } from '../lib/studio-workflow'
 import { latestPromptForClip } from '../lib/stages'
 

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useApp } from '../app/state'
-import { DEFAULT_TEMPLATES, STAGE_LABEL, templateFor } from '../lib/stages'
+import { STAGE_LABEL, templateFor } from '../lib/stages'
 import { isQwenFamilyModel, normalizeThinkingBudget, resolveThinkingBudget, thinkingBudgetKey } from '../lib/thinking'
 import type { H3Mode, StageId } from '../lib/types'
 

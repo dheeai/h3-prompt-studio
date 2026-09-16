@@ -127,9 +127,24 @@ export function readExtenderDefaults(graph: Record<string, ComfyNode> | null | u
   if (!graph) return null
   const id = byClass(graph, EXTENDER_CLASS)
   if (!id) return null
-  const m = /^(\d+)x(\d+)/i.exec(String(graph[id].inputs.pass2_resolution ?? ''))
+  return extenderGeometryFromInputs(graph[id].inputs)
+}
+
+/**
+ * The same read as `readExtenderDefaults`, but off a plain inputs record
+ * rather than a graph — so the topbar can report the geometry the OPERATOR'S
+ * OWN overrides will actually render at (baked value merged with
+ * `Settings.extenderOverrides` — see `mergeExtenderInputs` in
+ * `extenderSettings.ts`), never only the graph's untouched baked value.
+ * Issue #30 was exactly this class of bug wearing a different disguise: the
+ * topbar must report what will ACTUALLY be sent, not a value that stopped
+ * being true the moment an override was set.
+ */
+export function extenderGeometryFromInputs(inputs: Record<string, unknown> | null | undefined): { width: number; height: number; steps: number } | null {
+  if (!inputs) return null
+  const m = /^(\d+)x(\d+)/i.exec(String(inputs.pass2_resolution ?? ''))
   if (!m) return null
-  const steps = Number(graph[id].inputs.pass2_steps)
+  const steps = Number(inputs.pass2_steps)
   return { width: Number(m[1]), height: Number(m[2]), steps: Number.isFinite(steps) ? steps : 0 }
 }
 
@@ -160,7 +175,7 @@ export const EXTENDER_FREE_FIELDS = ['prompt', 'duration', 'seed', 'seed_mode', 
  * a graph missing one of these (an older export) must hash the SAME default
  * the node itself would apply, or every such graph would look "changed"
  * against itself. */
-const EXTENDER_SIGNATURE_DEFAULTS: Record<string, unknown> = {
+export const EXTENDER_SIGNATURE_DEFAULTS: Record<string, unknown> = {
   pass2_lora: 'none',
   pass2_lora_strength: 1.0,
   pass2_lora_mode: 'stack on engine LoRA',
@@ -172,6 +187,26 @@ const EXTENDER_SIGNATURE_DEFAULTS: Record<string, unknown> = {
 
 const fieldValue = (inputs: Record<string, unknown>, field: string): unknown =>
   inputs[field] ?? EXTENDER_SIGNATURE_DEFAULTS[field] ?? null
+
+/**
+ * What the settings panel seeds every control from: the shipped graph's own
+ * baked value for each of the 28 signature fields, falling back to the SAME
+ * `EXTENDER_SIGNATURE_DEFAULTS` the guard itself falls back to for a field an
+ * older export omits — so the panel and the guard never disagree about what
+ * "the baked value" is for a field the graph doesn't literally carry. Never a
+ * hardcoded duplicate: swap the graph on disk and this follows it.
+ */
+export function readExtenderMasterInputs(graph: Record<string, ComfyNode> | null | undefined): Record<string, unknown> | null {
+  if (!graph) return null
+  const id = byClass(graph, EXTENDER_CLASS)
+  if (!id) return null
+  const inputs: Record<string, unknown> = {}
+  for (const field of EXTENDER_SIGNATURE_FIELDS) {
+    const v = fieldValue(graph[id].inputs, field)
+    if (v !== null) inputs[field] = v
+  }
+  return inputs
+}
 
 /**
  * A stable, cheap hash over exactly the node's own signature fields — NOT

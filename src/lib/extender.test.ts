@@ -6,11 +6,13 @@ import {
   buildExtenderGraph,
   buildExtenderRefsJson,
   extenderCostEstimate,
+  extenderGeometryFromInputs,
   extenderSignature,
   extenderSignatureDiff,
   parseExtenderPreviewInfo,
   pickExtenderVideo,
   readExtenderDefaults,
+  readExtenderMasterInputs,
   renumberExtenderNode,
 } from './extender'
 import type { ComfyNode } from './types'
@@ -455,4 +457,92 @@ test('readExtenderDefaults: null graph, no master node, or an unparseable resolu
     readExtenderDefaults({ 6: { class_type: 'MiniMaxH3MasterExtender', inputs: { pass2_resolution: 'not-a-size' } } }),
     null,
   )
+})
+
+test('extenderGeometryFromInputs reads the same shape straight off an inputs record, not just a graph', () => {
+  assert.deepStrictEqual(extenderGeometryFromInputs({ pass2_resolution: '960x544', pass2_steps: 5 }), { width: 960, height: 544, steps: 5 })
+  assert.equal(extenderGeometryFromInputs(null), null)
+  assert.equal(extenderGeometryFromInputs(undefined), null)
+})
+
+test('extenderGeometryFromInputs: an override merged onto the baked inputs changes the reported geometry — the issue #30 fix, generalised to overrides', () => {
+  const baked = { pass2_resolution: '1280x720', pass2_steps: 6 }
+  const withOverride = { ...baked, pass2_resolution: '960x544' }
+  assert.deepStrictEqual(extenderGeometryFromInputs(baked), { width: 1280, height: 720, steps: 6 })
+  assert.deepStrictEqual(extenderGeometryFromInputs(withOverride), { width: 960, height: 544, steps: 6 })
+})
+
+// ── readExtenderMasterInputs — the settings panel's seed values ────────────
+
+test('readExtenderMasterInputs reads every one of the 28 signature fields present on the graph', () => {
+  const inputs = readExtenderMasterInputs(fixtureGraph())
+  assert.ok(inputs)
+  assert.equal(inputs!.pass2_resolution, '1280x720')
+  assert.equal(inputs!.context_length, '22')
+  assert.equal(inputs!.sla_sparsity, 0.9)
+})
+
+test('readExtenderMasterInputs falls back to the node\'s own kwargs default for a field an older graph export omits', () => {
+  // The fixture graph predates pass2_lora/semantic_bridge/pass2_steps landing
+  // on the node — exactly the "older export" case EXTENDER_SIGNATURE_DEFAULTS
+  // exists for (see extender.ts's module comment).
+  const inputs = readExtenderMasterInputs(fixtureGraph())
+  assert.ok(inputs)
+  assert.equal(inputs!.pass2_lora, 'none')
+  assert.equal(inputs!.pass2_steps, 0)
+  assert.equal(inputs!.semantic_bridge_match, 'per_token')
+})
+
+test('readExtenderMasterInputs: null graph or no master node reads as null', () => {
+  assert.equal(readExtenderMasterInputs(null), null)
+  assert.equal(readExtenderMasterInputs({}), null)
+})
+
+// ── the settings panel's overrides, via buildExtenderGraph's existing argument ──
+//
+// Job 2 (2026-09-16): the panel never re-implements the guard — it only
+// feeds `overrides` into the SAME `buildExtenderGraph` call every render
+// path already makes, so these prove the existing mechanism carries the
+// panel's edits end to end, including through the guard.
+
+test('overrides reach the master node\'s inputs in the built graph', () => {
+  const built = buildExtenderGraph({
+    graph: fixtureGraph(),
+    nodeId: 'm_ov',
+    clips: [{ prompt: 'p', seconds: 5, seed: 1, validated: false }],
+    plates: [],
+    runMode: 'clip_by_clip',
+    overrides: { pass2_steps: 12, pass2_denoise: 0.4 },
+    validatedCount: 0,
+  })
+  assert.equal(built.graph.m_ov.inputs.pass2_steps, 12)
+  assert.equal(built.graph.m_ov.inputs.pass2_denoise, 0.4)
+})
+
+test('a settings-panel override to a signature field is PERMITTED when nothing is validated yet', () => {
+  const priorInputs = { ...fixtureGraph()['6'].inputs, refs_json: buildExtenderRefsJson([]) }
+  assert.doesNotThrow(() =>
+    buildExtenderGraph({
+      graph: fixtureGraph(), nodeId: 'm_a', clips: guardClips, plates: [], runMode: 'clip_by_clip',
+      overrides: { pass2_denoise: 0.4 },
+      priorMasterInputs: priorInputs, validatedCount: 0,
+    }),
+  )
+})
+
+test('a settings-panel override to a signature field is REFUSED once a clip is validated — the SAME guard, never a duplicate', () => {
+  const priorInputs = { ...fixtureGraph()['6'].inputs, refs_json: buildExtenderRefsJson([]) }
+  let caught: unknown
+  try {
+    buildExtenderGraph({
+      graph: fixtureGraph(), nodeId: 'm_a', clips: guardClips, plates: [], runMode: 'clip_by_clip',
+      overrides: { pass2_denoise: 0.4 },
+      priorMasterInputs: priorInputs, validatedCount: 4,
+    })
+  } catch (e) {
+    caught = e
+  }
+  assert.ok(caught instanceof ExtenderError)
+  assert.match((caught as Error).message, /pass2_denoise/)
+  assert.match((caught as Error).message, /4 validated clip\(s\)/)
 })

@@ -15,7 +15,7 @@ import { applyRecipe, framesForSeconds, oomRisk, parseWorkflow, recipeIssues } f
 import { EXTENDER_REF_SLOTS, ExtenderError, buildExtenderGraph, extenderCostEstimate, readExtenderDefaults } from '../lib/extender'
 import { readBakedLoraStack } from '../lib/loras'
 import type { ExtenderClipInput, ExtenderCostEstimate, ExtenderPlate, ExtenderPreviewInfo } from '../lib/extender'
-import { countFromIndex, dropFromIndex, dropInvalidatedAutoDraft } from '../lib/filmEdit'
+import { countFromIndex, dropFromIndex, dropInvalidatedAutoDraft, redoSeed, validatedClipAt } from '../lib/filmEdit'
 import type { PendingAutoDraft } from '../lib/filmEdit'
 import { cumulativeFilm, sceneWorkLabel } from '../lib/filmDisplay'
 import type { PaddedClip, SceneWorkLabel } from '../lib/filmDisplay'
@@ -388,6 +388,30 @@ export interface Api {
    * `continueFrom`), or starts a fresh one at scene 1.
    */
   renderExtender: () => Promise<void>
+  /**
+   * Prepare a REDO of one already-landed scene on the manual/composer chain
+   * (`renderExtender`'s own path) — brought back for the Master Extender per
+   * the 2026-09-16 brief ("redo a single scene" existed for Contex-Loop as
+   * "Replace scene" and was wrongly removed with it). Loads the scene's OWN
+   * prompt/film context into the composer and selects its predecessor as the
+   * new render's parent, so pressing the composer's existing "Make scene N"
+   * — unchanged — resubmits at exactly this same index, discarding every
+   * scene after it exactly as Continue-from-here already does. Nothing is
+   * sent by this call itself; see the module comment beside its definition.
+   * `keepSeed` reuses the scene's exact recorded seed instead of drawing a
+   * fresh one (see `lib/filmEdit.ts`'s `redoSeed`).
+   */
+  redoScene: (clipId: string, opts?: { keepSeed?: boolean }) => void
+  /**
+   * REDO one clip of a Break-down plan (`renderExtenderPlan`'s own path) —
+   * the ClipPlan-panel counterpart of `redoScene` above. Drops the `done`
+   * Clip record(s) at or after `index` for this plan's film RIGHT AWAY (so
+   * the cost preview — `extenderPlanPreview` — immediately shows the right
+   * resample/cache split), but sends nothing: the operator still presses
+   * "Render the next clip" / "Render every pending clip" to actually
+   * resubmit, exactly `renderExtenderPlan`'s existing contract, unchanged.
+   */
+  redoPlanClip: (index: number, opts?: { keepSeed?: boolean }) => void
   selectClip: (id: string) => void
   /** How many scenes of `clip`'s film, from `fromIndex` on, currently exist —
    * what a Continue-from-here targeting `fromIndex` would invalidate
@@ -508,6 +532,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // the studio's WORK clean (see the boot effect's own comment), and this is
   // exactly that — bookkeeping about work in progress, not configuration.
   const extenderFrozenRef = useRef<Record<string, Record<string, unknown>>>({})
+  /**
+   * A redo's seed choice, one-shot, keyed by `${nodeId}:${sceneIndex}` — set
+   * only by `redoScene`/`redoPlanClip` when `keepSeed` is asked for (never
+   * for the default fresh-seed case, which needs no override: dropping the
+   * old Clip record already forces the ordinary "nothing validated at this
+   * index" branch in `renderExtender`/`renderExtenderPlan`, which mints a
+   * fresh seed on its own). Read and deleted in the same breath by whichever
+   * of those two builds this scene's `clips_json` entry next, so a stale
+   * keep-seed request can never leak into an unrelated later render of the
+   * same index.
+   */
+  const redoSeedOverridesRef = useRef<Record<string, number>>({})
+  /**
+   * Carries a REDO's `nodeId` through the one case `parentClipId` cannot
+   * express: redoing scene 1 itself, which has no predecessor scene to read
+   * a `nodeId` off. Set by `redoScene`; consulted (and preferred over the
+   * ordinary parent-derived nodeId/sceneIndex) by `renderExtender`. Cleared
+   * by every OTHER session-preparing entry point (`prepareContinuation`,
+   * `continueFrom`) and once a redone scene actually lands, so a stray
+   * earlier redo can never leak into an unrelated later render — see the
+   * module comment on `redoScene`.
+   */
+  const redoTargetRef = useRef<{ nodeId: string; sceneIndex: number } | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const continuationAbortRef = useRef<AbortController | null>(null)
   // ── pipeline (background) authoring — Task 1, 2026-09-16 ──────────────
@@ -1399,6 +1446,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const prepareContinuation = useCallback((clipId: string): PreparedContinuation | null => {
     const source = clipsRef.current.find((c) => c.id === clipId)
     if (!source) return null
+    // An ordinary continuation always derives nodeId/sceneIndex from
+    // `parentClipId` — a stray redo target left over from an earlier,
+    // abandoned `redoScene` must not leak into it (see `redoTargetRef`'s
+    // module comment).
+    redoTargetRef.current = null
     const sourceFilm = source.film ?? DEFAULT_FILM
     const preparedFilm: FilmContext = {
       ...DEFAULT_FILM,
@@ -1536,7 +1588,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const nodeId = `m_${b.at.toString(36)}`
     const plan = b.clips.map((c) => {
       const v = [...session.versions].reverse().find((x) => x.clipIndex === c.index && PROMPT_STAGES.has(x.stage))
-      const validated = clips.some((x) => x.extender?.nodeId === nodeId && x.extender.sceneIndex === c.index && x.state === 'done')
+      const validated = !!validatedClipAt(clips, nodeId, c.index)
       return { index: c.index, title: c.title || `clip ${c.index}`, seconds: c.seconds, prompt: v?.text ?? '', validated }
     })
 
@@ -1778,11 +1830,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (prior) {
           return { title: p.title, prompt: prior.prompt, seconds: (prior.frames ?? 0) / 24, seed: prior.seed ?? 42, validated: true }
         }
+        // A REDO (`redoPlanClip`) may have left a one-shot keep-seed request
+        // for this exact index — see `redoSeedOverridesRef`'s module comment.
+        // Consumed here whether or not it was actually set (deleting an
+        // absent key is a no-op), so it can never leak into a later,
+        // unrelated submit of the same index.
+        const overrideKey = `${nodeId}:${p.index}`
+        const keptSeed = redoSeedOverridesRef.current[overrideKey]
+        delete redoSeedOverridesRef.current[overrideKey]
         return {
           title: p.title,
           prompt: p.prompt,
           seconds: p.seconds,
-          seed: settings.lockSeed ? settings.seed : Math.floor(Math.random() * 2 ** 31),
+          seed: redoSeed(keptSeed, keptSeed !== undefined, () => (settings.lockSeed ? settings.seed : Math.floor(Math.random() * 2 ** 31))),
           validated: false,
         }
       })
@@ -1937,6 +1997,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
    * validated-clip cache is a linear prefix, so a scene that no longer
    * follows what actually rendered before it can no longer be trusted as
    * "already sampled" either.
+   *
+   * This is also where `redoScene` lands: `redoTargetRef` (set only by a
+   * redo) is preferred over the ordinary parent-derived nodeId/sceneIndex,
+   * so redoing scene 1 of an existing film — no predecessor scene to read a
+   * `nodeId` off — still joins that SAME film instead of minting a new one.
+   * The seed similarly prefers a redo's one-shot keep-seed override
+   * (`redoSeedOverridesRef`) over the ordinary fresh-seed default.
    */
   const renderExtender = useCallback(async () => {
     if (!endpoint || !extenderGraph) {
@@ -1951,10 +2018,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     const parentId = sessionRef.current.parentClipId ?? null
     const parent = parentId ? clipsRef.current.find((c) => c.id === parentId) : undefined
-    const nodeId = parent?.extender?.nodeId ?? `m_${Date.now().toString(36)}`
-    const sceneIndex = (parent?.extender?.sceneIndex ?? 0) + 1
+    const redoTarget = redoTargetRef.current
+    const nodeId = redoTarget?.nodeId ?? parent?.extender?.nodeId ?? `m_${Date.now().toString(36)}`
+    const sceneIndex = redoTarget?.sceneIndex ?? (parent?.extender?.sceneIndex ?? 0) + 1
 
-    const seed = settings.lockSeed ? settings.seed : Math.floor(Math.random() * 2 ** 31)
+    const seedOverrideKey = `${nodeId}:${sceneIndex}`
+    const keptSeed = redoSeedOverridesRef.current[seedOverrideKey]
+    delete redoSeedOverridesRef.current[seedOverrideKey]
+    const seed = redoSeed(keptSeed, keptSeed !== undefined, () => (settings.lockSeed ? settings.seed : Math.floor(Math.random() * 2 ** 31)))
     const seconds = settings.seconds
     const frames = framesForSeconds(seconds, 24)
 
@@ -2090,6 +2161,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const advanced = { ...sessionRef.current, story: '', parentClipId: id, parentPrompt: prompt }
       setSession(advanced)
       sessionRef.current = advanced
+      // This scene's own `.extender` (just recorded on `donePatch`/the draft
+      // itself) is now the correct source for the NEXT render's nodeId — a
+      // redo's one-shot override has done its job and must not outlive it.
+      redoTargetRef.current = null
       landed = true
     } catch (e) {
       const msg = e instanceof ExtenderError ? e.message : String((e as Error).message || e)
@@ -2120,6 +2195,66 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [])
 
   /**
+   * See `Api.redoScene`'s module comment. Reached from scene N's OWN card
+   * (`ScenesStrip`'s "Redo this scene"), not its predecessor's — the
+   * difference from an ordinary "Continue from here" click on scene N-1 is
+   * only WHAT the composer is loaded with: that scene's own already-rendered
+   * prompt, ready to resubmit as-is or edited, rather than a fresh
+   * "Continue from clip N-1…" scaffold. Everything downstream — the
+   * predecessor-as-parent selection, the discard-count warning, the actual
+   * drop-and-resubmit — is `renderExtender`'s existing, unmodified machinery.
+   */
+  const redoScene = useCallback((clipId: string, opts?: { keepSeed?: boolean }) => {
+    const target = clipsRef.current.find((c) => c.id === clipId)
+    if (!target?.extender) return
+    const { nodeId, sceneIndex } = target.extender
+
+    const key = `${nodeId}:${sceneIndex}`
+    if (opts?.keepSeed) redoSeedOverridesRef.current[key] = target.seed ?? 0
+    else delete redoSeedOverridesRef.current[key]
+
+    redoTargetRef.current = { nodeId, sceneIndex }
+    const parent = clipsRef.current.find((c) => c.extender?.nodeId === nodeId && c.extender.sceneIndex === sceneIndex - 1) ?? null
+
+    const next: Session = {
+      ...sessionRef.current,
+      story: target.prompt,
+      film: target.film ?? DEFAULT_FILM,
+      parentClipId: parent?.id ?? null,
+      parentPrompt: parent?.prompt,
+    }
+    setSession(next)
+    sessionRef.current = next
+    setCurrentClipId(parent?.id ?? null)
+  }, [])
+
+  /**
+   * See `Api.redoPlanClip`'s module comment. Unlike `redoScene`, this drops
+   * the Clip record(s) immediately rather than deferring to the eventual
+   * render call — the ClipPlan panel has no per-scene render call to defer
+   * to (`renderExtenderPlan` always takes the whole plan), so the drop has
+   * to happen here for `extenderPlanPreview`'s cost line to show the right
+   * resample/cache split BEFORE the operator presses either of its two
+   * render buttons. This is still not "sending" anything: no ComfyUI job
+   * exists until one of those buttons is pressed next.
+   */
+  const redoPlanClip = useCallback((index: number, opts?: { keepSeed?: boolean }) => {
+    const b = sessionRef.current.breakdown
+    if (!b) return
+    const nodeId = `m_${b.at.toString(36)}`
+    const key = `${nodeId}:${index}`
+
+    if (opts?.keepSeed) {
+      const prior = validatedClipAt(clipsRef.current, nodeId, index)
+      if (prior) redoSeedOverridesRef.current[key] = prior.seed ?? 0
+    } else {
+      delete redoSeedOverridesRef.current[key]
+    }
+
+    setClips((prev) => dropFromIndex(prev, nodeId, index))
+  }, [])
+
+  /**
    * Close the loop end to end.
    *
    * ONE model call now, not three (2026-09-16, "perf: a continuation is one
@@ -2144,6 +2279,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     async (clipId: string, note?: string, opts?: { auto?: boolean }) => {
       const c = clipsRef.current.find((x) => x.id === clipId)
       if (!c) return
+      // Same reasoning as `prepareContinuation` above — this is an ordinary
+      // continuation, never a redo, so any leftover redo target is stale.
+      redoTargetRef.current = null
       const url = clipUrl(c)
       if (!url && !c.lastFrame) {
         setError('That clip has no file yet.')
@@ -2461,6 +2599,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     clipUrl,
     render,
     renderExtender,
+    redoScene,
+    redoPlanClip,
     selectClip,
     scenesFrom,
     continueFrom,

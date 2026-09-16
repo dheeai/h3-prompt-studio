@@ -12,9 +12,21 @@
  * validated-clip cache is a linear prefix, so a scene that no longer follows
  * what actually rendered before it can no longer be trusted as "already
  * sampled" either.
+ *
+ * Also carries the REDO primitives (2026-09-16, "bring back redo a single
+ * scene" — see `state.tsx`'s `redoScene`/`redoPlanClip`): redoing scene N is
+ * the SAME linear-prefix invalidation as Continue-from-here, aimed at N
+ * itself rather than at N+1 — `dropFromIndex(clips, nodeId, N)` is the whole
+ * mechanism, no separate redo-specific drop function needed. What redo adds
+ * on top is `validatedClipAt` (the one "is this scene still validated?"
+ * predicate `renderExtenderPlan` and its own cost preview must never answer
+ * differently — see the module comment on `Clip.extender`) and `redoSeed`
+ * (a redo must not silently resend the exact seed it already rendered with,
+ * or it is a no-op that costs GPU time for an identical clip).
  */
 
 type FilmedClip = { extender?: { nodeId: string; sceneIndex: number } }
+type StatedClip = FilmedClip & { state?: string }
 
 /** Keep every clip EXCEPT one belonging to `nodeId` at or after `fromIndex` —
  * the local-state half of "a film is a linear prefix": a scene at or after
@@ -30,6 +42,34 @@ export function dropFromIndex<T extends FilmedClip>(clips: readonly T[], nodeId:
  * is nothing to lose. */
 export function countFromIndex(clips: readonly FilmedClip[], nodeId: string, fromIndex: number): number {
   return clips.filter((c) => c.extender?.nodeId === nodeId && c.extender.sceneIndex >= fromIndex).length
+}
+
+/**
+ * The landed `done` Clip for `nodeId` at `sceneIndex`, if one exists — the
+ * single definition of "this scene is validated" shared by
+ * `extenderPlanPreview`'s cost/status preview and `renderExtenderPlan`'s
+ * actual resubmit (`priorFor`), so the two can never drift apart (they used
+ * to be two separately-written copies of the same filter). After a redo
+ * drops the Clip records from `sceneIndex` on (`dropFromIndex`), this
+ * correctly returns `undefined` for every dropped index and the untouched
+ * clip for every index still before it.
+ */
+export function validatedClipAt<T extends StatedClip>(clips: readonly T[], nodeId: string, sceneIndex: number): T | undefined {
+  return clips.find((c) => c.extender?.nodeId === nodeId && c.extender.sceneIndex === sceneIndex && c.state === 'done')
+}
+
+/**
+ * The seed a redo should submit for one scene. `keepSeed` reuses the scene's
+ * own previously-recorded seed exactly — the right choice only when the
+ * PROMPT changed and the operator wants to see it against the same noise.
+ * Otherwise (the default) a fresh seed, via the injected `randomSeed` —
+ * identical prompt + identical seed + identical settings returns a
+ * byte-identical clip, so a redo that does not change the seed would cost
+ * GPU time for nothing (the 2026-09-16 brief). `randomSeed` is a parameter
+ * rather than `Math.random()` inline so this stays deterministic under test.
+ */
+export function redoSeed(priorSeed: number | undefined, keepSeed: boolean | undefined, randomSeed: () => number): number {
+  return keepSeed ? (priorSeed ?? 0) : randomSeed()
 }
 
 /** A pipeline-authored draft, not yet rendered, pending at the position it

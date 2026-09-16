@@ -127,16 +127,29 @@ export function ClipPlan() {
 /**
  * One Master Extender job for the whole plan — the studio's only multi-clip
  * render path. There is no frame accounting to disclose (no overlap tax —
- * see `lib/extender.ts`'s module comment) and no per-scene "redo" action:
- * the node itself always takes the WHOLE plan, and `run_mode` (one clip vs.
- * all pending) is the only shape choice. The cost line — clip count, total
- * seconds, how many will actually sample versus come from the box's own
- * cache — is shown before either button is pressed, per the brief.
+ * see `lib/extender.ts`'s module comment): the node always takes the WHOLE
+ * plan, and `run_mode` (one clip vs. all pending) is the only shape choice.
+ * The cost line — clip count, total seconds, how many will actually sample
+ * versus come from the box's own cache — is shown before either button is
+ * pressed, per the brief, and updates immediately after a "Redo this scene"
+ * below (`redoPlanClip` drops the cached record right away — see its module
+ * comment in `state.tsx`) rather than only once the next submit lands.
+ *
+ * "Redo this scene" (brought back 2026-09-16, alongside the same action on
+ * `ScenesStrip` — it existed for Contex-Loop as "Redo this scene" and was
+ * wrongly dropped with it) is per-row, shown only once a clip is actually
+ * `validated · cached` — redoing an unvalidated one is meaningless, it is
+ * already going to sample. Confirmed inline (append-only: it also discards
+ * every LATER clip, since none of them still follow what would render at
+ * this position) before `redoPlanClip` touches anything; the actual
+ * resubmit still needs one of the two buttons below, unchanged.
  */
 function ExtenderPlanSubmit() {
   const app = useApp()
-  const { extenderPlanPreview, extenderReady, rendering, renderExtenderPlan, extenderProgress } = app
+  const { extenderPlanPreview, extenderReady, rendering, renderExtenderPlan, redoPlanClip, extenderProgress } = app
   const [busy, setBusy] = useState(false)
+  const [confirmingRedo, setConfirmingRedo] = useState<number | null>(null)
+  const [keepSeedFor, setKeepSeedFor] = useState<Record<number, boolean>>({})
   if (!extenderPlanPreview) return null
 
   const { clips, cost, issues } = extenderPlanPreview
@@ -151,6 +164,11 @@ function ExtenderPlanSubmit() {
     }
   }
 
+  const doRedo = (index: number) => {
+    redoPlanClip(index, { keepSeed: !!keepSeedFor[index] })
+    setConfirmingRedo(null)
+  }
+
   return (
     <div className="card" style={{ marginTop: 4, marginBottom: 16 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 9 }}>
@@ -162,18 +180,54 @@ function ExtenderPlanSubmit() {
       </div>
 
       <div style={{ marginTop: 10 }}>
-        {clips.map((c) => (
-          <div key={c.index} style={{ display: 'flex', alignItems: 'baseline', gap: 9, padding: '4px 0', borderBottom: '1px solid var(--rule)' }}>
-            <span className="tok" style={{ width: 18, flex: '0 0 auto' }}>{c.index}</span>
-            <span style={{ fontSize: 11.5, flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {c.title}
-            </span>
-            <span className="tok">{c.seconds}s</span>
-            <span className="tok" style={{ color: c.validated ? 'var(--grn)' : 'var(--ink3)' }}>
-              {c.validated ? 'validated · cached' : 'will sample'}
-            </span>
+        {clips.map((c) => {
+          // How many currently-cached clips a redo of THIS index would
+          // discard — itself plus every later one still validated (append-
+          // only; see the module comment above).
+          const discarded = clips.filter((x) => x.index >= c.index && x.validated).length
+          return (
+          <div key={c.index} style={{ padding: '4px 0', borderBottom: '1px solid var(--rule)' }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 9 }}>
+              <span className="tok" style={{ width: 18, flex: '0 0 auto' }}>{c.index}</span>
+              <span style={{ fontSize: 11.5, flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {c.title}
+              </span>
+              <span className="tok">{c.seconds}s</span>
+              <span className="tok" style={{ color: c.validated ? 'var(--grn)' : 'var(--ink3)' }}>
+                {c.validated ? 'validated · cached' : 'will sample'}
+              </span>
+              {c.validated && confirmingRedo !== c.index && (
+                <button className="btn sm ghost" disabled={!!rendering} onClick={() => setConfirmingRedo(c.index)}>
+                  Redo this scene
+                </button>
+              )}
+            </div>
+            {confirmingRedo === c.index && (
+              <div style={{ marginTop: 6, marginLeft: 27 }}>
+                <div className="tok" style={{ color: 'var(--ox)', display: 'block' }}>
+                  Redoing scene {c.index} discards {discarded} currently-cached clip{discarded === 1 ? '' : 's'}
+                  {discarded > 1 ? ` (scene ${c.index}-${clips[clips.length - 1].index})` : ''} — they no longer
+                  follow what would render at this position. Nothing is sent until you press a render button below.
+                </div>
+                <label className="tok" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 5 }}>
+                  <input
+                    type="checkbox"
+                    checked={!!keepSeedFor[c.index]}
+                    onChange={(e) => setKeepSeedFor((prev) => ({ ...prev, [c.index]: e.target.checked }))}
+                  />
+                  keep the recorded seed on redo (unchecked draws a fresh one)
+                </label>
+                <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+                  <button className="btn sm" onClick={() => doRedo(c.index)}>
+                    Discard {discarded} and redo scene {c.index}
+                  </button>
+                  <button className="btn sm ghost" onClick={() => setConfirmingRedo(null)}>Cancel</button>
+                </div>
+              </div>
+            )}
           </div>
-        ))}
+          )
+        })}
       </div>
 
       {issues.length > 0 && (

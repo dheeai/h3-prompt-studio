@@ -13,8 +13,8 @@ const WORK_DOT: Record<string, string> = {
 
 /**
  * "2. THE SCENES" — a horizontal strip beneath the film. Selecting a scene
- * puts its actions ON it: Continue from here, Prompt. There is no separate
- * panel for any of this.
+ * puts its actions ON it: Continue from here, Redo this scene, Prompt.
+ * There is no separate panel for any of this.
  *
  * Every scene is a valid Continue-from-here target, not just the newest
  * (founder addition, 2026-09-07: "Continue from here should be allowed on
@@ -24,11 +24,20 @@ const WORK_DOT: Record<string, string> = {
  * before it can no longer be trusted as "already sampled" either. The count
  * is shown and confirmed before anything is sent, free when there is
  * nothing to lose.
+ *
+ * "Redo this scene" (brought back 2026-09-16 — it existed for Contex-Loop as
+ * "Replace scene" and was wrongly dropped with it) is the SAME discard, aimed
+ * at this scene itself rather than the one after it: `redoScene` loads the
+ * composer with this scene's OWN prompt and this film's PARENT clip as the
+ * new render's parent, so the composer's existing "Discard K and make scene
+ * N" gate — unchanged — is what actually confirms and sends it. Nothing here
+ * sends anything by itself.
  */
 export function ScenesStrip() {
-  const { extenderFilm: film, rendering, gpuBusy, scenesFrom, prepareContinuation, pendingAutoDraft } = useApp()
+  const { extenderFilm: film, rendering, gpuBusy, scenesFrom, prepareContinuation, redoScene, pendingAutoDraft } = useApp()
   const [expanded, setExpanded] = useState<string | null>(null)
   const [showPrompt, setShowPrompt] = useState<string | null>(null)
+  const [keepSeedFor, setKeepSeedFor] = useState<Record<string, boolean>>({})
 
   if (!film) return null
   const scenes = film.scenes
@@ -37,6 +46,11 @@ export function ScenesStrip() {
 
   const doContinue = (row: FilmSceneRow) => {
     prepareContinuation(row.clip.id)
+    setExpanded(null)
+  }
+
+  const doRedo = (row: FilmSceneRow) => {
+    redoScene(row.clip.id, { keepSeed: !!keepSeedFor[row.clip.id] })
     setExpanded(null)
   }
 
@@ -70,7 +84,13 @@ export function ScenesStrip() {
                   <span className="tok">{secondsLabel(row.delivered)}</span>
                 </div>
               </button>
-              {isOpen && (
+              {isOpen && (() => {
+                // Inclusive of this scene itself — redoing it resamples it
+                // AND every scene after it (append-only; see the module
+                // comment), while every scene before it is served from cache.
+                const toResample = scenesFrom(row.clip.id, row.sceneIndex)
+                const fromCache = scenes.length - toResample
+                return (
                 <div className="scene-card-actions">
                   <div className="tok" style={{ marginBottom: 7 }}>
                     {deliveredVsAskedLine(row)} · seed {row.clip.seed} · {row.label}
@@ -79,9 +99,25 @@ export function ScenesStrip() {
                     <button className="btn sm" disabled={busy} onClick={() => doContinue(row)}>
                       Continue from here
                     </button>
+                    <button className="btn sm ghost" disabled={busy} onClick={() => doRedo(row)}>
+                      Redo this scene
+                    </button>
                     <button className="btn sm ghost" onClick={() => setShowPrompt(showPrompt === row.clip.id ? null : row.clip.id)}>
                       {showPrompt === row.clip.id ? 'Hide prompt' : 'Prompt'}
                     </button>
+                  </div>
+                  <label className="tok" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 6 }}>
+                    <input
+                      type="checkbox"
+                      checked={!!keepSeedFor[row.clip.id]}
+                      onChange={(e) => setKeepSeedFor((prev) => ({ ...prev, [row.clip.id]: e.target.checked }))}
+                    />
+                    keep seed {row.clip.seed} on redo (unchecked draws a fresh one)
+                  </label>
+                  <div className="tok" style={{ display: 'block', marginTop: 4 }}>
+                    Redo resamples scene {row.sceneIndex}
+                    {toResample > 1 ? `-${scenes.length}` : ''} ({toResample} clip{toResample === 1 ? '' : 's'}) ·{' '}
+                    {fromCache} from cache
                   </div>
                   {laterAfterContinue > 0 && (
                     <div className="tok" style={{ color: 'var(--ox)', marginTop: 6, display: 'block' }}>
@@ -97,7 +133,8 @@ export function ScenesStrip() {
                     <div className="scene-card-prompt tok">{row.clip.prompt}</div>
                   )}
                 </div>
-              )}
+                )
+              })()}
             </div>
           )
         })}

@@ -14,6 +14,7 @@ import {
   renumberExtenderNode,
 } from './extender'
 import type { ComfyNode } from './types'
+import { dropFromIndex, redoSeed, validatedClipAt } from './filmEdit'
 
 /** A minimal stand-in for the shipped graph — one extender node ("6"), one
  * Final Decode ("7") that references it by `["6", 0]`, one SaveVideo ("9")
@@ -194,6 +195,138 @@ test('the signature is unaffected by FREE fields (prompt/duration/seed/title/cli
   const inputs = { ...fixtureGraph()['6'].inputs, refs_json: buildExtenderRefsJson([]) }
   assert.equal(extenderSignature(inputs), extenderSignature(inputs))
   assert.deepEqual(extenderSignatureDiff(inputs, inputs), [])
+})
+
+// ── redo a single scene (2026-09-16 brief) ─────────────────────────────────
+//
+// The whole mechanism: drop the `done` Clip records for sceneIndex >= N
+// (`dropFromIndex`, `filmEdit.ts`), then rebuild `clips_json` the exact same
+// way `renderExtenderPlan` already does — `validatedClipAt` decides
+// validated/not, `redoSeed` decides the seed. No new build path.
+
+interface FakeFilmClip {
+  extender: { nodeId: string; sceneIndex: number }
+  state: string
+  prompt: string
+  seconds: number
+  seed: number
+}
+
+function landedFilm(nodeId: string, n: number): FakeFilmClip[] {
+  return Array.from({ length: n }, (_, i) => ({
+    extender: { nodeId, sceneIndex: i + 1 },
+    state: 'done',
+    prompt: `clip ${i + 1}`,
+    seconds: 5,
+    seed: 100 + i,
+  }))
+}
+
+/** Exactly `renderExtenderPlan`'s own `extClips` construction — a validated
+ * clip resends its own recorded prompt/seconds/seed; an unvalidated one uses
+ * the plan's current prompt and a redo-aware seed. Kept here rather than
+ * imported so this test exercises the CONTRACT (what the real builder must
+ * do), not the private closure inside `state.tsx`. */
+function planExtClips(
+  clips: readonly FakeFilmClip[],
+  nodeId: string,
+  planLength: number,
+  opts: { keepSeed?: Map<number, number> } = {},
+) {
+  return Array.from({ length: planLength }, (_, i) => {
+    const index = i + 1
+    const prior = validatedClipAt(clips, nodeId, index)
+    if (prior) return { prompt: prior.prompt, seconds: prior.seconds, seed: prior.seed, validated: true }
+    // What `redoScene`/`redoPlanClip` capture at the moment of the redo click
+    // (`target.seed`, read BEFORE the Clip record is dropped) — never
+    // re-derived from the post-drop clip list, which no longer has it.
+    const keptSeed = opts.keepSeed?.get(index)
+    return { prompt: `current plan clip ${index}`, seconds: 5, seed: redoSeed(keptSeed, keptSeed !== undefined, () => 999), validated: false }
+  })
+}
+
+test('redoing scene 3 of a 5-scene plan: clips_json carries validated=true for 1-2 and validated=false for 3-5', () => {
+  const nodeId = 'm_test'
+  const landed = landedFilm(nodeId, 5)
+  const afterRedo = dropFromIndex(landed, nodeId, 3)
+
+  const extClips = planExtClips(afterRedo, nodeId, 5)
+  const json = JSON.parse(buildExtenderClipsJson(extClips)) as Array<Record<string, unknown>>
+
+  assert.deepEqual(json.map((c) => c.validated), [true, true, false, false, false])
+  // Untouched scenes resend exactly what they recorded — never the plan's
+  // (possibly since-edited) current text.
+  assert.equal(json[0].prompt, 'clip 1')
+  assert.equal(json[1].prompt, 'clip 2')
+  // Redone scenes pick up the plan's CURRENT prompt, not the stale rendered one.
+  assert.equal(json[2].prompt, 'current plan clip 3')
+})
+
+test('a redo gets a fresh seed by default', () => {
+  const nodeId = 'm_test'
+  const landed = landedFilm(nodeId, 3)
+  const afterRedo = dropFromIndex(landed, nodeId, 2)
+  const extClips = planExtClips(afterRedo, nodeId, 3)
+  assert.notEqual(extClips[1].seed, 101) // scene 2's old recorded seed
+  assert.equal(extClips[1].seed, 999) // the injected "fresh" seed
+})
+
+test('a redo preserves the seed under keep-seed', () => {
+  const nodeId = 'm_test'
+  const landed = landedFilm(nodeId, 3)
+  const oldSeed = landed[1].seed // captured before the drop, same as redoScene/redoPlanClip do
+  const afterRedo = dropFromIndex(landed, nodeId, 2)
+  const extClips = planExtClips(afterRedo, nodeId, 3, { keepSeed: new Map([[2, oldSeed]]) })
+  assert.equal(extClips[1].seed, 101) // scene 2's own recorded seed, unchanged
+})
+
+test('extenderCostEstimate after a redo reports the right resample/cache split', () => {
+  const nodeId = 'm_test'
+  const landed = landedFilm(nodeId, 5)
+  const afterRedo = dropFromIndex(landed, nodeId, 3)
+  const extClips = planExtClips(afterRedo, nodeId, 5)
+  const est = extenderCostEstimate(extClips.map((c) => ({ seconds: c.seconds, validated: c.validated })))
+  assert.deepEqual(est, { clipCount: 5, totalSeconds: 25, toSample: 3, fromCache: 2 })
+})
+
+test('the signature guard still refuses a genuine settings change after a redo lowered validatedCount', () => {
+  // A redo of scene 3 of a 5-scene film lowers validatedCount from 5 to 2 —
+  // the guard must still fire at the LOWER count, naming exactly that many
+  // clips at risk, never treating the redo itself as license to skip it.
+  const priorInputs = { ...fixtureGraph()['6'].inputs, refs_json: buildExtenderRefsJson([]) }
+  const g2 = fixtureGraph()
+  g2['6'].inputs.pass2_denoise = 0.3
+  let caught: unknown
+  try {
+    buildExtenderGraph({
+      graph: g2, nodeId: 'm_a', clips: guardClips, plates: [], runMode: 'full_batch',
+      priorMasterInputs: priorInputs, validatedCount: 2,
+    })
+  } catch (e) {
+    caught = e
+  }
+  assert.ok(caught instanceof ExtenderError)
+  assert.match((caught as Error).message, /2 validated clip\(s\)/)
+})
+
+test('a redo that changes only clips_json/seed (never a signature field) does not trip the guard', () => {
+  const inputs = { ...fixtureGraph()['6'].inputs, refs_json: buildExtenderRefsJson([]) }
+  const first = buildExtenderGraph({ graph: fixtureGraph(), nodeId: 'm_a', clips: guardClips, plates: [], runMode: 'clip_by_clip', validatedCount: 0 })
+  // Simulate: 3 clips landed, then scene 2 was redone (dropped + resubmitted
+  // with a fresh seed) — validatedCount drops from 3 to 1, but nothing in
+  // master.inputs itself (the settings the guard actually hashes) moved.
+  assert.doesNotThrow(() =>
+    buildExtenderGraph({
+      graph: fixtureGraph(), nodeId: 'm_a',
+      clips: [
+        { prompt: 'clip 1', seconds: 5, seed: 1, validated: true },
+        { prompt: 'redone clip 2', seconds: 5, seed: 999, validated: false },
+      ],
+      plates: [], runMode: 'full_batch',
+      priorMasterInputs: { ...inputs, refs_json: first.refsJson },
+      validatedCount: 1,
+    }),
+  )
 })
 
 // ── clips_json / refs_json ─────────────────────────────────────────────────

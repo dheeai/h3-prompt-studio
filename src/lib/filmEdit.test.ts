@@ -1,11 +1,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { countFromIndex, dropFromIndex, dropInvalidatedAutoDraft } from './filmEdit'
+import { countFromIndex, dropFromIndex, dropInvalidatedAutoDraft, redoSeed, validatedClipAt } from './filmEdit'
 
-type FakeClip = { id: string; extender?: { nodeId: string; sceneIndex: number } }
+type FakeClip = { id: string; state?: string; extender?: { nodeId: string; sceneIndex: number } }
 
-function scene(id: string, nodeId: string, sceneIndex: number): FakeClip {
-  return { id, extender: { nodeId, sceneIndex } }
+function scene(id: string, nodeId: string, sceneIndex: number, state: string = 'done'): FakeClip {
+  return { id, state, extender: { nodeId, sceneIndex } }
 }
 
 // ── dropFromIndex / countFromIndex — the linear-prefix invalidation ────────
@@ -76,4 +76,48 @@ test('dropInvalidatedAutoDraft: writing an EARLIER, unrelated scene leaves a lat
   const versions = [{ id: 'v-draft-3' }]
   const result = dropInvalidatedAutoDraft(versions, { versionId: 'v-draft-3', sceneIndex: 3 }, 4)
   assert.equal(result.discarded, false)
+})
+
+// ── redo a single scene — validatedClipAt / redoSeed ───────────────────────
+
+test('redoing scene 3 of a 5-scene film: dropFromIndex + validatedClipAt marks 3..5 unvalidated, leaves 1..2 validated', () => {
+  const clips = [1, 2, 3, 4, 5].map((n) => scene(`c${n}`, 'film-a', n))
+  const after = dropFromIndex(clips, 'film-a', 3)
+
+  assert.ok(validatedClipAt(after, 'film-a', 1))
+  assert.ok(validatedClipAt(after, 'film-a', 2))
+  assert.equal(validatedClipAt(after, 'film-a', 3), undefined)
+  assert.equal(validatedClipAt(after, 'film-a', 4), undefined)
+  assert.equal(validatedClipAt(after, 'film-a', 5), undefined)
+})
+
+test('validatedClipAt ignores a clip that exists at that index but never landed (queued/failed)', () => {
+  const clips = [scene('c1', 'film-a', 1, 'done'), scene('c2', 'film-a', 2, 'failed')]
+  assert.ok(validatedClipAt(clips, 'film-a', 1))
+  assert.equal(validatedClipAt(clips, 'film-a', 2), undefined)
+})
+
+test('validatedClipAt is unaffected by a different film sharing the same scene index', () => {
+  const clips = [scene('c1', 'film-a', 1), scene('c2', 'film-b', 1)]
+  assert.equal(validatedClipAt(clips, 'film-nonexistent', 1), undefined)
+  assert.ok(validatedClipAt(clips, 'film-b', 1))
+})
+
+test('redoSeed: default (no keepSeed) draws a fresh seed and ignores the prior one', () => {
+  assert.equal(redoSeed(42, false, () => 999), 999)
+  assert.equal(redoSeed(42, undefined, () => 999), 999)
+})
+
+test('redoSeed: keepSeed reuses the prior seed exactly, never drawing a fresh one', () => {
+  let drawn = false
+  const seed = redoSeed(42, true, () => {
+    drawn = true
+    return 999
+  })
+  assert.equal(seed, 42)
+  assert.equal(drawn, false)
+})
+
+test('redoSeed: keepSeed with no prior seed on record falls back to 0, same default buildExtenderClipsJson elsewhere applies', () => {
+  assert.equal(redoSeed(undefined, true, () => 999), 0)
 })

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useApp } from '../app/state'
 import { inputUrl, listBoxInputs, THUMB_PREVIEW } from '../lib/comfy'
-import { REF_CAPS } from '../lib/recipe'
+import { REF_CAPS } from '../lib/geometry'
 import { analyzeSubjectImage, composeSubjectJob, defaultJobForSubjectKind } from '../lib/subject'
 import type { SubjectKind } from '../lib/subject'
 import type { ComfyEndpoint, Plate } from '../lib/types'

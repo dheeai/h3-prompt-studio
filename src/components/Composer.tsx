@@ -6,7 +6,7 @@ import { LoraStackEditor } from './LoraStackEditor'
 import { DraftingStatus } from './DraftingStatus'
 import { listLoraNames } from '../lib/comfy'
 import { localLoraStackOverride } from '../lib/loras'
-import { framesForSeconds } from '../lib/recipe'
+import { framesForSeconds } from '../lib/geometry'
 
 function autosize(el: HTMLTextAreaElement | null) {
   if (!el) return

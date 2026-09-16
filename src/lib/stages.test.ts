@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { DEFAULT_TEMPLATES, continuationFrameBlock, durationBlock, fillTemplate, fillTemplateWithDuration } from './stages'
-import { framesForSeconds } from './recipe'
+import { framesForSeconds } from './geometry'
 
 test('durationBlock states the ACTUAL grid-snapped length, not the chosen one', () => {
   // 5s -> snapFrames(120) = 124 frames = 5.167s. The prompt must carry 5.167s, because

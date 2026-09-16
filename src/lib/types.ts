@@ -149,18 +149,19 @@ export interface FilmContext {
 }
 
 /**
- * One entry of the Contex-Loop style-stack (`LTX_lora_loader.stack_data`) —
+ * One entry of a workflow's style-stack (`LTX_lora_loader.stack_data`) —
  * the SELECTABLE LoRA slot, distinct from the accelerator LoRA stamped into
  * `LoraLoaderBypassModelOnly` (`chain.ts`'s `CANONICAL_TURBO_LORA`), which is
  * never user-editable. `lora` is the exact filename ComfyUI reported — some
- * are percent-encoded (`style gamma%20-%20...`) — and must be carried byte-exact;
- * never decoded or re-encoded, or the box will not find the file on disk.
+ * are percent-encoded (`Neon%20Skyline%20Style...`) — and must be carried
+ * byte-exact; never decoded or re-encoded, or the box will not find the file
+ * on disk.
  */
 export interface LoraStackEntry {
   lora: string
-  /** 0-1 — the range the workflow's own baked-in stack already uses (style alpha
-   * @ 0.5). Nothing in the node's schema documents a wider range accepting
-   * >1, so the studio's editor caps here. */
+  /** 0-1 — the range a workflow's own baked-in stack already uses. Nothing
+   * in the node's schema documents a wider range accepting >1, so the
+   * studio's editor caps here. */
   strength: number
   on: boolean
 }

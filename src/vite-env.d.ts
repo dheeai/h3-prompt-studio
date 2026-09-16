@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
-  /** Local-only default style stack — see `localLoraStackOverride` in `lib/chain.ts`.
+  /** Local-only default style stack — see `localLoraStackOverride` in `lib/loras.ts`.
    * Set in a gitignored `.env.local`; absent from the public GitHub Pages build. */
   readonly VITE_LOCAL_LORA_STACK?: string
   /** Local-only ComfyUI base URL, e.g. a `tailscale serve` HTTPS front. Added

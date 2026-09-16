@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useApp } from '../app/state'
 import { LoraStackEditor } from './LoraStackEditor'
 import { listLoraNames } from '../lib/comfy'
-import { localLoraStackOverride, planNeedsPerSceneLoraSplit, readBakedLoraStack } from '../lib/chain'
+import { localLoraStackOverride, planNeedsPerSceneLoraSplit, readBakedLoraStack } from '../lib/loras'
 import { clipsNeedingPrompt } from '../lib/studio-workflow'
 import { latestPromptForClip } from '../lib/stages'
 
@@ -20,7 +20,6 @@ export function ClipPlan() {
   const { breakdown, versions, streaming, clips, chainPlanPreview, renderChainPlan, rendering, chainRecipe, endpoint } = app
   const [loraNames, setLoraNames] = useState<string[]>([])
   const [loraErr, setLoraErr] = useState<string | null>(null)
-  const [allowExplicit, setAllowExplicit] = useState(false)
 
   // Fetched once per endpoint, shared by every clip's editor — an
   // /object_info lookup, on the light_paths list, so it never forces a GPU
@@ -60,11 +59,6 @@ export function ClipPlan() {
     <div style={{ padding: '4px 26px 0' }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 7 }}>
         <span className="lbl">Clip plan{breakdown.spine ? ` — ${breakdown.spine}` : ''}</span>
-        <div style={{ flexGrow: 1 }} />
-        <label className="tok" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
-          <input type="checkbox" checked={allowExplicit} onChange={(e) => setAllowExplicit(e.target.checked)} />
-          show explicit-content LoRAs
-        </label>
       </div>
       {loraErr && <div className="tok" style={{ display: 'block', marginBottom: 7, color: 'var(--ox)' }}>{loraErr}</div>}
       {breakdown.clips.map((c) => {
@@ -138,7 +132,6 @@ export function ClipPlan() {
               stack={c.loraStack}
               defaultStack={defaultStack}
               available={loraNames}
-              allowExplicit={allowExplicit}
             />
           </div>
         )

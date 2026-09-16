@@ -1,6 +1,7 @@
 import { REF_CAPS, framesForSeconds } from './recipe'
 import { padForOverlap, snapUp } from './frames'
 import type { PaddedClip } from './frames'
+import { ACCELERATOR_LORA_RE, serializeLoraStack } from './loras'
 import type { ComfyNode, LoraStackEntry } from './types'
 
 /**
@@ -250,117 +251,6 @@ function applyUnetOverride(g: Record<string, ComfyNode>, name: string): void {
   const k = byClass(g, UNET_LOADER_CLASS)
   if (!k) return
   g[k].inputs.unet_name = name
-}
-
-/**
- * Every LoRA name matching this is an ACCELERATOR — distilled-step or
- * turbo-family — never a style choice. Offering one of these in the
- * selectable style stack invites the corrupted-render failure
- * `chainMinSteps` exists for (an accelerator LoRA sampled at the wrong step
- * count), so this is checked both at the UI layer (`selectableStyleLoras`)
- * and defensively at build time (`buildChainGraph` refuses one here even if
- * something upstream let it through).
- */
-export const ACCELERATOR_LORA_RE = /turbo|lightx2v/i
-
-/** Explicit-content style LoRAs — gated behind an opt-in toggle, off by
- * default, same shape as h3-shots' `H3_NO_TORPEDO`/`H3_NO_VAGINA`/`H3_NO_PENIS`
- * env gates (this is a browser app with no env vars, so the gate is a UI
- * toggle instead). style alpha joined this list 2026-09-07 — it is the NSFW LoRA
- * the shipped workflow used to bake in by default (see `stack_data` on the
- * shipped `LTX_lora_loader`, now empty); it must not be offered by default
- * either. */
-export const EXPLICIT_LORA_RE = /style gamma|style delta|style beta|style epsilon|style alpha/i
-
-/** The style LoRAs worth offering in the picker: never an accelerator, and
- * explicit-content ones only when the operator has opted in. */
-export function selectableStyleLoras(all: string[], opts: { allowExplicit: boolean }): string[] {
-  return all.filter((name) => !ACCELERATOR_LORA_RE.test(name) && (opts.allowExplicit || !EXPLICIT_LORA_RE.test(name)))
-}
-
-/** Serialize a style-stack selection into the exact `stack_data` shape the
- * Contex-Loop pack's `LTX_lora_loader` parses — `str`/`v`/`a`/`t`, not
- * `strength`, matching h3-shots' own baked workflows byte-for-byte so a
- * filename with `%20` in it survives round-trip untouched. */
-export function serializeLoraStack(stack: LoraStackEntry[]): string {
-  return JSON.stringify(stack.map((e) => ({ on: e.on, lora: e.lora, str: e.strength, v: 1, a: 1, t: 1 })))
-}
-
-/** Parse a `stack_data`-shaped JSON string (`serializeLoraStack`'s own output,
- * or whatever a workflow file / env var already carries) into `LoraStackEntry[]`.
- * Never throws: anything malformed, or not an array, just reads as empty. Shared
- * by `readBakedLoraStack` (a graph's own baked default) and `localLoraStackOverride`
- * (the operator's own machine-local default). */
-function parseLoraStackData(raw: string): LoraStackEntry[] {
-  try {
-    const parsed = JSON.parse(raw) as Array<{ on?: unknown; lora?: unknown; str?: unknown }>
-    if (!Array.isArray(parsed)) return []
-    return parsed
-      .filter((e) => typeof e.lora === 'string')
-      .map((e) => ({ lora: e.lora as string, strength: typeof e.str === 'number' ? e.str : 0.5, on: e.on !== false }))
-  } catch {
-    return []
-  }
-}
-
-/** The inverse of `serializeLoraStack` — read back whatever a graph's
- * `LTX_lora_loader.stack_data` already carries (the workflow file's OWN
- * baked default, e.g. style alpha @ 0.5), so the studio can show and seed an
- * edit from it rather than starting a customization from nothing. Never
- * throws: a graph with no style-stack node, or malformed JSON, just reads as
- * empty. */
-export function readBakedLoraStack(graph: Record<string, ComfyNode> | null | undefined): LoraStackEntry[] {
-  if (!graph) return []
-  const id = byClass(graph, LORA_STYLE_STACK_CLASS)
-  if (!id) return []
-  return parseLoraStackData(String(graph[id].inputs.stack_data ?? '[]'))
-}
-
-/**
- * The operator's OWN machine-local default style stack — sourced from
- * `VITE_LOCAL_LORA_STACK` in a gitignored `.env.local`, never from the
- * shipped workflow.
- *
- * Vite inlines `VITE_*` vars at BUILD time, and the GitHub Pages build runs
- * from a fresh checkout with no `.env.local` present, so this is empty on the
- * public site regardless of what any operator's own machine has configured —
- * the shipped `LTX_lora_loader.stack_data` (empty, see `EXPLICIT_LORA_RE`'s
- * module comment) is what every visitor actually gets. `raw` is
- * `import.meta.env.VITE_LOCAL_LORA_STACK` — passed in rather than read
- * directly so this stays testable outside Vite.
- */
-export function localLoraStackOverride(raw: string | undefined): LoraStackEntry[] {
-  if (!raw) return []
-  return parseLoraStackData(raw)
-}
-
-/**
- * A stable comparison key for a plan clip's style-stack selection —
- * `undefined` ("leave the workflow's own baked stack alone") is its OWN
- * distinct value, never treated as equal to an explicit stack even one with
- * identical content, because the two mean different things at build time
- * (one stamps nothing, the other stamps exactly that array).
- */
-export function loraStackKey(stack: LoraStackEntry[] | undefined): string {
-  if (stack === undefined) return '\0default'
-  return JSON.stringify(stack.map((e) => ({ on: e.on, lora: e.lora, str: e.strength })))
-}
-
-/**
- * Whether a whole-plan chain submit can go out as ONE job, or must auto-split
- * into one job per scene.
- *
- * One ComfyUI job builds ONE graph with ONE `LTX_lora_loader.stack_data` —
- * every shot in that job samples against whatever this build stamped, so a
- * whole-plan submit can only stay a single job when every plan clip wants the
- * SAME style stack. The moment two clips differ, the only way to honour both
- * is one job per scene (see the module comment on `renderChainPlan` in
- * state.tsx for why that costs almost nothing extra).
- */
-export function planNeedsPerSceneLoraSplit(stacks: ReadonlyArray<LoraStackEntry[] | undefined>): boolean {
-  if (stacks.length <= 1) return false
-  const first = loraStackKey(stacks[0])
-  return stacks.some((s) => loraStackKey(s) !== first)
 }
 
 /** `<Subject N>` or `<Picture N>` — the same labels recipe prompts use elsewhere. */

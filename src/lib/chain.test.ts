@@ -6,11 +6,10 @@ import { fileURLToPath } from 'node:url'
 import {
   buildChainGraph, chainIssues, chainShotsForPlan, citeToTag, pickAssembledVideo, snapUp, ChainError,
   chainMinSteps, CHAIN_MIN_STEPS_SLA, CHAIN_MIN_STEPS_VSA, CHAIN_MIN_STEPS_DEFAULT,
-  CANONICAL_UNET, CANONICAL_TURBO_LORA, SINGULARITY_UNET,
-  ACCELERATOR_LORA_RE, EXPLICIT_LORA_RE, selectableStyleLoras, serializeLoraStack, readBakedLoraStack,
-  loraStackKey, planNeedsPerSceneLoraSplit, localLoraStackOverride, chainWarnings,
+  CANONICAL_UNET, CANONICAL_TURBO_LORA, SINGULARITY_UNET, chainWarnings,
 } from './chain'
 import { padForOverlap } from './frames'
+import { readBakedLoraStack } from './loras'
 import type { ChainPlate, ChainPlanClip, ChainShot } from './chain'
 import type { ComfyNode, LoraStackEntry } from './types'
 
@@ -570,101 +569,10 @@ test('chainShotsForPlan output feeds buildChainGraph for both a whole-plan submi
 })
 
 // ── style-stack LoRA selection (LTX_lora_loader.stack_data) ──────────────────
-
-test('serializeLoraStack matches the exact shape h3-shots\' own baked workflows use, byte-exact filenames included', () => {
-  const stack: LoraStackEntry[] = [
-    { lora: 'style_alpha.safetensors', strength: 0.5, on: true },
-    { lora: 'style_gamma.safetensors', strength: 0.7, on: false },
-  ]
-  const json = serializeLoraStack(stack)
-  assert.deepStrictEqual(JSON.parse(json), [
-    { on: true, lora: 'style_alpha.safetensors', str: 0.5, v: 1, a: 1, t: 1 },
-    { on: false, lora: 'style_gamma.safetensors', str: 0.7, v: 1, a: 1, t: 1 },
-  ])
-  // The %20-laden filename must survive round-trip without being decoded or re-encoded.
-  assert.ok(json.includes('style_gamma.safetensors'))
-})
-
-test('readBakedLoraStack reads back what serializeLoraStack wrote, round-trip', () => {
-  const stack: LoraStackEntry[] = [
-    { lora: 'style_alpha.safetensors', strength: 0.5, on: true },
-    { lora: 'style_beta.safetensors', strength: 1, on: false },
-  ]
-  const graph: Record<string, ComfyNode> = {
-    98: { class_type: 'LTX_lora_loader', inputs: { mode: 'minimax', stack_data: serializeLoraStack(stack), model: ['66', 0] } },
-  }
-  assert.deepStrictEqual(readBakedLoraStack(graph), stack)
-})
-
-test('readBakedLoraStack reads the shipped fixture\'s own default (style alpha @ 0.5, on)', () => {
-  const workflow = loadFixture('contexloop_workflow.json')
-  assert.deepStrictEqual(readBakedLoraStack(workflow), [{ lora: 'style_alpha.safetensors', strength: 0.5, on: true }])
-})
-
-test('readBakedLoraStack never throws — no node, and malformed JSON, both read as empty', () => {
-  assert.deepStrictEqual(readBakedLoraStack(null), [])
-  assert.deepStrictEqual(readBakedLoraStack({}), [])
-  assert.deepStrictEqual(
-    readBakedLoraStack({ 98: { class_type: 'LTX_lora_loader', inputs: { stack_data: 'not json' } } }),
-    [],
-  )
-})
-
-test('localLoraStackOverride: absent/empty/malformed all read as empty — the public build gets nothing', () => {
-  assert.deepStrictEqual(localLoraStackOverride(undefined), [])
-  assert.deepStrictEqual(localLoraStackOverride(''), [])
-  assert.deepStrictEqual(localLoraStackOverride('not json'), [])
-})
-
-test('localLoraStackOverride: parses VITE_LOCAL_LORA_STACK the same shape serializeLoraStack writes', () => {
-  const stack: LoraStackEntry[] = [
-    { lora: 'style_alpha.safetensors', strength: 0.5, on: true },
-    {
-      lora: 'style_beta.safetensors',
-      strength: 1,
-      on: true,
-    },
-  ]
-  assert.deepStrictEqual(localLoraStackOverride(serializeLoraStack(stack)), stack)
-})
-
-test('ACCELERATOR_LORA_RE catches the canonical turbo LoRA and the fl2v/lightx2v family, never a style LoRA', () => {
-  assert.ok(ACCELERATOR_LORA_RE.test(CANONICAL_TURBO_LORA))
-  assert.ok(ACCELERATOR_LORA_RE.test('minimax_h3_fl2v_turbo_4step_v1.1_768p_comfyui_bf16.safetensors'))
-  assert.ok(ACCELERATOR_LORA_RE.test('lightx2v_T2V_14B_cfg_step_distill_v2_lora_rank16_bf16.safetensors'))
-  assert.ok(!ACCELERATOR_LORA_RE.test('style_alpha.safetensors'))
-})
-
-test('EXPLICIT_LORA_RE catches exactly the five gated LoRAs, never an ordinary style LoRA', () => {
-  for (const name of [
-    'style_gamma.safetensors',
-    'style_delta.safetensors',
-    'style_beta.safetensors',
-    'style_epsilon.safetensors',
-    'style_alpha.safetensors',
-  ]) {
-    assert.ok(EXPLICIT_LORA_RE.test(name), `${name} should be gated`)
-  }
-  assert.ok(!EXPLICIT_LORA_RE.test('style_zeta.safetensors'))
-})
-
-test('selectableStyleLoras excludes the accelerator family always, and the explicit five (incl. style alpha) unless opted in', () => {
-  const all = [
-    'style_alpha.safetensors',
-    CANONICAL_TURBO_LORA,
-    'minimax_h3_fl2v_turbo_4step_v1.1_768p_comfyui_bf16.safetensors',
-    'style_gamma.safetensors',
-    'style_zeta.safetensors',
-  ]
-  assert.deepStrictEqual(selectableStyleLoras(all, { allowExplicit: false }), [
-    'style_zeta.safetensors',
-  ])
-  assert.deepStrictEqual(selectableStyleLoras(all, { allowExplicit: true }), [
-    'style_alpha.safetensors',
-    'style_gamma.safetensors',
-    'style_zeta.safetensors',
-  ])
-})
+// The picker helpers themselves (serializeLoraStack, readBakedLoraStack,
+// localLoraStackOverride, ACCELERATOR_LORA_RE, selectableStyleLoras,
+// loraStackKey, planNeedsPerSceneLoraSplit) moved to loras.ts/loras.test.ts —
+// what remains here is specific to buildChainGraph's OWN stamping behaviour.
 
 test('buildChainGraph leaves stack_data untouched when opts.loraStack is not given — the no-op-until-edited contract', () => {
   const workflow = loadFixture('contexloop_workflow.json')
@@ -677,7 +585,7 @@ test('buildChainGraph leaves stack_data untouched when opts.loraStack is not giv
 test('buildChainGraph stamps opts.loraStack onto LTX_lora_loader.stack_data, replacing the workflow\'s own baked default', () => {
   const workflow = loadFixture('contexloop_workflow.json')
   const shots = [{ index: 1, prompt: 'A courtyard at dawn.', frames: 124, seed: 1 }]
-  const stack: LoraStackEntry[] = [{ lora: 'style_zeta.safetensors', strength: 0.8, on: true }]
+  const stack: LoraStackEntry[] = [{ lora: 'studio_glow_v2.safetensors', strength: 0.8, on: true }]
   const built = buildChainGraph({ graph: workflow, shots, plates: [], opts: { runName: 'r', width: 864, height: 480, steps: 6, loraStack: stack } })
   const stackNode = Object.entries(built.graph).find(([, n]) => n.class_type === 'LTX_lora_loader')?.[1]
   assert.deepStrictEqual(readBakedLoraStack({ x: stackNode! }), stack)
@@ -704,30 +612,10 @@ test('buildChainGraph refuses a style-stack selection on a workflow with no LTX_
     () =>
       buildChainGraph({
         graph: stripped, shots, plates: [],
-        opts: { runName: 'r', width: 864, height: 480, steps: 6, loraStack: [{ lora: 'style_zeta.safetensors', strength: 0.5, on: true }] },
+        opts: { runName: 'r', width: 864, height: 480, steps: 6, loraStack: [{ lora: 'studio_glow_v2.safetensors', strength: 0.5, on: true }] },
       }),
     ChainError,
   )
-})
-
-test('loraStackKey treats "unset" as its own value, distinct from an explicit empty or identical stack', () => {
-  const a: LoraStackEntry[] = [{ lora: 'style_alpha.safetensors', strength: 0.5, on: true }]
-  const b: LoraStackEntry[] = [{ lora: 'style_alpha.safetensors', strength: 0.5, on: true }]
-  assert.equal(loraStackKey(a), loraStackKey(b), 'two explicit stacks with identical content compare equal')
-  assert.notEqual(loraStackKey(undefined), loraStackKey(a), 'unset never compares equal to an explicit stack, even a matching one')
-  assert.notEqual(loraStackKey(undefined), loraStackKey([]), 'unset never compares equal to an explicit empty stack')
-})
-
-test('planNeedsPerSceneLoraSplit: false when every clip is unset, or every clip explicitly agrees; true the moment one differs', () => {
-  const a: LoraStackEntry[] = [{ lora: 'style_alpha.safetensors', strength: 0.5, on: true }]
-  const b: LoraStackEntry[] = [{ lora: 'style_zeta.safetensors', strength: 0.5, on: true }]
-
-  assert.equal(planNeedsPerSceneLoraSplit([undefined, undefined, undefined]), false, 'nobody customized anything')
-  assert.equal(planNeedsPerSceneLoraSplit([a, a, a]), false, 'every clip explicitly agrees')
-  assert.equal(planNeedsPerSceneLoraSplit([a]), false, 'a single-clip plan never needs to split')
-  assert.equal(planNeedsPerSceneLoraSplit([]), false)
-  assert.equal(planNeedsPerSceneLoraSplit([a, b, a]), true, 'one clip differs')
-  assert.equal(planNeedsPerSceneLoraSplit([undefined, a]), true, 'unset vs. customized still counts as differing')
 })
 
 // ── the step floor is ADVICE, not a gate (demoted 2026-09-08) ──────────────

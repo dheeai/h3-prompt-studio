@@ -490,15 +490,15 @@ export const THUMB_PREVIEW = 'webp;60'
 /**
  * Every LoRA filename ComfyUI's `LoraLoaderModelOnly` node offers — the
  * box's whole LoRA folder, unfiltered. Filtering out the accelerator family
- * and gating explicit-content ones is a UI-layer decision (`chain.ts`'s
- * `selectableStyleLoras`), not this fetch's job.
+ * is a UI-layer decision (`loras.ts`'s `selectableStyleLoras`), not this
+ * fetch's job.
  *
  * On the `light_paths` list alongside `/queue` and `/object_info`, so this is
  * safe to call any time — it never forces a GPU backend switch.
  *
- * Filenames may be percent-encoded (`style gamma%20-%20...`); never decode or
- * re-encode them here or anywhere downstream, or ComfyUI will not find the
- * file on disk.
+ * Filenames may be percent-encoded (`Neon%20Skyline%20Style...`); never
+ * decode or re-encode them here or anywhere downstream, or ComfyUI will not
+ * find the file on disk.
  */
 export async function listLoraNames(ep: ComfyEndpoint): Promise<string[]> {
   const base = trim(ep.baseUrl)

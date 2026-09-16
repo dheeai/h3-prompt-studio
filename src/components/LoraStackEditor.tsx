@@ -1,10 +1,10 @@
 import { useState } from 'react'
-import { selectableStyleLoras } from '../lib/chain'
+import { selectableStyleLoras } from '../lib/loras'
 import type { LoraStackEntry } from '../lib/types'
 
-/** Some LoRA filenames are percent-encoded (`style gamma%20-%20...`) — decode
- * only for DISPLAY. The value written into `stack_data` must stay whatever
- * ComfyUI reported, byte-exact, or the box will not find the file. */
+/** Some LoRA filenames are percent-encoded (`Neon%20Skyline%20Style...`) —
+ * decode only for DISPLAY. The value written into `stack_data` must stay
+ * whatever ComfyUI reported, byte-exact, or the box will not find the file. */
 function displayLoraName(name: string): string {
   try {
     return decodeURIComponent(name)
@@ -30,7 +30,6 @@ export function LoraStackEditor({
   stack,
   defaultStack,
   available,
-  allowExplicit,
   onChange,
 }: {
   /** What this stack belongs to, for the heading — a scene number or 'next scene'. */
@@ -38,12 +37,11 @@ export function LoraStackEditor({
   stack: LoraStackEntry[] | undefined
   defaultStack: LoraStackEntry[]
   available: string[]
-  allowExplicit: boolean
   onChange: (stack: LoraStackEntry[] | undefined) => void
 }) {
   const customized = stack !== undefined
   const effective = stack ?? defaultStack
-  const offered = selectableStyleLoras(available, { allowExplicit }).filter((name) => !effective.some((e) => e.lora === name))
+  const offered = selectableStyleLoras(available).filter((name) => !effective.some((e) => e.lora === name))
 
   const mutate = (next: LoraStackEntry[]) => onChange(next)
   const addLora = (name: string) => {

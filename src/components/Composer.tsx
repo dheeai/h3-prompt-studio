@@ -5,7 +5,7 @@ import { SCENE_LENGTH_CHIPS, secondsLabel } from '../lib/chainDisplay'
 import { LoraStackEditor } from './LoraStackEditor'
 import { DraftingStatus } from './DraftingStatus'
 import { listLoraNames } from '../lib/comfy'
-import { localLoraStackOverride, readBakedLoraStack } from '../lib/chain'
+import { localLoraStackOverride, readBakedLoraStack } from '../lib/loras'
 import { framesForSeconds } from '../lib/recipe'
 
 function autosize(el: HTMLTextAreaElement | null) {
@@ -66,7 +66,6 @@ export function Composer({
   const [authoring, setAuthoring] = useState(false)
   const [confirmingRender, setConfirmingRender] = useState(false)
   const [loraNames, setLoraNames] = useState<string[]>([])
-  const [allowExplicit, setAllowExplicit] = useState(false)
 
   useEffect(() => autosize(ref.current), [story])
   useEffect(() => setConfirmingRender(false), [clip?.id])
@@ -188,13 +187,8 @@ export function Composer({
               ? localLoraStackOverride(import.meta.env?.VITE_LOCAL_LORA_STACK)
               : readBakedLoraStack(chainRecipe?.graph ?? null)}
             available={loraNames}
-            allowExplicit={allowExplicit}
             onChange={setLoraStack}
           />
-          <label className="tok composer-controls-note" style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 6 }}>
-            <input type="checkbox" checked={allowExplicit} onChange={(e) => setAllowExplicit(e.target.checked)} />
-            show explicit-content LoRAs
-          </label>
         </div>
         <div style={{ textAlign: 'right', marginLeft: 'auto', flex: '0 0 auto' }}>
           {confirmingRender && laterDiscarded > 0 && (

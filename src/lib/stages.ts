@@ -79,7 +79,7 @@ export const STAGE_LABEL: Record<StageId, string> = {
  * Stage templates. Editable by the user and stored in settings, so these are
  * only the starting point.
  *
- * Placeholders: {{story}} {{current}} {{mode}} {{notes}} {{findings}} {{critique}} {{film}} {{standing}} {{previous}} {{plates}}
+ * Placeholders: {{story}} {{current}} {{mode}} {{notes}} {{findings}} {{critique}} {{film}} {{standing}} {{previous}} {{plates}} {{continuationFrame}}
  *
  * Each one deliberately refuses to restate the loaded skills — the skills are
  * already in the system block, and repeating them here would both waste the
@@ -193,6 +193,7 @@ interesting — that is a different film.
 PREVIOUS CLIP PROMPT (continuity reference only — do not recreate its action)
 {{previous}}
 
+{{continuationFrame}}
 A DETERMINISTIC READ OF THE SOURCE, computed before you looked at it — treat
 it as context, not as something to reproduce:
 {{standing}}
@@ -678,6 +679,26 @@ invent a plate that is not wired.
 `
 }
 
+/**
+ * The note that accompanies a continuation frame image, when one is attached
+ * to this request (`draft`, only during `continueFrom` — see the module
+ * comment there). Naming what the image IS and is NOT matters here for the
+ * same reason `platesBlock` states each plate's job: an uncited, unexplained
+ * image reads to the model as a reference it should label, and it will
+ * invent a `<Subject N>`/`<Picture N>` citation and a `references` entry for
+ * something that was never wired to the render — an unrenderable prompt.
+ */
+export function continuationFrameBlock(attached: boolean): string {
+  if (!attached) return ''
+  return `THE ATTACHED IMAGE is the final rendered frame of the previous clip — what
+is actually on screen right now, not a description of it. Write what happens
+next from what is really there. It is CONTEXT ONLY: it is not a reference
+plate. Never cite it as <Subject N> or <Picture N>, and never add it to
+references — it is not wired to the render, and citing it produces a prompt
+that fails at submit time.
+`
+}
+
 export function filmBlock(f: FilmContext | undefined): string {
   if (!f) return ''
 
@@ -757,6 +778,9 @@ export function fillTemplate(
     previous?: string
     /** The wired reference plates — see `platesBlock`. */
     plates?: string
+    /** The continuation frame's explanatory note — see `continuationFrameBlock`.
+     * Empty when no frame is attached to this request. */
+    continuationFrame?: string
     /**
      * The clip's DURATION, as `durationBlock` renders it.
      *
@@ -782,6 +806,7 @@ export function fillTemplate(
     .replace(/\{\{standing\}\}/g, vars.standing?.trim() || '(not computed)')
     .replace(/\{\{previous\}\}/g, vars.previous?.trim() || '(none — this is the first clip)')
     .replace(/\{\{plates\}\}/g, vars.plates?.trim() || '(no reference plates are wired — do not cite any <Subject N> or <Video N> label)')
+    .replace(/\{\{continuationFrame\}\}/g, vars.continuationFrame?.trim() ?? '')
     .replace(/\{\{duration\}\}/g, vars.duration?.trim() ?? '')
     .trim()
 }

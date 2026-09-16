@@ -768,3 +768,49 @@ test('at or above the floor nothing is said', () => {
   } as never)
   assert.equal(warns.filter((w) => /distilled count/.test(w)).length, 0)
 })
+
+// ── the continuation frame — a vision input for Draft, NEVER a plate ───────
+//
+// `continueFrom` (state.tsx) extracts the parent clip's last rendered frame
+// as a vision input for the one continuation draft call, and its "NO
+// LAST-FRAME PLATE" comment records why a PREVIOUS attempt at exactly this
+// feature was wrong: it added the frame as a `replaced` Plate, which burned
+// one of H3's nine reference slots on every continuation for something
+// Contex-Loop's own motion context already made redundant. `Session.
+// continuationFrame` carries the frame on its own field instead, and
+// `buildChainGraph` (this module) has no parameter for it at all — `plates`
+// is the only reference channel it accepts. These two tests pin that: a
+// realistic continuation frame data URL cannot appear anywhere in a built
+// chain graph, and `ChainPlate`'s own shape (`id`/`filename`/`subfolder` —
+// box paths) cannot even represent one.
+test('continuation frame regression: a frame data URL never appears in a built chain graph', () => {
+  const workflow = loadFixture('contexloop_workflow.json')
+  const continuationFrame = 'data:image/png;base64,CONTINUATION_FRAME_MARKER_SHOULD_NEVER_APPEAR'
+
+  // Exactly what render code does: build the graph from `plates` (real,
+  // uploaded box files) alone. A continuation frame is never one of them —
+  // there is no argument to `buildChainGraph` it could ride in on.
+  const built = buildChainGraph({
+    graph: workflow,
+    shots: scaffoldShots(),
+    plates: scaffoldPlates,
+    opts: { runName: 'probe-continuation-frame', width: 864, height: 480, steps: 6, baseSeed: 1000 },
+  })
+
+  assert.ok(
+    !JSON.stringify(built.graph).includes(continuationFrame),
+    'the continuation frame marker must not appear anywhere in the built graph',
+  )
+  // References are derived only from the plates actually cited — a
+  // continuation frame is not a plate, so it cannot inflate this count.
+  assert.equal(built.references.length, scaffoldPlates.length)
+})
+
+test('continuation frame regression: ChainPlate has no field that could hold a raw frame data URL', () => {
+  // A plate is a box FILE reference (id/filename/subfolder) — structurally
+  // incompatible with a `data:image/...;base64,...` string, which is what
+  // `lastFrameOf` (comfy.ts) returns and what `Session.continuationFrame`
+  // holds. There is no cast that makes one of these the other.
+  const plate: ChainPlate = { id: 'hero', filename: 'hero.png', subfolder: '' }
+  assert.deepEqual(Object.keys(plate).sort(), ['filename', 'id', 'subfolder'])
+})

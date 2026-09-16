@@ -21,8 +21,6 @@ import { buildMulticlipGraph, multiclipIssues, padForOverlap, snapUp } from '../
 import {
   ENTRY_MODES,
   authorContinuation,
-  continuationContextOverride,
-  appendContinuationHistory,
   continuationPlateIsFresh,
   continuationSource,
   entryAction,
@@ -806,11 +804,20 @@ check('non-prompt modes: source fallback still requires the existing prompt heur
   promptSourceForEntryMode('idea', 'rough source', '', false) === '')
 
 {
-  const source = continuationSource('', { precedes: 'she faces the hatch', follows: 'the hatch opens', open: 'the warning remains unresolved' })
-  check('continuation source: blank note carries hand-off fields forward',
-    source === 'OPEN: the warning remains unresolved\nFOLLOWS: the hatch opens\nPRECEDES: she faces the hatch', source)
+  // 2026-09-16: continuationSource no longer fuses a Hand-off paraphrase (that
+  // whole model call was dropped — see authorContinuation's module comment).
+  // It composes from the breakdown's own `covers` for the next clip, or the
+  // film's spine, with the note still taking precedence over both.
+  const source = continuationSource('', { covers: 'she opens the hatch and steps through' })
+  check('continuation source: blank note falls back to the breakdown\'s covers for the next clip',
+    source === 'COVERS: she opens the hatch and steps through', source)
   check('continuation source: an optional note takes precedence',
-    continuationSource('Make the next beat quieter', { precedes: 'old state', follows: 'old future', open: 'old question' }) === 'Make the next beat quieter')
+    continuationSource('Make the next beat quieter', { covers: 'she opens the hatch', spine: 'a woman escapes a sinking ship' }) === 'Make the next beat quieter')
+  check('continuation source: no breakdown clip falls back to the film\'s spine',
+    continuationSource(undefined, { spine: 'a woman escapes a sinking ship' }) ===
+      'Continue the film — it is about: a woman escapes a sinking ship. Advance from the previous clip\'s ending state.')
+  check('continuation source: nothing at all falls back to a generic instruction — {{previous}} carries the real continuity',
+    continuationSource(undefined, {}) === 'Continue from the ending state of the previous clip.')
   check('continuation source: previous prompt context has a dedicated template slot',
     fillTemplate('SOURCE {{story}}\nPREVIOUS {{previous}}', { story: source, previous: 'the prompt that produced the last clip' }).includes('PREVIOUS the prompt that produced the last clip'))
 
@@ -847,21 +854,15 @@ check('new draft: clears film, parent continuation, plan, and passes without tou
 }
 
 {
+  // 2026-09-16: a continuation now makes exactly ONE model call (draft) — see
+  // authorContinuation's module comment. Hand-off and Direct are gone from
+  // this path; the one remaining call does both jobs in one pass.
   const calls = []
   const ready = await authorContinuation(async (stage) => { calls.push(stage); return { stage } })
-  check('continuation authoring: Direct then Draft reaches ready', ready === 'ready' && JSON.stringify(calls) === JSON.stringify(['direct', 'draft']), JSON.stringify({ ready, calls }))
-  const inputs = []
-  const propagated = await authorContinuation(async (stage, previous) => {
-    inputs.push([stage, previous?.text ?? null])
-    return stage === 'direct' ? { text: 'exact returned direction sheet' } : { text: 'canonical prompt' }
-  })
-  check('continuation authoring: immediate Draft receives the returned Direct text', propagated === 'ready' && JSON.stringify(inputs) === JSON.stringify([['direct', null], ['draft', 'exact returned direction sheet']]), JSON.stringify({ propagated, inputs }))
-  const directFails = []
-  const abortedAtDirect = await authorContinuation(async (stage) => { directFails.push(stage); return null })
-  check('continuation authoring: Direct failure aborts before Draft', abortedAtDirect === 'aborted' && JSON.stringify(directFails) === JSON.stringify(['direct']), JSON.stringify({ abortedAtDirect, directFails }))
+  check('continuation authoring: one draft call reaches ready', ready === 'ready' && JSON.stringify(calls) === JSON.stringify(['draft']), JSON.stringify({ ready, calls }))
   const draftFails = []
-  const abortedAtDraft = await authorContinuation(async (stage) => { draftFails.push(stage); return stage === 'direct' ? { stage } : null })
-  check('continuation authoring: Draft failure stops with failure visible', abortedAtDraft === 'aborted' && JSON.stringify(draftFails) === JSON.stringify(['direct', 'draft']), JSON.stringify({ abortedAtDraft, draftFails }))
+  const abortedAtDraft = await authorContinuation(async (stage) => { draftFails.push(stage); return null })
+  check('continuation authoring: a failed draft aborts with failure visible, and nothing is called twice', abortedAtDraft === 'aborted' && JSON.stringify(draftFails) === JSON.stringify(['draft']), JSON.stringify({ abortedAtDraft, draftFails }))
 }
 
 check('cancelled thinking: partial reasoning is retained, empty reasoning is not mislabeled',
@@ -1221,28 +1222,58 @@ check('standing: source description does not reference the retired stage regime'
 check('continuation plates: a replaced frame is scoped to its source clip',
   continuationPlateIsFresh({ mode: 'replaced', fromClipId: 'clip-2' }, 'clip-2') && !continuationPlateIsFresh({ mode: 'replaced', fromClipId: 'clip-1' }, 'clip-2') && continuationPlateIsFresh({ mode: 'carried' }, 'clip-2'))
 
-check('continuation context: hand-off override comes from the selected clip', (() => {
-  const override = continuationContextOverride({ prompt: 'historical prompt', film: { role: 'rising', spine: 'one film', precedes: 'last frame', follows: 'next beat' } })
-  return override.current === 'historical prompt' && override.film?.spine === 'one film' && override.film?.precedes === 'last frame'
-})())
-
-check('continuation history: prior versions remain before the new hand-off', (() => {
-  const first = { id: 'v1' }
-  const second = { id: 'v2' }
-  const handoff = { id: 'handoff' }
-  const next = appendContinuationHistory([first, second], handoff)
-  return next.length === 3 && next[0] === first && next[1] === second && next[2] === handoff
-})())
+// `continuationContextOverride` and `appendContinuationHistory` are gone —
+// they existed only to feed the now-removed Hand-off call (reading a
+// deliberately-selected clip's own prompt/film, and appending its written
+// pass to history). Continuation no longer writes a Hand-off pass at all, so
+// there is nothing left for either to do.
 
 {
+  // 2026-09-16: a stop before the one draft call prevents it outright — there
+  // is no longer a "between Direct and Draft" window to test, because there
+  // is only ever one call.
   const calls = []
   let cancelled = true
-  const stoppedBeforeDirect = await authorContinuation(async (stage) => { calls.push(stage); return { stage } }, () => cancelled)
-  check('continuation cancellation: a stop before Direct prevents every authoring call', stoppedBeforeDirect === 'aborted' && calls.length === 0)
+  const stoppedBeforeDraft = await authorContinuation(async (stage) => { calls.push(stage); return { stage } }, () => cancelled)
+  check('continuation cancellation: a stop before the draft call prevents it entirely', stoppedBeforeDraft === 'aborted' && calls.length === 0)
   cancelled = false
-  const callsAfterDirect = []
-  const stoppedBeforeDraft = await authorContinuation(async (stage) => { callsAfterDirect.push(stage); cancelled = true; return { stage } }, () => cancelled)
-  check('continuation cancellation: a stop between Direct and Draft prevents Draft', stoppedBeforeDraft === 'aborted' && JSON.stringify(callsAfterDirect) === JSON.stringify(['direct']))
+  const calls2 = []
+  const notCancelled = await authorContinuation(async (stage) => { calls2.push(stage); return { stage } }, () => cancelled)
+  check('continuation cancellation: no stop reaches ready with exactly one call', notCancelled === 'ready' && JSON.stringify(calls2) === JSON.stringify(['draft']))
+}
+
+{
+  // The end-to-end proof: a continuation's one authoring call makes exactly
+  // ONE request to the model endpoint. Mirrors the fetch-count pattern above
+  // ("prompt replacement limit errors make one endpoint attempt") but wraps
+  // the real request through `authorContinuation`, the orchestrator
+  // `continueFrom` uses — this is what pins "one model call, not three" at
+  // the level a regression can actually observe.
+  const originalFetch = globalThis.fetch
+  let requests = 0
+  const responseBody = 'data: {"choices":[{"delta":{"content":"<<<PROMPT>>>\\nok\\n<<<EXPLANATION>>>\\nfine"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'
+  globalThis.fetch = async () => {
+    requests++
+    return new Response(responseBody, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
+  }
+  try {
+    const authored = await authorContinuation(async () => {
+      const result = await streamChatComplete({
+        provider: { id: 'test', baseUrl: 'http://test.local/v1' },
+        model: 'test-model',
+        messages: [{ role: 'user', content: 'draft this continuation' }],
+        temperature: 0.2,
+        maxTokens: 0,
+        retryOnLimit: false,
+        maxContinuations: 0,
+        onDelta() {},
+      })
+      return result.text.trim() ? { text: result.text } : null
+    })
+    check('continuation end-to-end: exactly one model request per "Continue from here" turn', authored === 'ready' && requests === 1, `authored=${authored} requests=${requests}`)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
 }
 
 function check(name, cond, detail) {

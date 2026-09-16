@@ -7,9 +7,9 @@ import { classifyInput, findingsToText, lint, looksLikePrompt, standingToText } 
 import { continuationBudgetFor, streamChatComplete } from '../lib/llm'
 import type { ChatContentPart } from '../lib/llm'
 import { DEFAULT_PROVIDERS, loadProviders, probe, saveProviders, LOCAL_LLM_URL, LOCAL_LLM_MODEL} from '../lib/providers'
-import { SCHEMA_STAGES, STAGE_LABEL, durationBlock, fillTemplate, fillTemplateWithDuration, filmBlock, platesBlock, hasPromptBlock, nextRole, parseBreakdown, splitHandoff, splitPromptReplacement, splitReply, templateFor } from '../lib/stages'
+import { SCHEMA_STAGES, STAGE_LABEL, continuationFrameBlock, durationBlock, fillTemplate, fillTemplateWithDuration, filmBlock, platesBlock, hasPromptBlock, nextRole, parseBreakdown, splitPromptReplacement, splitReply, templateFor } from '../lib/stages'
 import { h3ResponseFormat, joinH3Sections } from '../lib/schema'
-import { DEFAULT_ENDPOINTS, poll, pollChain, probeComfy, submit, uploadImage, viewUrl } from '../lib/comfy'
+import { DEFAULT_ENDPOINTS, lastFrameOf, poll, pollChain, probeComfy, submit, uploadImage, viewUrl } from '../lib/comfy'
 import type { PollResult } from '../lib/comfy'
 import { applyRecipe, fetchShippedChainRecipes, framesForSeconds, oomRisk, recipeIssues, resolveChainRecipeAutoBind, SHIPPED_SET_VERSION, SHIPPED_CHAIN_IDS} from '../lib/recipe'
 import { padForOverlap } from '../lib/frames'
@@ -21,7 +21,7 @@ import { cumulativeFilm, sceneWorkLabel } from '../lib/chainDisplay'
 import type { SceneWorkLabel } from '../lib/chainDisplay'
 import { fetchBundledSkills, loadSkills, removeSkill, saveSkill } from '../lib/skills'
 import { estTokens } from '../lib/tokens'
-import { appendContinuationHistory, authoringModeForContent, authorContinuation, clearDraftContext, continuationContextOverride, continuationPlateIsFresh, continuationSource, interruptedReasoningText, migrateBreakIntoScenes, previousPromptForClip, promptSourceForAuthoringMode } from '../lib/entry'
+import { authoringModeForContent, authorContinuation, clearDraftContext, continuationPlateIsFresh, continuationSource, interruptedReasoningText, migrateBreakIntoScenes, previousPromptForClip, promptSourceForAuthoringMode, withContinuationFrame } from '../lib/entry'
 import type { AuthoringMode } from '../lib/entry'
 import { isSingleRequestStage, type StudioRunPhase } from '../lib/studio-workflow'
 import { normalizeThinkingBudgets, resolveThinkingBudget } from '../lib/thinking'
@@ -118,7 +118,7 @@ interface Session {
   film?: FilmContext
   /** The clip this draft continues from — set by Continue, null for a head. */
   parentClipId?: string | null
-  /** The prompt that produced parentClipId, available to continuation Direct. */
+  /** The prompt that produced parentClipId, available to continuation Draft. */
   parentPrompt?: string
   /** The last Break down pass, if the story has been split into clips. */
   breakdown?: Breakdown
@@ -129,9 +129,20 @@ interface Session {
    * starts its own new `Session` object, so this never carries over into one.
    */
   externalVideo?: { endpointId: string; filename: string; prependOriginal: boolean } | null
+  /**
+   * The parent clip's last rendered frame, as a PNG data URL — a VISION INPUT
+   * for the one continuation draft call, never a plate (`continueFrom`'s "NO
+   * LAST-FRAME PLATE" comment below explains why a still must not be wired as
+   * a reference). Lives here, on the session, rather than in `plates`, purely
+   * so it structurally cannot be uploaded to the box, cannot be counted
+   * against H3's nine-reference cap, and cannot reach a chain graph's
+   * reference slots — see `withContinuationFrame`. Cleared the moment the
+   * draft that used it lands, fails or is cancelled.
+   */
+  continuationFrame?: string
 }
 
-type ContinuationPhase = 'frame' | 'handoff' | 'direct' | 'draft' | 'ready'
+type ContinuationPhase = 'frame' | 'draft' | 'ready'
 
 interface ContinuationStatus {
   clipId: string
@@ -926,6 +937,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         critique: critiqueText,
         standing: standingToText(classifyInput(snap.story)),
         plates: platesBlock(plates),
+        continuationFrame: continuationFrameBlock(!!snap.continuationFrame),
       })
 
       // Show the plates, not just describe them. Only a plate added from THIS
@@ -939,6 +951,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
               .filter((pl) => pl.kind === 'image' && pl.dataUrl)
               .map((pl) => ({ type: 'image_url' as const, image_url: { url: pl.dataUrl! } }))
           : []
+
+      // The continuation's last-rendered frame rides its OWN session field,
+      // never `plates` — see `Session.continuationFrame`'s comment and
+      // `withContinuationFrame`. It is appended after the plates (still in
+      // the user turn, still after the byte-identical system block), gated
+      // on vision support exactly as the plates above are.
+      const requestImages: ChatContentPart[] =
+        provider.supportsVision && SCHEMA_STAGES.has(stage)
+          ? withContinuationFrame(plateImages, snap.continuationFrame)
+          : plateImages
 
       if (!beginGpuUse('llm')) return null
 
@@ -972,7 +994,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             { role: 'system', content: buildH3SystemPrompt(ctx, 'studio', contentAuthoringMode) },
             {
               role: 'user',
-              content: plateImages.length ? [{ type: 'text' as const, text: user }, ...plateImages] : user,
+              content: requestImages.length ? [{ type: 'text' as const, text: user }, ...requestImages] : user,
             },
             ...(stage === 'freeform'
               ? [
@@ -1235,11 +1257,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const clearReplacedPlates = useCallback(() => {
     const carried = platesRef.current.filter((p) => p.mode !== 'replaced')
-    // Keep the ref in sync immediately. A continuation can reach Direct and
-    // Draft before React paints the state update, and render must never see a
-    // stale ending frame from an earlier clip in that gap.
+    // Keep the ref in sync immediately. A continuation can reach Draft before
+    // React paints the state update, and render must never see a stale ending
+    // frame from an earlier clip in that gap.
     platesRef.current = carried
     setPlates(carried)
+  }, [])
+
+  /** Clear the continuation frame once the draft that used it lands, fails or
+   * is cancelled — same reasoning as `clearReplacedPlates` just above: a
+   * frame that outlived its one draft call would otherwise ride along into
+   * an unrelated later request (e.g. a freeform note typed after a failed
+   * continuation, or clip 6's continuation reusing clip 4's frame). */
+  const clearContinuationFrame = useCallback(() => {
+    const next = { ...sessionRef.current, continuationFrame: undefined }
+    sessionRef.current = next
+    setSession(next)
   }, [])
 
   const recipe = useMemo(
@@ -2108,10 +2141,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
   /**
    * Close the loop end to end.
    *
-   * The clip's last frame becomes the next clip's <Picture 1>, a hand-off
-   * paragraph is written from the prompt that produced it, then Direct → Draft
-   * authors the next prompt. The rendered parent clip remains in the filmstrip
-   * and carries the parent prompt, plates, seed and film context into render.
+   * ONE model call now, not three (2026-09-16, "perf: a continuation is one
+   * model call, and it can see the frame it continues from"). This used to
+   * run Hand-off — read the parent clip's prompt, write a fresh paraphrase of
+   * its ending state — then Direct, then Draft. Hand-off's paraphrase was
+   * never new information: `{{previous}}` already hands Draft the parent's
+   * own canonical prompt, and that prompt's final `[Shot N]` block already
+   * states the ending state explicitly. And Draft's own template already
+   * directs-then-drafts in one pass for every other entry point through this
+   * app (commit ded83fa) — continuation alone was still paying for a separate
+   * Direct call. See `authorContinuation` and `continuationSource` in
+   * `lib/entry.ts` for the two halves of this cut.
+   *
+   * What replaces the accuracy Hand-off used to buy by re-deriving the end
+   * state in prose: the parent clip's actual last RENDERED frame, extracted
+   * below and handed to Draft as a vision input (never a plate — see "NO
+   * LAST-FRAME PLATE"). The rendered parent clip remains in the filmstrip and
+   * carries the parent prompt, plates, seed and film context into render.
    */
   const continueFrom = useCallback(
     async (clipId: string, note?: string) => {
@@ -2124,15 +2170,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
 
       // Continuation has work to cancel before the model is called: frame
-      // extraction and hand-off are both asynchronous. Abort any stale run
-      // before installing this run's controller so Stop/Escape always targets
-      // the active action.
+      // extraction is asynchronous. Abort any stale run before installing
+      // this run's controller so Stop/Escape always targets the active
+      // action.
       continuationAbortRef.current?.abort()
       const controller = new AbortController()
       continuationAbortRef.current = controller
       const isCancelled = () => controller.signal.aborted
       const markCancelled = (phase: ContinuationPhase, source?: string) => {
         clearReplacedPlates()
+        clearContinuationFrame()
         setContinuation({ clipId, phase, state: 'cancelled', source })
       }
 
@@ -2156,41 +2203,51 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
 
       if (isCancelled()) {
-        markCancelled('handoff')
+        markCancelled('frame')
         return
       }
-      setContinuation({ clipId, phase: 'handoff', state: 'running' })
-      // A user may have selected an older clip before pressing Continue. The
-      // hand-off must read that clip's stored prompt and film context, never
-      // the session's currently selected pass.
-      const written = await run('handoff', undefined, { ...continuationContextOverride(c), studioMode: 'story' })
-      if (isCancelled()) {
-        markCancelled('handoff')
-        return
-      }
-      // A failed hand-off must leave the current prompt/session intact. The
-      // extracted replacement is also cleared because no next prompt exists
-      // that could legitimately cite it.
-      if (!written) {
-        clearReplacedPlates()
-        setContinuation({ clipId, phase: 'handoff', state: 'failed' })
-        return
-      }
-      const parsed = splitHandoff(written.text)
 
-      const nextSource = continuationSource(note, parsed)
+      // The frame Draft actually gets to SEE — a vision input carried on its
+      // own `Session.continuationFrame` field (never `plates`; see above and
+      // `withContinuationFrame`). Best-effort: a tainted canvas or a box
+      // without CORS must not block the turn, so a failure here authors
+      // without the frame and surfaces a quiet note instead of failing the
+      // whole continuation.
+      let frame: string | undefined
+      if (url) {
+        try {
+          frame = await lastFrameOf(url, controller.signal)
+        } catch (e) {
+          if (isCancelled() || (e as Error).name === 'AbortError') {
+            markCancelled('frame')
+            return
+          }
+          setError(`Could not read the previous clip's last frame — authoring without it (${(e as Error).message}).`)
+        }
+      }
+
+      // A user may have selected an older clip before pressing Continue. The
+      // next source must read that clip's stored film context, never the
+      // session's currently selected pass.
       const previousSession = sessionRef.current
       const sourceFilm = c.film ?? previousSession.film
+      // The breakdown already decided what the NEXT clip covers and what it
+      // precedes/follows — that is exactly what Hand-off used to re-derive
+      // in prose. Look it up by the next clip's plan index rather than
+      // asking a model to state it again.
+      const planClip = previousSession.breakdown?.clips.find(
+        (bc) => bc.index === (sourceFilm?.clipIndex ?? c.index) + 1,
+      )
+      const nextSource = continuationSource(note, { covers: planClip?.covers, spine: sourceFilm?.spine })
+
       if (isCancelled()) {
-        markCancelled('handoff', nextSource)
+        markCancelled('frame', nextSource)
         return
       }
       const nextSession: Session = {
         story: nextSource,
-        // Append the hand-off to the existing lineage. Direct and Draft below
-        // append too, so history/diffs can still inspect every prior pass.
-        versions: appendContinuationHistory(previousSession.versions, written),
-        currentId: written.id,
+        versions: previousSession.versions,
+        currentId: previousSession.currentId,
         chat: [],
         parentClipId: clipId,
         parentPrompt: c.prompt,
@@ -2198,63 +2255,59 @@ export function AppProvider({ children }: { children: ReactNode }) {
           ...DEFAULT_FILM,
           ...sourceFilm,
           role: nextRole(sourceFilm?.role ?? 'standalone'),
-          precedes: parsed.precedes || sourceFilm?.precedes || '',
-          follows: parsed.follows || sourceFilm?.follows || '',
+          precedes: planClip?.precedes || sourceFilm?.precedes || '',
+          follows: planClip?.follows || sourceFilm?.follows || '',
         },
         breakdown: previousSession.breakdown,
+        continuationFrame: frame,
       }
       // `run()` snapshots sessionRef synchronously. Keep it in lockstep with
-      // the state update so Direct starts from the new hand-off source rather
+      // the state update so Draft starts from the new source/frame rather
       // than the old prompt during this same async turn.
       setSession(nextSession)
       sessionRef.current = nextSession
       setCurrentClipId(clipId)
 
-      let failedStage: 'direct' | 'draft' = 'direct'
+      setContinuation({ clipId, phase: 'draft', state: 'running', source: nextSource })
       let authored: 'ready' | 'aborted'
       try {
-        authored = await authorContinuation(async (stage, previous) => {
+        authored = await authorContinuation(async (stage) => {
           if (isCancelled()) return null
-          failedStage = stage
-          setContinuation({ clipId, phase: stage, state: 'running', source: nextSource })
-          const previousText = previous && typeof previous === 'object' && 'text' in previous && typeof previous.text === 'string'
-            ? previous.text
-            : undefined
-          return run(stage, undefined, {
-            studioMode: 'story',
-            ...(stage === 'draft' && previousText ? { current: previousText } : {}),
-          })
+          return run(stage, undefined, { studioMode: 'story' })
         }, isCancelled)
       } catch (e) {
         // `run()` normally turns provider failures into null, but preserve an
         // unexpected failure as a visible error and a failed receipt too.
         const message = String((e as Error).message || e)
         setError(message)
-        setContinuation({ clipId, phase: failedStage, state: 'failed', source: nextSource })
+        clearContinuationFrame()
+        setContinuation({ clipId, phase: 'draft', state: 'failed', source: nextSource })
         return
       }
+      clearContinuationFrame()
       if (isCancelled()) {
-        setContinuation({ clipId, phase: failedStage, state: 'cancelled', source: nextSource })
+        setContinuation({ clipId, phase: 'draft', state: 'cancelled', source: nextSource })
         return
       }
       if (authored !== 'ready') {
-        setContinuation({ clipId, phase: failedStage, state: 'failed', source: nextSource })
+        setContinuation({ clipId, phase: 'draft', state: 'failed', source: nextSource })
         return
       }
       setContinuation({ clipId, phase: 'ready', state: 'ready', source: nextSource })
       } catch (e) {
         if (isCancelled() || (e as Error).name === 'AbortError') {
-          markCancelled('handoff')
+          markCancelled('frame')
         } else {
           const message = String((e as Error).message || e)
           setError(message)
-          setContinuation({ clipId, phase: 'handoff', state: 'failed' })
+          clearContinuationFrame()
+          setContinuation({ clipId, phase: 'draft', state: 'failed' })
         }
       } finally {
         if (continuationAbortRef.current === controller) continuationAbortRef.current = null
       }
     },
-    [clearReplacedPlates, clipUrl, patchClip, run],
+    [clearReplacedPlates, clearContinuationFrame, clipUrl, run],
   )
 
   const api: Api = {

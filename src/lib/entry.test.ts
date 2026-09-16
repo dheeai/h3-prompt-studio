@@ -2,8 +2,12 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   authoringModeForContent,
+  authorContinuation,
+  clearDraftContext,
+  continuationSource,
   migrateBreakIntoScenes,
   promptSourceForAuthoringMode,
+  withContinuationFrame,
 } from './entry'
 
 // ── authoringModeForContent — the composer's TEXT decides the contract, ───
@@ -72,4 +76,97 @@ test('promptSourceForAuthoringMode: the prompt contract trusts its pasted source
 test('promptSourceForAuthoringMode: the idea/story contracts keep the heuristic', () => {
   assert.equal(promptSourceForAuthoringMode('idea', 'a rough source', '', false), '')
   assert.equal(promptSourceForAuthoringMode('story', 'looks like a prompt', '', true), 'looks like a prompt')
+})
+
+// ── authorContinuation — ONE model call per continuation (2026-09-16), ────
+// ── not Hand-off then Direct then Draft ────────────────────────────────
+
+test('authorContinuation: a single draft call reaches ready', async () => {
+  const calls: string[] = []
+  const ready = await authorContinuation(async (stage) => { calls.push(stage); return { stage } })
+  assert.equal(ready, 'ready')
+  assert.deepEqual(calls, ['draft'])
+})
+
+test('authorContinuation: never calls run more than once, even when it succeeds', async () => {
+  let callCount = 0
+  await authorContinuation(async () => { callCount++; return { ok: true } })
+  assert.equal(callCount, 1)
+})
+
+test('authorContinuation: a failed draft aborts, and nothing is retried', async () => {
+  const calls: string[] = []
+  const result = await authorContinuation(async (stage) => { calls.push(stage); return null })
+  assert.equal(result, 'aborted')
+  assert.deepEqual(calls, ['draft'])
+})
+
+test('authorContinuation: cancelled before the call prevents it entirely', async () => {
+  const calls: string[] = []
+  const result = await authorContinuation(async (stage) => { calls.push(stage); return { stage } }, () => true)
+  assert.equal(result, 'aborted')
+  assert.deepEqual(calls, [])
+})
+
+test('authorContinuation: cancelled after a successful call still reports aborted', async () => {
+  let cancelled = false
+  const result = await authorContinuation(async () => { cancelled = true; return { ok: true } }, () => cancelled)
+  assert.equal(result, 'aborted')
+})
+
+// ── continuationSource — composed from the breakdown's covers / the film's ─
+// ── spine now, never a Hand-off paraphrase ────────────────────────────────
+
+test('continuationSource: an explicit note always wins', () => {
+  assert.equal(continuationSource('Make the next beat quieter', { covers: 'she opens the hatch', spine: 'a rescue' }), 'Make the next beat quieter')
+})
+
+test('continuationSource: falls back to the breakdown clip\'s own covers', () => {
+  assert.equal(continuationSource(undefined, { covers: 'she opens the hatch and steps through' }), 'COVERS: she opens the hatch and steps through')
+  assert.equal(continuationSource('', { covers: 'she opens the hatch' }), 'COVERS: she opens the hatch')
+})
+
+test('continuationSource: no covers falls back to the film\'s spine', () => {
+  assert.equal(
+    continuationSource(undefined, { spine: 'a woman escapes a sinking ship' }),
+    'Continue the film — it is about: a woman escapes a sinking ship. Advance from the previous clip\'s ending state.',
+  )
+})
+
+test('continuationSource: nothing at all falls back to a generic instruction', () => {
+  assert.equal(continuationSource(undefined, {}), 'Continue from the ending state of the previous clip.')
+  assert.equal(continuationSource('   ', { covers: '  ', spine: '  ' }), 'Continue from the ending state of the previous clip.')
+})
+
+// ── clearDraftContext — the continuation frame is part of what a fresh ────
+// ── entry must never inherit ──────────────────────────────────────────────
+
+test('clearDraftContext: clears the continuation frame along with the rest of a draft context', () => {
+  const previous = {
+    story: 'old scene', versions: [{ id: 'v1' }], currentId: 'v1', chat: [{ role: 'user', text: 'old note' }],
+    film: { role: 'rising' as const, spine: 'old film', precedes: '', follows: '', clipIndex: 2 },
+    parentClipId: 'clip-1', parentPrompt: 'old prompt', breakdown: { spine: 'old film', clips: [] },
+    continuationFrame: 'data:image/png;base64,STALE_FRAME',
+    keep: 'configuration',
+  }
+  const next = clearDraftContext(previous)
+  assert.equal(next.continuationFrame, undefined)
+  assert.equal(next.keep, 'configuration')
+})
+
+// ── withContinuationFrame — the ONE seam the frame passes through, and the ─
+// ── proof it can never land in the caller's own plate-image array ────────
+
+test('withContinuationFrame: no frame leaves the plate images untouched', () => {
+  const plateImages = [{ type: 'image_url' as const, image_url: { url: 'data:image/png;base64,PLATE' } }]
+  assert.equal(withContinuationFrame(plateImages, undefined), plateImages)
+})
+
+test('withContinuationFrame: a frame is appended to a NEW array, never spliced into the one passed in', () => {
+  const plateImages = [{ type: 'image_url' as const, image_url: { url: 'data:image/png;base64,PLATE' } }]
+  const withFrame = withContinuationFrame(plateImages, 'data:image/png;base64,FRAME')
+  assert.equal(plateImages.length, 1, 'the caller\'s own plate array must never be mutated')
+  assert.equal(withFrame.length, 2)
+  assert.deepEqual(withFrame[0], plateImages[0])
+  assert.deepEqual(withFrame[1], { type: 'image_url', image_url: { url: 'data:image/png;base64,FRAME' } })
 })

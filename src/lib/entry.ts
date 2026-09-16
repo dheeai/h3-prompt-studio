@@ -1,5 +1,6 @@
 import type { FilmContext } from './types'
 import type { Standing } from './lint'
+import type { ChatContentPart } from './llm'
 
 /**
  * There is no entry-mode picker any more (2026-09-07 redesign — "the system
@@ -74,30 +75,43 @@ export function shouldContinueStoryLoop(result: { status: 'ok' | 'null' | 'cance
   return result.status === 'ok'
 }
 
-export interface ContinuationHandoff {
-  precedes: string
-  follows: string
-  open: string
-}
-
-/** Explicit input override for hand-off authoring from a selected clip. */
-export function continuationContextOverride(clip: { prompt: string; film?: FilmContext; index?: number }): { current: string; film?: FilmContext; clipIndex?: number } {
-  return { current: clip.prompt, film: clip.film, clipIndex: clip.film?.clipIndex ?? clip.index }
+/**
+ * What the next clip's source can be built from once a continuation stops
+ * running its own Hand-off call (2026-09-16 — see `authorContinuation`'s
+ * module comment for why that call was dropped). There is no fresh paraphrase
+ * of the ending state any more; `{{previous}}` already carries the parent's
+ * canonical prompt, whose final `[Shot N]` block states that ending state
+ * explicitly. What IS still useful and was never available from the parent
+ * prompt is what the breakdown already decided the NEXT clip must cover.
+ */
+export interface ContinuationCarry {
+  /** The next clip's own `covers`, from the breakdown plan clip at that index. */
+  covers?: string
+  /** The film's one-line spine, used when there is no breakdown to be specific with. */
+  spine?: string
 }
 
 /**
- * Give the next Direct pass a useful source even when the operator leaves the
- * optional continuation note empty. The hand-off is deliberately ordered from
- * what remains open, through the next beat, back to the state just inherited.
+ * Give the Draft pass a useful source even when the operator leaves the
+ * optional continuation note empty.
+ *
+ * This used to fuse a Hand-off paragraph — a whole extra model call that read
+ * the parent clip's prompt and wrote its own paraphrase of the ending state.
+ * That paraphrase was never new information: the parent prompt's own final
+ * `[Shot N]` block already states it, and Draft receives that prompt verbatim
+ * as `{{previous}}`. So the source is now built from what the breakdown
+ * ALREADY decided this clip must cover, falling back to the film's spine, and
+ * finally to a generic instruction that still works because `{{previous}}`
+ * carries the real continuity, not this line.
  */
-export function continuationSource(note: string | undefined, handoff: ContinuationHandoff): string {
+export function continuationSource(note: string | undefined, carry: ContinuationCarry): string {
   const explicit = note?.trim()
   if (explicit) return explicit
-  return [
-    handoff.open.trim() && `OPEN: ${handoff.open.trim()}`,
-    handoff.follows.trim() && `FOLLOWS: ${handoff.follows.trim()}`,
-    handoff.precedes.trim() && `PRECEDES: ${handoff.precedes.trim()}`,
-  ].filter(Boolean).join('\n') || 'Continue from the ending state of the previous clip.'
+  const covers = carry.covers?.trim()
+  if (covers) return `COVERS: ${covers}`
+  const spine = carry.spine?.trim()
+  if (spine) return `Continue the film — it is about: ${spine}. Advance from the previous clip's ending state.`
+  return 'Continue from the ending state of the previous clip.'
 }
 
 /**
@@ -138,6 +152,9 @@ export interface DraftContextState {
   parentPrompt?: string
   breakdown?: unknown
   externalVideo?: unknown
+  /** The continuation's vision frame — see `withContinuationFrame`. Never
+   * meaningful outside the one draft call it was fetched for. */
+  continuationFrame?: string
 }
 
 /**
@@ -159,18 +176,29 @@ export function clearDraftContext<T extends DraftContextState>(session: T): T {
     parentPrompt: undefined,
     breakdown: undefined,
     externalVideo: null,
+    continuationFrame: undefined,
   }
 }
 
-/** Direct then Draft, stopping at the first cancelled or failed pass. */
+/**
+ * Run a continuation's one authoring call.
+ *
+ * Used to run Hand-off, then Direct, then Draft — three model calls per
+ * "Continue from here" turn. Hand-off is now skipped entirely (its
+ * paraphrase of the ending state was never new information — see
+ * `continuationSource`), and Direct is folded away too: the `draft` template
+ * already directs-then-drafts in one pass ("Direct this, then write the
+ * {{mode}} prompt. One pass, both jobs" — commit ded83fa, "perf: direct and
+ * draft become one pass, with the gates kept inside it") for every other
+ * entry point through this app. Continuation was simply never brought in
+ * line with that change until now. One call, not three.
+ */
 export async function authorContinuation<T>(
-  run: (stage: 'direct' | 'draft', previous?: T) => Promise<T | null>,
+  run: (stage: 'draft') => Promise<T | null>,
   isCancelled: () => boolean = () => false,
 ): Promise<'ready' | 'aborted'> {
   if (isCancelled()) return 'aborted'
-  const directed = await run('direct')
-  if (isCancelled() || !directed) return 'aborted'
-  const drafted = await run('draft', directed)
+  const drafted = await run('draft')
   return isCancelled() || !drafted ? 'aborted' : 'ready'
 }
 
@@ -185,7 +213,21 @@ export function continuationPlateIsFresh(plate: { mode: 'carried' | 'replaced'; 
   return plate.mode !== 'replaced' || plate.fromClipId === clipId
 }
 
-/** Append a continuation pass without severing the earlier version lineage. */
-export function appendContinuationHistory<T>(history: readonly T[], pass: T): T[] {
-  return [...history, pass]
+/**
+ * Add the continuation frame, if any, to the vision content parts already
+ * built for a request — after everything else, and only when one is present.
+ *
+ * This is the one seam the frame passes through on its way into a request,
+ * kept as a pure function so it is possible to prove — rather than just
+ * assert — that the frame can never end up inside `plates` itself. A
+ * previous attempt did exactly that: added the previous clip's last frame as
+ * a `replaced` plate, which burned one of H3's nine reference slots on every
+ * continuation for something Contex-Loop's own motion context already made
+ * redundant (see `continueFrom`'s "NO LAST-FRAME PLATE" comment in
+ * `state.tsx`). Plates and the continuation frame are two different
+ * parameters here, and the frame never touches the array the caller passes
+ * in — it is appended to a NEW array, never spliced into the given one.
+ */
+export function withContinuationFrame(images: ChatContentPart[], frame: string | undefined): ChatContentPart[] {
+  return frame ? [...images, { type: 'image_url', image_url: { url: frame } }] : images
 }

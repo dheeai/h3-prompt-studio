@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { durationBlock, fillTemplate, fillTemplateWithDuration } from './stages'
+import { DEFAULT_TEMPLATES, continuationFrameBlock, durationBlock, fillTemplate, fillTemplateWithDuration } from './stages'
 import { framesForSeconds } from './recipe'
 
 test('durationBlock states the ACTUAL grid-snapped length, not the chosen one', () => {
@@ -48,4 +48,34 @@ test('no duration supplied leaves the template untouched', () => {
 
 test('fillTemplate still strips an unused {{duration}} placeholder', () => {
   assert.equal(fillTemplate('{{story}}{{duration}}', { story: 'x' }), 'x')
+})
+
+// ── continuationFrameBlock / {{continuationFrame}} — only present when a ──
+// ── continuation frame is actually attached ───────────────────────────────
+
+test('continuationFrameBlock: absent when no frame is attached', () => {
+  assert.equal(continuationFrameBlock(false), '')
+})
+
+test('continuationFrameBlock: names what the image is, and forbids citing it', () => {
+  const b = continuationFrameBlock(true)
+  assert.match(b, /final rendered frame of the previous clip/)
+  assert.match(b, /CONTEXT ONLY/)
+  assert.match(b, /Never cite it as <Subject N> or <Picture N>/)
+  assert.match(b, /never add it to\s+references/)
+})
+
+test('fillTemplate: {{continuationFrame}} renders empty when nothing is supplied', () => {
+  assert.equal(fillTemplate('BEFORE\n{{continuationFrame}}\nAFTER', { story: 'x' }), 'BEFORE\n\nAFTER')
+})
+
+test('fillTemplate: {{continuationFrame}} carries the supplied block verbatim', () => {
+  const out = fillTemplate('{{continuationFrame}}', { story: 'x', continuationFrame: continuationFrameBlock(true) })
+  assert.match(out, /CONTEXT ONLY/)
+})
+
+test('draft template: carries the {{continuationFrame}} placeholder, after {{previous}}', () => {
+  const draft = DEFAULT_TEMPLATES.draft
+  assert.ok(draft.includes('{{continuationFrame}}'))
+  assert.ok(draft.indexOf('{{previous}}') < draft.indexOf('{{continuationFrame}}'))
 })

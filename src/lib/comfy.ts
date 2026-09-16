@@ -1,5 +1,7 @@
 import { mixedContentBlocked } from './providers'
 import { pickAssembledVideo } from './chain'
+import { parseExtenderPreviewInfo, pickExtenderVideo } from './extender'
+import type { ExtenderPreviewInfo } from './extender'
 import type { Clip, ComfyEndpoint, ComfyNode, ProbeResult } from './types'
 
 /**
@@ -253,6 +255,42 @@ export async function pollChain(ep: ComfyEndpoint, promptId: string, runName: st
       ? undefined
       : `The chain job finished, but no assembled film matching run '${runName}' was found among ${files.length} output(s) — ` +
         `check ComfyUI's output/h3_chains/${runName}/ directly.`,
+  }
+}
+
+export interface ExtenderPollResult extends PollResult {
+  /** The node's own progress receipt for this job so far, or null before the
+   * first one has landed in `/history` — see `parseExtenderPreviewInfo`. */
+  preview: ExtenderPreviewInfo | null
+}
+
+/**
+ * Poll a Master Extender job. Unlike `poll()`, this cannot just take
+ * whichever file came back — `MiniMaxH3MasterFinalDecode` also emits a
+ * `type: "temp"` scrub preview alongside the real `type: "output"` save, and
+ * `pickExtenderVideo` (extender.ts) is what tells them apart. `preview` rides
+ * along even on an incomplete poll, so the caller can show "clip 2/4 —
+ * sampled" instead of a bare spinner while the job is still running.
+ */
+export async function pollExtender(ep: ComfyEndpoint, promptId: string): Promise<ExtenderPollResult> {
+  const entry = await fetchHistoryEntry(ep, promptId)
+  if (!entry) return { done: false, preview: null }
+
+  const preview = parseExtenderPreviewInfo(entry.outputs as Record<string, unknown> | undefined)
+  const status = entry.status ?? {}
+  if (status.status_str === 'error') {
+    const messages = JSON.stringify(status.messages ?? status).slice(0, 300)
+    return { done: true, failed: messages, preview }
+  }
+  if (!status.completed) return { done: false, preview }
+
+  const files = collectOutputFiles(entry)
+  const output = pickExtenderVideo(files)
+  return {
+    done: true,
+    output,
+    preview,
+    failed: output ? undefined : 'The Master Extender job finished, but no saved video was found among its outputs.',
   }
 }
 

@@ -281,6 +281,17 @@ export interface Settings {
   /** UNET stamped onto every chain graph. Unset means `SINGULARITY_UNET` — the
    * model the 27-clip film of 2026-09-06 shipped on. Set it to override. */
   chainUnetName?: string
+  /**
+   * Which multi-clip render path a plan submits through. Unset means
+   * `'chain'` — the Contex-Loop path stays the default so an existing profile
+   * (and this file's every other reader of `breakIntoScenes`/`chainRecipeId`)
+   * sees no behaviour change. `'extender'` is the MiniMax H3 Master Extender
+   * path (`lib/extender.ts`) — a single node that takes the whole film as
+   * `clips_json` and keeps its own validated-clip disk cache, rather than the
+   * studio building a per-scene chain itself. See `lib/extender.ts`'s module
+   * comment for why the two paths do not share machinery.
+   */
+  renderPath?: 'chain' | 'extender'
   /** Target clip length before the frame grid snaps it. */
   seconds: number
   /** A film normally wants one seed the whole way down. */
@@ -513,4 +524,16 @@ export interface Clip {
    * manually-continued one, or one plan clip of a whole plan submitted as a
    * chain (every plan clip gets its own `Clip`, sharing one `runName`). */
   chain?: ClipChainInfo
+  /**
+   * Set when this clip is one scene of a Master Extender FILM instead — kept
+   * as its own field, never folded into `chain`, because the two paths
+   * deliver different numbers for the same shape of data: a Contex-Loop scene
+   * pays the overlap tax (`ClipChainInfo`/`sceneAccounting`'s `padForOverlap`
+   * math), an Extender scene delivers exactly what it authored. Mixing them
+   * under one field would apply the wrong arithmetic to whichever path ran
+   * second. `nodeId` is this film's own stable Master Extender node id (see
+   * `lib/extender.ts`'s TRAP 1); `sceneIndex` is this clip's 1-based position
+   * within it.
+   */
+  extender?: { nodeId: string; sceneIndex: number }
 }

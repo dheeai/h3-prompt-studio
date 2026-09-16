@@ -8,9 +8,15 @@ import { cumulativeSceneStarts } from '../lib/chainDisplay'
  * one is replaced — see the module comment on `ChainFilmInfo` for why this
  * is sourced from the newest scene's `Clip.output` but presented as the
  * chain's own film, never one scene's.
+ *
+ * `activeFilm` is whichever render path's film was touched most recently —
+ * Contex-Loop's `chainFilm` or the Master Extender's `extenderFilm` — so this
+ * component needs no branching of its own between the two render paths; both
+ * shapes are the same `ChainFilmInfo`/`ChainSceneRow`, by design (see
+ * `lib/extender.ts`'s module comment).
  */
 export function FilmRegion() {
-  const { chainFilm, clipUrl, rendering } = useApp()
+  const { activeFilm: chainFilm, clipUrl, rendering } = useApp()
 
   if (!chainFilm) {
     return (
@@ -28,7 +34,7 @@ export function FilmRegion() {
 
   const filmUrl = chainFilm.filmClip ? clipUrl(chainFilm.filmClip) : null
   const starts = cumulativeSceneStarts(chainFilm.scenes, 24)
-  const chainIsRendering = rendering?.chain?.runName === chainFilm.runName
+  const chainIsRendering = rendering?.chain?.runName === chainFilm.runName || rendering?.extender?.nodeId === chainFilm.runName
   const last = chainFilm.scenes[chainFilm.scenes.length - 1]?.sceneIndex ?? 1
 
   return (

@@ -144,8 +144,111 @@ export function ClipPlan() {
         )
       })}
 
-      <ChainPlanSubmit />
+      <RenderPathToggle />
+      {app.settings.renderPath === 'extender' ? <ExtenderPlanSubmit /> : <ChainPlanSubmit />}
       <GenerateRestAction />
+    </div>
+  )
+}
+
+/**
+ * The operator's one choice of render path — Contex-Loop stays the default
+ * (`settings.renderPath` unset reads as `'chain'`) so an existing profile
+ * sees no behaviour change; both paths coexist and this is the only place
+ * that picks between them. See `lib/extender.ts`'s module comment for why
+ * the Master Extender path is so much simpler than Contex-Loop's.
+ */
+function RenderPathToggle() {
+  const { settings, patchSettings } = useApp()
+  const path = settings.renderPath ?? 'chain'
+  return (
+    <div style={{ display: 'flex', alignItems: 'baseline', gap: 9, marginBottom: 7 }}>
+      <span className="lbl">Render via</span>
+      <button className={`chip${path === 'chain' ? ' on' : ''}`} onClick={() => patchSettings({ renderPath: 'chain' })}>
+        Contex-Loop
+      </button>
+      <button className={`chip${path === 'extender' ? ' on' : ''}`} onClick={() => patchSettings({ renderPath: 'extender' })}>
+        Master Extender
+      </button>
+    </div>
+  )
+}
+
+/**
+ * One Master Extender job for the whole plan — the studio's second
+ * multi-clip render path. Unlike `ChainPlanSubmit`, there is no frame
+ * accounting to disclose (no overlap tax — see `lib/extender.ts`'s module
+ * comment) and no per-scene "redo" action: the node itself always takes the
+ * WHOLE plan, and `run_mode` (one clip vs. all pending) is the only shape
+ * choice. The cost line — clip count, total seconds, how many will actually
+ * sample versus come from the box's own cache — is shown before either
+ * button is pressed, per the brief.
+ */
+function ExtenderPlanSubmit() {
+  const app = useApp()
+  const { extenderPlanPreview, extenderReady, rendering, renderExtenderPlan, extenderProgress } = app
+  const [busy, setBusy] = useState(false)
+  if (!extenderPlanPreview) return null
+
+  const { clips, cost, issues } = extenderPlanPreview
+  const blocked = issues.length > 0 || !extenderReady || !!rendering || busy
+
+  const submit = async (runMode: 'clip_by_clip' | 'full_batch') => {
+    setBusy(true)
+    try {
+      await renderExtenderPlan(runMode)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="card" style={{ marginTop: 4, marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 9 }}>
+        <span className="lbl">Master Extender — the whole film as one job</span>
+        <div style={{ flexGrow: 1 }} />
+        <span className="tok">
+          {cost.totalSeconds.toFixed(1)}s · {cost.toSample} to sample · {cost.fromCache} from cache
+        </span>
+      </div>
+
+      <div style={{ marginTop: 10 }}>
+        {clips.map((c) => (
+          <div key={c.index} style={{ display: 'flex', alignItems: 'baseline', gap: 9, padding: '4px 0', borderBottom: '1px solid var(--rule)' }}>
+            <span className="tok" style={{ width: 18, flex: '0 0 auto' }}>{c.index}</span>
+            <span style={{ fontSize: 11.5, flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {c.title}
+            </span>
+            <span className="tok">{c.seconds}s</span>
+            <span className="tok" style={{ color: c.validated ? 'var(--grn)' : 'var(--ink3)' }}>
+              {c.validated ? 'validated · cached' : 'will sample'}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {issues.length > 0 && (
+        <div className="card err" style={{ marginTop: 12 }}>
+          {issues.map((i) => (
+            <div key={i} style={{ fontSize: 11.5, lineHeight: 1.6 }}>{i}</div>
+          ))}
+        </div>
+      )}
+
+      {rendering && extenderProgress && (
+        <div className="tok" style={{ display: 'block', marginTop: 10 }}>
+          clip {extenderProgress.clip}/{extenderProgress.totalClips} · {extenderProgress.cacheMode}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 9, marginTop: 12 }}>
+        <button className="btn pri" disabled={blocked} onClick={() => void submit('clip_by_clip')}>
+          {rendering ? 'Rendering…' : 'Render the next clip'}
+        </button>
+        <button className="btn" disabled={blocked} onClick={() => void submit('full_batch')}>
+          Render every pending clip
+        </button>
+      </div>
     </div>
   )
 }

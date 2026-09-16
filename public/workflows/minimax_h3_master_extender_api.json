@@ -142,7 +142,7 @@
   "11": {
     "inputs": {
       "mode": "minimax",
-      "stack_data": "[{\"on\":true,\"lora\":\"style_beta.safetensors\",\"str\":0.75,\"v\":1,\"a\":1,\"t\":1}]",
+      "stack_data": "[]",
       "lora_ui": "",
       "model": [
         "1",

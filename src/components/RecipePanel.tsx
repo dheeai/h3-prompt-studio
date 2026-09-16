@@ -57,7 +57,7 @@ function BindingRow({ recipe, slot, label, why }: { recipe: Recipe; slot: Bindin
 }
 
 export function RecipePanel({ onClose }: { onClose: () => void }) {
-  const { recipes, recipe, chainRecipe, addRecipe, deleteRecipe, settings, patchSettings } = useApp()
+  const { recipes, recipe, addRecipe, deleteRecipe, settings, patchSettings } = useApp()
   const fileRef = useRef<HTMLInputElement>(null)
   const [err, setErr] = useState<string | null>(null)
 
@@ -123,28 +123,6 @@ export function RecipePanel({ onClose }: { onClose: () => void }) {
                   {r.name}
                 </button>
               ))}
-            </div>
-          )}
-
-          {recipes.length > 0 && (
-            <div style={{ marginTop: 18 }}>
-              <div className="lbl" style={{ marginBottom: 7 }}>Contex-Loop (chain) workflow</div>
-              <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
-                {recipes.map((r) => (
-                  <button
-                    key={r.id}
-                    className={`chip${r.id === chainRecipe?.id ? ' on' : ''}`}
-                    onClick={() => patchSettings({ chainRecipeId: r.id })}
-                  >
-                    {r.name}
-                  </button>
-                ))}
-              </div>
-              <div className="tok" style={{ marginTop: 6, display: 'block' }}>
-                A separate recipe from the one above — the studio's only multi-clip render path. “Render as chain
-                scene” in the clip deck and “Submit as one chain” on the clip plan both render with this one,
-                resuming every earlier scene from its checkpoint instead of re-sampling it.
-              </div>
             </div>
           )}
 

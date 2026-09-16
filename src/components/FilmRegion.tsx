@@ -1,24 +1,17 @@
 import { useApp } from '../app/state'
-import { cumulativeSceneStarts } from '../lib/chainDisplay'
+import { cumulativeSceneStarts } from '../lib/filmDisplay'
 
 /**
  * "1. THE FILM" — the top region, the artifact itself. Player, a scene-ticked
  * scrubber (each tick is where a scene begins in the joined file), and the
- * running total. One file, rebuilt every time a scene lands or an earlier
- * one is replaced — see the module comment on `ChainFilmInfo` for why this
- * is sourced from the newest scene's `Clip.output` but presented as the
- * chain's own film, never one scene's.
- *
- * `activeFilm` is whichever render path's film was touched most recently —
- * Contex-Loop's `chainFilm` or the Master Extender's `extenderFilm` — so this
- * component needs no branching of its own between the two render paths; both
- * shapes are the same `ChainFilmInfo`/`ChainSceneRow`, by design (see
- * `lib/extender.ts`'s module comment).
+ * running total. One file, rebuilt every time a scene lands — see the
+ * module comment on `FilmInfo` for why this is sourced from the newest
+ * scene's `Clip.output` but presented as the film's own, never one scene's.
  */
 export function FilmRegion() {
-  const { activeFilm: chainFilm, clipUrl, rendering } = useApp()
+  const { extenderFilm: film, clipUrl, rendering } = useApp()
 
-  if (!chainFilm) {
+  if (!film) {
     return (
       <div className="film-region film-region-empty">
         <div className="film-player film-player-empty">
@@ -32,27 +25,27 @@ export function FilmRegion() {
     )
   }
 
-  const filmUrl = chainFilm.filmClip ? clipUrl(chainFilm.filmClip) : null
-  const starts = cumulativeSceneStarts(chainFilm.scenes, 24)
-  const chainIsRendering = rendering?.chain?.runName === chainFilm.runName || rendering?.extender?.nodeId === chainFilm.runName
-  const last = chainFilm.scenes[chainFilm.scenes.length - 1]?.sceneIndex ?? 1
+  const filmUrl = film.filmClip ? clipUrl(film.filmClip) : null
+  const starts = cumulativeSceneStarts(film.scenes, 24)
+  const filmIsRendering = rendering?.extender?.nodeId === film.runName
+  const last = film.scenes[film.scenes.length - 1]?.sceneIndex ?? 1
 
   return (
     <div className="film-region">
       <div className="film-player">
-        {filmUrl && chainFilm.filmClip?.state === 'done' ? (
+        {filmUrl && film.filmClip?.state === 'done' ? (
           <video src={filmUrl} controls style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
         ) : (
-          <span className="tok">{chainIsRendering ? 'rebuilding to the newest scene…' : 'the film so far'}</span>
+          <span className="tok">{filmIsRendering ? 'rebuilding to the newest scene…' : 'the film so far'}</span>
         )}
       </div>
-      {chainFilm.totalSeconds > 0 && (
+      {film.totalSeconds > 0 && (
         <div className="film-scrubber">
-          {chainFilm.scenes.map((p, i) => (
+          {film.scenes.map((p, i) => (
             <div
               key={p.clip.id}
               className="film-scrubber-tick"
-              style={{ width: `${(p.delivered / (chainFilm.totalFrames || 1)) * 100}%` }}
+              style={{ width: `${(p.delivered / (film.totalFrames || 1)) * 100}%` }}
               title={`Scene ${p.sceneIndex} · starts ${starts[i].toFixed(1)}s`}
             />
           ))}
@@ -62,7 +55,7 @@ export function FilmRegion() {
         <div>
           <span className="serif film-region-title">Your film</span>
           <span className="tok" style={{ marginLeft: 10 }}>
-            {chainFilm.scenes.length} scene{chainFilm.scenes.length === 1 ? '' : 's'} · {chainFilm.totalSeconds.toFixed(1)}s · {chainFilm.totalFrames}f
+            {film.scenes.length} scene{film.scenes.length === 1 ? '' : 's'} · {film.totalSeconds.toFixed(1)}s · {film.totalFrames}f
           </span>
         </div>
         <div style={{ display: 'flex', gap: 7 }}>
@@ -70,13 +63,13 @@ export function FilmRegion() {
           {filmUrl && <a className="btn sm" href={filmUrl} target="_blank" rel="noreferrer">Open full size</a>}
         </div>
       </div>
-      <div className="tok film-region-caption">{gpuBusyCaption(chainIsRendering, last)}</div>
+      <div className="tok film-region-caption">{gpuBusyCaption(filmIsRendering, last)}</div>
     </div>
   )
 }
 
-function gpuBusyCaption(chainIsRendering: boolean, last: number): string {
-  if (chainIsRendering) return 'One file, rebuilt every time a scene lands. Rendering the next scene now…'
+function gpuBusyCaption(filmIsRendering: boolean, last: number): string {
+  if (filmIsRendering) return 'One file, rebuilt every time a scene lands. Rendering the next scene now…'
   if (last <= 1) return 'One file, rebuilt every time a scene lands. It is scene 1 alone — not yet continued.'
   return `One file, rebuilt every time a scene lands. It is not scene ${last} — it is scenes 1–${last} joined.`
 }

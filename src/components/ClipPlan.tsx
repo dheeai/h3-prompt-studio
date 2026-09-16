@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useApp } from '../app/state'
 import { LoraStackEditor } from './LoraStackEditor'
 import { listLoraNames } from '../lib/comfy'
-import { localLoraStackOverride, planNeedsPerSceneLoraSplit, readBakedLoraStack } from '../lib/loras'
+import { localLoraStackOverride } from '../lib/loras'
 import { clipsNeedingPrompt } from '../lib/studio-workflow'
 import { latestPromptForClip } from '../lib/stages'
 
@@ -10,14 +10,13 @@ import { latestPromptForClip } from '../lib/stages'
 /**
  * The style-stack editor for one plan clip — add/remove a LoRA, toggle it,
  * adjust its strength. `stack` is `undefined` until this clip is customized,
- * at which point it renders on whatever the bound Contex-Loop workflow's own
- * `LTX_lora_loader.stack_data` already carries (`defaultStack`) — the
- * no-op-until-edited contract `chain.ts`'s `buildChainGraph` keeps.
+ * at which point it renders on whatever the bound Master Extender workflow's
+ * own `LTX_lora_loader.stack_data` already carries (`defaultStack`).
  */
 /** The clip plan a Break down pass produced, and one way in per clip. */
 export function ClipPlan() {
   const app = useApp()
-  const { breakdown, versions, streaming, clips, chainPlanPreview, renderChainPlan, rendering, chainRecipe, endpoint } = app
+  const { breakdown, versions, streaming, clips, rendering, extenderDefaultLoraStack, endpoint } = app
   const [loraNames, setLoraNames] = useState<string[]>([])
   const [loraErr, setLoraErr] = useState<string | null>(null)
 
@@ -37,23 +36,16 @@ export function ClipPlan() {
 
   // The operator's own machine-local override (VITE_LOCAL_LORA_STACK, from a
   // gitignored .env.local) wins when present; the public build has none, so
-  // every visitor falls back to the graph's own baked stack (empty on the
-  // shipped workflow) — see `localLoraStackOverride`'s module comment.
+  // every visitor falls back to the graph's own baked stack — see
+  // `localLoraStackOverride`'s module comment.
   const defaultStack = useMemo(() => {
     const local = localLoraStackOverride(import.meta.env.VITE_LOCAL_LORA_STACK)
-    return local.length ? local : readBakedLoraStack(chainRecipe?.graph ?? null)
-  }, [chainRecipe])
+    return local.length ? local : extenderDefaultLoraStack
+  }, [extenderDefaultLoraStack])
 
   if (!breakdown) return null
 
   const latestFor = (clipIndex: number) => latestPromptForClip(versions, clipIndex)
-
-  // Whether THIS plan clip's scene has already landed as part of the plan's
-  // own chain (as opposed to some other manually-continued chain) — the
-  // signal that a "redo this scene alone" resubmit is even possible.
-  const renderedFor = (clipIndex: number) =>
-    chainPlanPreview &&
-    clips.some((c) => c.chain?.runName === chainPlanPreview.runName && c.chain.sceneIndex === clipIndex && c.state === 'done')
 
   return (
     <div style={{ padding: '4px 26px 0' }}>
@@ -63,7 +55,6 @@ export function ClipPlan() {
       {loraErr && <div className="tok" style={{ display: 'block', marginBottom: 7, color: 'var(--ox)' }}>{loraErr}</div>}
       {breakdown.clips.map((c) => {
         const ready = latestFor(c.index)
-        const landed = renderedFor(c.index)
         return (
           <div className="card" key={c.index} style={{ marginBottom: 7 }}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 9, flexWrap: 'wrap' }}>
@@ -110,16 +101,6 @@ export function ClipPlan() {
               >
                 Generate prompt
               </button>
-              {landed && ready && (
-                <button
-                  className="btn sm ghost"
-                  disabled={!!rendering}
-                  title="Resample only this scene, resuming every other scene from its checkpoint"
-                  onClick={() => void renderChainPlan(c.index)}
-                >
-                  Redo this scene
-                </button>
-              )}
             </div>
             {c.covers && (
               <div className="tok" style={{ marginTop: 6, lineHeight: 1.55, color: 'var(--ink2)' }}>
@@ -137,45 +118,20 @@ export function ClipPlan() {
         )
       })}
 
-      <RenderPathToggle />
-      {app.settings.renderPath === 'extender' ? <ExtenderPlanSubmit /> : <ChainPlanSubmit />}
+      <ExtenderPlanSubmit />
       <GenerateRestAction />
     </div>
   )
 }
 
 /**
- * The operator's one choice of render path — Contex-Loop stays the default
- * (`settings.renderPath` unset reads as `'chain'`) so an existing profile
- * sees no behaviour change; both paths coexist and this is the only place
- * that picks between them. See `lib/extender.ts`'s module comment for why
- * the Master Extender path is so much simpler than Contex-Loop's.
- */
-function RenderPathToggle() {
-  const { settings, patchSettings } = useApp()
-  const path = settings.renderPath ?? 'chain'
-  return (
-    <div style={{ display: 'flex', alignItems: 'baseline', gap: 9, marginBottom: 7 }}>
-      <span className="lbl">Render via</span>
-      <button className={`chip${path === 'chain' ? ' on' : ''}`} onClick={() => patchSettings({ renderPath: 'chain' })}>
-        Contex-Loop
-      </button>
-      <button className={`chip${path === 'extender' ? ' on' : ''}`} onClick={() => patchSettings({ renderPath: 'extender' })}>
-        Master Extender
-      </button>
-    </div>
-  )
-}
-
-/**
- * One Master Extender job for the whole plan — the studio's second
- * multi-clip render path. Unlike `ChainPlanSubmit`, there is no frame
- * accounting to disclose (no overlap tax — see `lib/extender.ts`'s module
- * comment) and no per-scene "redo" action: the node itself always takes the
- * WHOLE plan, and `run_mode` (one clip vs. all pending) is the only shape
- * choice. The cost line — clip count, total seconds, how many will actually
- * sample versus come from the box's own cache — is shown before either
- * button is pressed, per the brief.
+ * One Master Extender job for the whole plan — the studio's only multi-clip
+ * render path. There is no frame accounting to disclose (no overlap tax —
+ * see `lib/extender.ts`'s module comment) and no per-scene "redo" action:
+ * the node itself always takes the WHOLE plan, and `run_mode` (one clip vs.
+ * all pending) is the only shape choice. The cost line — clip count, total
+ * seconds, how many will actually sample versus come from the box's own
+ * cache — is shown before either button is pressed, per the brief.
  */
 function ExtenderPlanSubmit() {
   const app = useApp()
@@ -247,110 +203,24 @@ function ExtenderPlanSubmit() {
 }
 
 /**
- * One Contex-Loop chain job for the whole plan — the studio's only multi-clip
- * render path (Long Media multiclip removed 2026-09-07).
- *
- * The frame accounting is shown BEFORE the submit button on purpose — the
- * delivered length differs from what the plan asked for (the overlap tax, see
- * chain.ts / frames.ts), and that surprise is the whole point of surfacing it
- * here rather than after a long render comes back short. A per-clip "Redo
- * this scene" action (above, once a clip has landed) resamples just one
- * scene via `scene_range`, without re-sampling its neighbours.
- */
-function ChainPlanSubmit() {
-  const app = useApp()
-  const { chainPlanPreview, rendering, renderChainPlan, breakdown } = app
-  const [busy, setBusy] = useState(false)
-  if (!chainPlanPreview) return null
-
-  const { clips, totalSeconds, issues, warnings } = chainPlanPreview
-  const blocked = issues.length > 0 || !!rendering || busy
-  const splitting = planNeedsPerSceneLoraSplit((breakdown?.clips ?? []).map((c) => c.loraStack))
-
-  const submitAll = async () => {
-    setBusy(true)
-    try {
-      await renderChainPlan()
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <div className="card" style={{ marginTop: 4, marginBottom: 16 }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 9 }}>
-        <span className="lbl">Contex-Loop — the whole plan as one chain</span>
-        <div style={{ flexGrow: 1 }} />
-        <span className="tok">{totalSeconds.toFixed(3)}s delivered</span>
-      </div>
-
-      <div style={{ marginTop: 10 }}>
-        {clips.map((c) => (
-          <div key={c.index} style={{ display: 'flex', alignItems: 'baseline', gap: 9, padding: '4px 0', borderBottom: '1px solid var(--rule)' }}>
-            <span className="tok" style={{ width: 18, flex: '0 0 auto' }}>{c.index}</span>
-            <span style={{ fontSize: 11.5, flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {c.title}
-            </span>
-            <span className="tok">authored {c.authored}f</span>
-            <span className="tok">rendered {c.rendered}f</span>
-            <span className="tok" style={{ color: c.delivered < c.authored ? 'var(--ox)' : 'var(--ink2)' }}>
-              delivered {c.delivered}f
-            </span>
-          </div>
-        ))}
-      </div>
-
-      {issues.length > 0 && (
-        <div className="card err" style={{ marginTop: 12 }}>
-          {issues.map((i) => (
-            <div key={i} style={{ fontSize: 11.5, lineHeight: 1.6 }}>{i}</div>
-          ))}
-        </div>
-      )}
-      {warnings.length > 0 && (
-        <div className="alert warn" style={{ marginTop: 12 }}>
-          {warnings.map((w) => (
-            <div key={w}>{w}</div>
-          ))}
-        </div>
-      )}
-
-      {splitting && (
-        <div className="alert warn" style={{ marginTop: 12 }}>
-          Clips in this plan disagree on their style LoRAs, so a single job cannot honour all of them — one ComfyUI job
-          samples every shot in it against the same style stack. This submits as {clips.length} sequential jobs instead,
-          one per scene, each resuming the last from its checkpoint — still one render at a time.
-        </div>
-      )}
-
-      <div style={{ display: 'flex', gap: 9, marginTop: 12 }}>
-        <button className="btn pri" disabled={blocked} onClick={() => void submitAll()}>
-          {rendering ? 'Rendering…' : splitting ? `Submit all ${clips.length} as ${clips.length} scene jobs` : `Submit all ${clips.length} as one chain`}
-        </button>
-      </div>
-    </div>
-  )
-}
-
-/**
  * "Generate the rest" (Task 2, 2026-09-16) — the autonomous tail on this
  * plan's interactive head. Only shown once there is something to run
  * unattended AND at least one scene has already landed (an operator's first
  * few scenes reviewed clean is the whole point — this is never the FIRST
  * action on a fresh plan). Wiring plus a gate over what already exists:
- * `clipsNeedingPrompt` for the authoring loop, `chainPlanPreview` for the
+ * `clipsNeedingPrompt` for the authoring loop, `extenderPlanPreview` for the
  * cost shown before anything is spent (never a second estimate that can
  * drift from what `generateRest` actually submits), and `generateRest`
  * itself for the run.
  */
 function GenerateRestAction() {
   const app = useApp()
-  const { breakdown, versions, clips, chainPlanPreview, streaming, rendering, generateRest } = app
+  const { breakdown, versions, clips, extenderPlanPreview, streaming, rendering, generateRest } = app
   const [confirming, setConfirming] = useState(false)
   const [running, setRunning] = useState(false)
-  if (!breakdown || !chainPlanPreview) return null
+  if (!breakdown || !extenderPlanPreview) return null
 
-  const anyLanded = clips.some((c) => c.chain?.runName === chainPlanPreview.runName && c.state === 'done')
+  const anyLanded = clips.some((c) => c.extender?.nodeId === extenderPlanPreview.nodeId && c.state === 'done')
   if (!anyLanded) return null
 
   const remaining = clipsNeedingPrompt(breakdown, versions)
@@ -378,8 +248,8 @@ function GenerateRestAction() {
       {confirming ? (
         <>
           <div className="tok" style={{ marginTop: 8, lineHeight: 1.6 }}>
-            Authors {remaining.length} clip{remaining.length === 1 ? '' : 's'}, then renders all {chainPlanPreview.clips.length} scene
-            {chainPlanPreview.clips.length === 1 ? '' : 's'} as one chain — ≈{chainPlanPreview.totalSeconds.toFixed(1)}s delivered.
+            Authors {remaining.length} clip{remaining.length === 1 ? '' : 's'}, then renders every pending clip of the
+            {' '}{extenderPlanPreview.clips.length}-clip plan as one Master Extender job — ≈{extenderPlanPreview.cost.totalSeconds.toFixed(1)}s.
             Stoppable mid-run; whatever is already authored or rendered stays exactly as it is.
           </div>
           <div style={{ display: 'flex', gap: 9, marginTop: 10 }}>

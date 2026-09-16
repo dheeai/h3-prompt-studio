@@ -2,7 +2,10 @@ import type { ComfyNode } from './types'
 
 /**
  * Submit a WHOLE FILM to ComfyUI as one MiniMax H3 **Master Extender** job —
- * the studio's second render path, alongside `chain.ts`'s Contex-Loop.
+ * the studio's only render path (Contex-Loop, a chain-of-scenes path with
+ * its own overlap-tax/scene_range/checkpoint machinery, was removed
+ * 2026-09-16 and this became the sole path rather than a second one
+ * alongside it).
  *
  * The graph (`public/workflows/minimax_h3_master_extender_api.json`) is a
  * single node, `MiniMaxH3MasterExtender`, that takes the WHOLE film as one
@@ -12,14 +15,13 @@ import type { ComfyNode } from './types'
  * `MiniMaxH3MasterFinalDecode` decodes the ENTIRE chain on every run, so the
  * output of a job containing N clips is clips 1..N already joined.
  *
- * This is deliberately much simpler than `chain.ts`: the node does the
- * chaining itself (its own `context_length`/`identity_continuity`), so this
- * file needs NONE of `chain.ts`'s machinery — no overlap tax, no
- * `padForOverlap`/`snapUp` frame-grid math (`frames.ts`), no `scene_range`
- * resume, no per-scene checkpoint hashes, no `@tag` reference activation.
- * `clips_json.duration` is plain SECONDS (the node calls
- * `duration_to_h3_frames` itself); references are plain filenames in
- * `refs_json`, never a wired `LoadImage` graph node.
+ * This is deliberately much simpler than a chain-of-scenes design would be:
+ * the node does the chaining itself (its own `context_length`/
+ * `identity_continuity`), so this file needs no overlap tax, no frame-grid
+ * padding math, no scene-range resume, no per-scene checkpoint hashes, no
+ * `@tag` reference activation. `clips_json.duration` is plain SECONDS (the
+ * node calls `duration_to_h3_frames` itself); references are plain
+ * filenames in `refs_json`, never a wired `LoadImage` graph node.
  *
  * ═══ GROUND TRUTH — read directly off the node's own source, 2026-09-16 ══════
  *
@@ -99,9 +101,7 @@ export function renumberExtenderNode(graph: Record<string, ComfyNode>, newId: st
 }
 
 /** Pruning/renumbering is how a required input goes missing. Fail here, not
- * as a ComfyUI 400 that blames the wrong node — same contract as `chain.ts`'s
- * own `assertNoDanglingLinks`, kept as a separate copy here rather than a
- * shared import so this file stays independent of `chain.ts`'s machinery. */
+ * as a ComfyUI 400 that blames the wrong node. */
 function assertNoDanglingLinks(g: Record<string, ComfyNode>): Record<string, ComfyNode> {
   for (const [k, v] of Object.entries(g)) {
     for (const [ik, iv] of Object.entries(v.inputs)) {
@@ -111,6 +111,26 @@ function assertNoDanglingLinks(g: Record<string, ComfyNode>): Record<string, Com
     }
   }
   return g
+}
+
+/**
+ * What this graph will ACTUALLY render at — read straight off the shipped
+ * Master Extender node's own baked `pass2_resolution`/`pass2_steps`, never
+ * hardcoded and never a Studio setting standing in for it (issue #30: the
+ * topbar reported "1216×672 · 5 steps" from a Contex-Loop Recipe while the
+ * node itself rendered at its own baked `pass2_resolution` of 1280x720, and a
+ * film came back 1280x736). `pass2_resolution` is a `"WxH"` string on the
+ * node's own inputs; an unparseable or missing value reads as null rather
+ * than guessing.
+ */
+export function readExtenderDefaults(graph: Record<string, ComfyNode> | null | undefined): { width: number; height: number; steps: number } | null {
+  if (!graph) return null
+  const id = byClass(graph, EXTENDER_CLASS)
+  if (!id) return null
+  const m = /^(\d+)x(\d+)/i.exec(String(graph[id].inputs.pass2_resolution ?? ''))
+  if (!m) return null
+  const steps = Number(graph[id].inputs.pass2_steps)
+  return { width: Number(m[1]), height: Number(m[2]), steps: Number.isFinite(steps) ? steps : 0 }
 }
 
 /**
@@ -229,8 +249,8 @@ function checkExtenderSignature(
 export type ExtenderSeedMode = 'fixed' | 'randomize' | 'increment' | 'decrement'
 
 /** One reference plate for the 9 `refs_json` slots — position IS the numbering
- * a prompt cites as `<Picture N>`, the same convention `chain.ts`'s
- * `<Subject N>`/`<Picture N>` citation uses, just without the `@tag` rewrite:
+ * a prompt cites as `<Picture N>`, the same `<Subject N>`/`<Picture N>`
+ * convention used everywhere else in the studio, without any `@tag` rewrite:
  * H3 reads `<Picture N>` directly, no prose transform needed. */
 export interface ExtenderPlate {
   filename: string
@@ -353,8 +373,7 @@ export interface ExtenderBuildResult {
  * Throws `ExtenderError` on: no clips, no `MiniMaxH3MasterExtender` node, a
  * node-id collision (TRAP 1), a dangling link left after renumbering, or a
  * settings/refs change that would truncate validated clips without
- * `acceptReset` (TRAP 2) — never submits a graph it cannot account for, same
- * contract as `chain.ts`'s `buildChainGraph`.
+ * `acceptReset` (TRAP 2) — never submits a graph it cannot account for.
  */
 export function buildExtenderGraph(args: ExtenderBuildArgs): ExtenderBuildResult {
   if (!args.clips.length) throw new ExtenderError('No clips in this film — nothing to submit.')
@@ -417,9 +436,8 @@ export function parseExtenderPreviewInfo(outputs: Record<string, unknown> | unde
   return null
 }
 
-/** One file `/history` reported as an output — same shape `chain.ts`'s
- * `ChainOutputCandidate` uses, repeated here (rather than imported) for the
- * same independence reason as `assertNoDanglingLinks`. */
+/** One file `/history` reported as an output — filename/subfolder/type,
+ * whatever node produced it. */
 export interface ExtenderOutputCandidate {
   filename: string
   subfolder: string
@@ -430,9 +448,8 @@ export interface ExtenderOutputCandidate {
  * Pick the SAVED film out of a Master Extender job's outputs, never the
  * `h3_video` scrub preview `MiniMaxH3MasterFinalDecode` also emits.
  *
- * Both are legitimate video files at plausible paths, so — same hazard
- * `chain.ts`'s `pickAssembledVideo` exists for on the Contex-Loop path — this
- * cannot just take "whichever file came back". The preview is published with
+ * Both are legitimate video files at plausible paths, so this cannot just
+ * take "whichever file came back". The preview is published with
  * ComfyUI's `type: "temp"` (`_comfy_media_item`, `master_node.py`); the real
  * save (`SaveVideo`, node 9 in the shipped graph) is `type: "output"`. Prefer
  * `output`; fall back to the last video-looking file when nothing is typed

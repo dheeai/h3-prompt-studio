@@ -152,21 +152,18 @@ export interface DraftContextState {
   parentClipId?: string | null
   parentPrompt?: string
   breakdown?: unknown
-  externalVideo?: unknown
   /** The continuation's vision frame — see `withContinuationFrame`. Never
    * meaningful outside the one draft call it was fetched for. */
   continuationFrame?: string
   /** A pending pipeline-authored draft — see `dropInvalidatedAutoDraft` in
-   * `chainEdit.ts`. Scoped to the draft it came from, same as the frame. */
+   * `filmEdit.ts`. Scoped to the draft it came from, same as the frame. */
   pendingAutoDraft?: unknown
 }
 
 /**
  * Start a clean writing context while leaving production/configuration state
  * (clips, plates, recipes, endpoints) to the caller. In particular, a new
- * standalone Clip must not inherit an earlier Scene's film or parent prompt —
- * nor an earlier chain's "continue from this video" choice, which only ever
- * means something for the fresh scene-1 chain it was picked for.
+ * standalone Clip must not inherit an earlier Scene's film or parent prompt.
  */
 export function clearDraftContext<T extends DraftContextState>(session: T): T {
   return {
@@ -179,7 +176,6 @@ export function clearDraftContext<T extends DraftContextState>(session: T): T {
     parentClipId: null,
     parentPrompt: undefined,
     breakdown: undefined,
-    externalVideo: null,
     continuationFrame: undefined,
     pendingAutoDraft: undefined,
   }
@@ -227,8 +223,8 @@ export function continuationPlateIsFresh(plate: { mode: 'carried' | 'replaced'; 
  * assert — that the frame can never end up inside `plates` itself. A
  * previous attempt did exactly that: added the previous clip's last frame as
  * a `replaced` plate, which burned one of H3's nine reference slots on every
- * continuation for something Contex-Loop's own motion context already made
- * redundant (see `continueFrom`'s "NO LAST-FRAME PLATE" comment in
+ * continuation for something the render node's own motion context already
+ * made redundant (see `continueFrom`'s "NO LAST-FRAME PLATE" comment in
  * `state.tsx`). Plates and the continuation frame are two different
  * parameters here, and the frame never touches the array the caller passes
  * in — it is appended to a NEW array, never spliced into the given one.

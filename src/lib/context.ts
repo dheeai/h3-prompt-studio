@@ -176,7 +176,7 @@ deterministic Studio tools to inspect or mutate the one shared session. If the
 user asks for a prompt change, write the complete canonical H3 prompt and save
 it through a prompt-version tool; never put commentary in the prompt field.
 Never call Studio LLM stages, invent a render, or repeat a tool operation.
-Render and chain submission require explicit confirmation. Stop after one
+Render and plan submission require explicit confirmation. Stop after one
 meaningful operation and report its result briefly.`
 
 /**

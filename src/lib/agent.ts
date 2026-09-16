@@ -8,7 +8,7 @@ import { isCanonicalPromptStage } from './studio-workflow'
 import type { Breakdown, BreakdownClip, Provider } from './types'
 import { withQwenReasoningBudget } from './thinking'
 
-export type AgentConfirmation = 'render_current' | 'render_chain_plan'
+export type AgentConfirmation = 'render_current' | 'render_extender_plan'
 
 export interface AgentToolDetails {
   operation: string
@@ -175,7 +175,7 @@ const textResult = (details: AgentToolDetails, text: string, terminate = false):
 type Bridge = Pick<
   Api,
   | 'story' | 'versions' | 'current' | 'film' | 'breakdown' | 'clips' | 'clip' | 'settings' | 'skills'
-  | 'appendPromptVersion' | 'setBreakdown' | 'prepareContinuation' | 'render' | 'renderChainPlan'
+  | 'appendPromptVersion' | 'setBreakdown' | 'prepareContinuation' | 'render' | 'renderExtenderPlan'
 >
 
 function stateText(app: Bridge): string {
@@ -312,23 +312,23 @@ export function buildAgentTools(app: Bridge, onConfirmation?: (type: AgentConfir
     },
   }
 
-  const renderChainPlan: AgentTool<typeof renderParameters, AgentToolDetails> = {
-    name: 'render_chain_plan',
-    label: 'Submit chain plan',
-    description: 'Submit the saved clip plan as one Contex-Loop chain job. Always ask for explicit user confirmation before passing confirmed=true.',
+  const renderExtenderPlan: AgentTool<typeof renderParameters, AgentToolDetails> = {
+    name: 'render_extender_plan',
+    label: 'Submit Master Extender plan',
+    description: 'Submit the saved clip plan as one Master Extender job (renders the next not-yet-validated clip). Always ask for explicit user confirmation before passing confirmed=true.',
     parameters: renderParameters,
     executionMode: 'sequential',
     async execute(_id, params) {
       if (!(params as { confirmed?: boolean }).confirmed) {
-        onConfirmation?.('render_chain_plan')
-        return textResult({ operation: 'render_chain_plan', requiresConfirmation: 'render_chain_plan', message: 'Waiting for explicit confirmation.' }, 'Chain submission requires confirmation in the Agent panel.', true)
+        onConfirmation?.('render_extender_plan')
+        return textResult({ operation: 'render_extender_plan', requiresConfirmation: 'render_extender_plan', message: 'Waiting for explicit confirmation.' }, 'Rendering requires confirmation in the Agent panel.', true)
       }
-      await app.renderChainPlan()
-      return textResult({ operation: 'render_chain_plan' }, 'Chain job submitted from the saved clip plan.', true)
+      await app.renderExtenderPlan('clip_by_clip')
+      return textResult({ operation: 'render_extender_plan' }, 'Master Extender job submitted from the saved clip plan.', true)
     },
   }
 
-  return [readStudioState, setCurrentPrompt, appendPromptVersion, setClipPlan, prepareContinuation, renderCurrent, renderChainPlan]
+  return [readStudioState, setCurrentPrompt, appendPromptVersion, setClipPlan, prepareContinuation, renderCurrent, renderExtenderPlan]
 }
 
 /** Kept as a named export for consumers that display the Agent contract. */

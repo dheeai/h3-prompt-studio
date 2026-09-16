@@ -10,6 +10,7 @@ import {
   extenderSignatureDiff,
   parseExtenderPreviewInfo,
   pickExtenderVideo,
+  readExtenderDefaults,
   renumberExtenderNode,
 } from './extender'
 import type { ComfyNode } from './types'
@@ -303,4 +304,22 @@ test('pickExtenderVideo falls back to the last video-looking file when nothing i
 test('pickExtenderVideo ignores non-video files', () => {
   const out = pickExtenderVideo([{ filename: 'thumb.png', subfolder: '', type: 'output' }])
   assert.equal(out, undefined)
+})
+
+// ── readExtenderDefaults — issue #30: report what the node will ACTUALLY render at ──
+
+test('readExtenderDefaults reads pass2_resolution/pass2_steps off the master node, never guesses', () => {
+  const graph: Record<string, ComfyNode> = {
+    6: { class_type: 'MiniMaxH3MasterExtender', inputs: { pass2_resolution: '1280x720', pass2_steps: 1 } },
+  }
+  assert.deepStrictEqual(readExtenderDefaults(graph), { width: 1280, height: 720, steps: 1 })
+})
+
+test('readExtenderDefaults: null graph, no master node, or an unparseable resolution all read as null', () => {
+  assert.equal(readExtenderDefaults(null), null)
+  assert.equal(readExtenderDefaults({}), null)
+  assert.equal(
+    readExtenderDefaults({ 6: { class_type: 'MiniMaxH3MasterExtender', inputs: { pass2_resolution: 'not-a-size' } } }),
+    null,
+  )
 })

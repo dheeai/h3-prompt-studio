@@ -150,12 +150,11 @@ export interface FilmContext {
 
 /**
  * One entry of a workflow's style-stack (`LTX_lora_loader.stack_data`) —
- * the SELECTABLE LoRA slot, distinct from the accelerator LoRA stamped into
- * `LoraLoaderBypassModelOnly` (`chain.ts`'s `CANONICAL_TURBO_LORA`), which is
- * never user-editable. `lora` is the exact filename ComfyUI reported — some
- * are percent-encoded (`Neon%20Skyline%20Style...`) — and must be carried
- * byte-exact; never decoded or re-encoded, or the box will not find the file
- * on disk.
+ * the SELECTABLE LoRA slot, distinct from an accelerator LoRA (baked into
+ * the workflow's own turbo slot), which is never user-editable. `lora` is
+ * the exact filename ComfyUI reported — some are percent-encoded
+ * (`Neon%20Skyline%20Style...`) — and must be carried byte-exact; never
+ * decoded or re-encoded, or the box will not find the file on disk.
  */
 export interface LoraStackEntry {
   lora: string
@@ -180,12 +179,10 @@ export interface BreakdownClip {
   follows: string
   /**
    * This clip's style-stack selection. Unset means "whatever the bound
-   * Contex-Loop workflow already carries baked into its own
-   * `LTX_lora_loader.stack_data`" — so an untouched clip renders exactly as
-   * before this existed. Set explicitly (including `[]`, "no style LoRA at
-   * all") the moment an operator edits it, and from then on THAT is what
-   * `chain.ts` stamps into the graph at build time, replacing whatever the
-   * workflow file carries.
+   * workflow already carries baked into its own `LTX_lora_loader.stack_data`"
+   * — so an untouched clip renders exactly as before this existed. Set
+   * explicitly (including `[]`, "no style LoRA at all") the moment an
+   * operator edits it.
    */
   loraStack?: LoraStackEntry[]
 }
@@ -253,46 +250,10 @@ export interface Settings {
   // ── the render loop ───────────────────────────────────────────────────
   /** Which ComfyUI to render on. */
   comfyEndpointId?: string
-  /** Which stored recipe to render with. */
+  /** Which stored recipe to render with — the plain single-clip path
+   * (`render()`), independent of the Master Extender's own fixed, shipped
+   * workflow (`lib/extender.ts`), which needs no recipe at all. */
   recipeId?: string
-  /** Which stored recipe is the Contex-Loop (chain) workflow — the studio's
-   * only multi-clip render path — a user has both this and `recipeId`. */
-  chainRecipeId?: string
-  /**
-   * Set once the app has auto-bound the shipped Contex-Loop recipes — both
-   * the SLA default and the selectable VSA gate variant (see
-   * `fetchShippedChainRecipes`). Gates the attempt rather than `chainRecipeId`
-   * itself, so a deliberate later deletion of a shipped recipe — which can
-   * leave `chainRecipeId` pointing at nothing — is never silently re-bound on
-   * the next reload. A fetch/parse failure on both leaves this unset, so it
-   * keeps retrying on later reloads rather than giving up forever on a
-   * transient miss.
-   */
-  chainRecipeAutoBound?: boolean
-  /** Which shipped-variant SET this profile has been offered — see
-   * `SHIPPED_SET_VERSION`. Lets a profile bound before a new variant existed
-   * be topped up once, without re-binding. */
-  shippedRecipeSetVersion?: number
-  /** Shipped recipes the operator DELETED. Recorded because "top up an older
-   * profile with a newly shipped variant" and "never resurrect a deliberate
-   * deletion" otherwise collide: with only a version counter, a profile that
-   * had deleted a shipped recipe is indistinguishable from one that never
-   * received it. An id in here is never re-added. */
-  dismissedShippedRecipes?: string[]
-  /** UNET stamped onto every chain graph. Unset means `SINGULARITY_UNET` — the
-   * model the 27-clip film of 2026-09-06 shipped on. Set it to override. */
-  chainUnetName?: string
-  /**
-   * Which multi-clip render path a plan submits through. Unset means
-   * `'chain'` — the Contex-Loop path stays the default so an existing profile
-   * (and this file's every other reader of `breakIntoScenes`/`chainRecipeId`)
-   * sees no behaviour change. `'extender'` is the MiniMax H3 Master Extender
-   * path (`lib/extender.ts`) — a single node that takes the whole film as
-   * `clips_json` and keeps its own validated-clip disk cache, rather than the
-   * studio building a per-scene chain itself. See `lib/extender.ts`'s module
-   * comment for why the two paths do not share machinery.
-   */
-  renderPath?: 'chain' | 'extender'
   /** Target clip length before the frame grid snaps it. */
   seconds: number
   /** A film normally wants one seed the whole way down. */
@@ -446,44 +407,6 @@ export interface ComfyNode {
 
 export type ClipState = 'queued' | 'rendering' | 'done' | 'failed'
 
-/**
- * Set when a `Clip` was rendered as one scene of a Contex-Loop CHAIN — a
- * single job that resumes every earlier scene from its ComfyUI checkpoint
- * and samples only this one. `runName` is the checkpoint folder identity
- * (stable across every clip in one chain); `sceneIndex` is this clip's
- * 1-based position within it (not necessarily equal to `Clip.index`, though
- * the studio's own "Continue" turn always keeps them in step).
- */
-export interface ClipChainInfo {
-  runName: string
-  sceneIndex: number
-  /**
-   * Set when this scene's submit carried an external video as scene 1's
-   * predecessor (`ChainBuildOpts.externalVideo`). Contex-Loop's join still
-   * trims `CHAIN_CONTEXT_LENGTH` frames off this scene's front — but, unlike
-   * a continued CLIP, `buildChainGraph` has no compensation for it (nothing
-   * in `shots[0]` signals an external predecessor), so this scene genuinely
-   * DELIVERS fewer frames than authored rather than landing back at
-   * authored. Measured live 2026-09-07: a 56.928s source plus a 124f scene
-   * asked for landed at 61.167s (56.928 + 102/24), not 62.095s (an unpaid,
-   * untrimmed first clip) or 62.7s (a compensated continuation).
-   * `sceneAccounting`'s `padForOverlap` call reads this so the post-render
-   * display matches what actually rendered — see `padForOverlap`'s
-   * `firstHasPredecessor` for the formula and why it is a measured gap
-   * rather than a design choice.
-   */
-  continuesExternalVideo?: boolean
-  /**
-   * The actual external-video choice this scene submitted with — recorded
-   * (not just the boolean above) so a later Replace of scene 1 can re-pass it
-   * faithfully without asking the operator to re-pick the file. `endpointId`
-   * is carried so a replace on a DIFFERENT endpoint is recognised as stale
-   * (the box file only exists where it was uploaded/picked) rather than
-   * silently reused.
-   */
-  externalVideo?: { filename: string; prependOriginal: boolean; endpointId: string }
-}
-
 export interface Clip {
   id: string
   /** 1-based position in the film. */
@@ -501,18 +424,11 @@ export interface Clip {
   seed?: number
   frames?: number
   fps?: number
-  /**
-   * Recorded so a later chain scene can resend an EARLIER scene's exact
-   * step count in `plan_json` — Contex-Loop's `verify_resume_history` hashes
-   * prompt/frames/steps/seed per scene and refuses to resume on a mismatch,
-   * so this must survive even if `settings.steps` changes later.
-   */
-  steps?: number
   promptId?: string
-  /** The style-stack this scene actually rendered with — recorded the same
-   * way `steps`/`seed` are, so a chain's card can say what rendered even
-   * after the plan clip it came from changes. Unset means the workflow's own
-   * baked default was used (see `BreakdownClip.loraStack`). */
+  /** The style-stack this scene actually rendered with — recorded so a
+   * film's card can say what rendered even after the plan clip it came from
+   * changes. Unset means the workflow's own baked default was used (see
+   * `BreakdownClip.loraStack`). */
   loraStack?: LoraStackEntry[]
   /** Where the mp4 lives on the box. Resolved to a URL at render time. */
   output?: { filename: string; subfolder: string; type: string }
@@ -521,20 +437,16 @@ export interface Clip {
   error?: string
   ms?: number
   at: number
-  /** Set when this clip is one scene of a Contex-Loop chain — either a
-   * manually-continued one, or one plan clip of a whole plan submitted as a
-   * chain (every plan clip gets its own `Clip`, sharing one `runName`). */
-  chain?: ClipChainInfo
   /**
-   * Set when this clip is one scene of a Master Extender FILM instead — kept
-   * as its own field, never folded into `chain`, because the two paths
-   * deliver different numbers for the same shape of data: a Contex-Loop scene
-   * pays the overlap tax (`ClipChainInfo`/`sceneAccounting`'s `padForOverlap`
-   * math), an Extender scene delivers exactly what it authored. Mixing them
-   * under one field would apply the wrong arithmetic to whichever path ran
-   * second. `nodeId` is this film's own stable Master Extender node id (see
+   * Set when this clip is one scene of a Master Extender FILM — either a
+   * manually-continued one, or one plan clip of a whole plan submitted as a
+   * film (every plan clip gets its own `Clip`, sharing one `nodeId`).
+   * `nodeId` is this film's own stable Master Extender node id (see
    * `lib/extender.ts`'s TRAP 1); `sceneIndex` is this clip's 1-based position
-   * within it.
+   * within it (not necessarily equal to `Clip.index`, though the studio's
+   * own "Continue" turn always keeps them in step). An Extender scene
+   * delivers exactly what it authored — there is no overlap tax to account
+   * for (see `lib/extender.ts`'s module comment).
    */
   extender?: { nodeId: string; sceneIndex: number }
 }

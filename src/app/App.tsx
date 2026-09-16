@@ -4,7 +4,6 @@ import { ConnectPanel } from '../components/ConnectPanel'
 import { SkillsPanel } from '../components/SkillsPanel'
 import { SettingsPanel } from '../components/SettingsPanel'
 import { PlatesPanel } from '../components/PlatesPanel'
-import { ExternalVideoPanel } from '../components/ExternalVideoPanel'
 import { RecipePanel } from '../components/RecipePanel'
 import { EndpointPanel } from '../components/RenderPanel'
 import { ClipPlan } from '../components/ClipPlan'
@@ -14,17 +13,15 @@ import { FilmRegion } from '../components/FilmRegion'
 import { ScenesStrip } from '../components/ScenesStrip'
 import { Composer } from '../components/Composer'
 import { AgentPanel } from '../components/AgentPanel'
-import { chainMinSteps } from '../lib/chain'
-import { framesForSeconds } from '../lib/recipe'
 
-type Modal = 'connect' | 'skills' | 'settings' | 'plates' | 'recipe' | 'endpoint' | 'externalVideo' | 'check' | null
+type Modal = 'connect' | 'skills' | 'settings' | 'plates' | 'recipe' | 'endpoint' | 'check' | null
 
 /**
  * ONE COMPOSER. There are no entry-mode doors — see the module comment on
  * `lib/entry.ts`. Four regions, stacked, each with exactly one home:
  *
  *   1. THE FILM      — `FilmRegion`   — the artifact.
- *   2. THE SCENES    — `ScenesStrip`  — replace / continue-from-here / prompt.
+ *   2. THE SCENES    — `ScenesStrip`  — continue-from-here / prompt.
  *   3. THE COMPOSER  — `Composer`     — text, attachments, length, one button.
  *   4. SETUP         — this file's header — model, endpoint, geometry, steps,
  *      LoRAs and skills all live behind it; readiness is the one dot beside it.
@@ -42,11 +39,13 @@ export function App() {
 
   const loadedSkills = skills.filter((s) => settings.selection[s.id]?.length)
   const endpointOk = app.endpoint ? app.comfyProbes[app.endpoint.id]?.state === 'ok' : false
-  const ready2 = app.chainBlockers.length === 0
-  const width = settings.width ?? app.chainRecipe?.defaults.width
-  const height = settings.height ?? app.chainRecipe?.defaults.height
-  const steps = settings.steps ?? chainMinSteps(app.chainRecipe?.graph)
-  const frames = framesForSeconds(settings.seconds, 24)
+  const ready2 = app.sceneBlockers.length === 0
+  // The geometry/steps shown here are read straight off the Master
+  // Extender's own loaded graph (`extenderDefaults`), never a Settings
+  // override standing in for it — the node's `pass2_resolution`/
+  // `pass2_steps` are baked into the shipped workflow and cannot be
+  // overridden from here (issue #30).
+  const { width, height, steps } = app.extenderDefaults ?? { width: undefined, height: undefined, steps: undefined }
 
   if (!ready) {
     return (
@@ -91,7 +90,7 @@ export function App() {
                   ComfyUI endpoint <span className="tok"><span className={`dot ${endpointOk ? 'ok' : 'idle'}`} /> {app.endpoint?.label || 'none'}</span>
                 </button>
                 <button onClick={() => { setModal('recipe'); setSetupOpen(false) }}>
-                  Geometry, steps, workflow <span className="tok">{app.chainRecipe?.name || 'not loaded'}</span>
+                  Recipe (single-clip render) <span className="tok">{app.recipe?.name || 'not loaded'}</span>
                 </button>
                 <button onClick={() => { setModal('skills'); setSetupOpen(false) }}>
                   Skills / reading <span className="tok">{loadedSkills.length} loaded</span>
@@ -109,7 +108,6 @@ export function App() {
         <FilmRegion />
         <ScenesStrip />
         <Composer
-          onOpenExternalVideo={() => setModal('externalVideo')}
           onOpenPlates={() => setModal('plates')}
           onOpenCheck={() => setModal('check')}
         />
@@ -144,7 +142,6 @@ export function App() {
       {modal === 'plates' && <PlatesPanel onClose={() => setModal(null)} />}
       {modal === 'recipe' && <RecipePanel onClose={() => setModal(null)} />}
       {modal === 'endpoint' && <EndpointPanel onClose={() => setModal(null)} />}
-      {modal === 'externalVideo' && <ExternalVideoPanel onClose={() => setModal(null)} onOpenPlates={() => setModal('plates')} />}
       {modal === 'check' && (
         <div className="backdrop" onClick={() => setModal(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 620 }}>

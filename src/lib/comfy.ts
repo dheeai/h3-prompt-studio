@@ -1,5 +1,4 @@
 import { mixedContentBlocked } from './providers'
-import { pickAssembledVideo } from './chain'
 import { parseExtenderPreviewInfo, pickExtenderVideo } from './extender'
 import type { ExtenderPreviewInfo } from './extender'
 import type { Clip, ComfyEndpoint, ComfyNode, ProbeResult } from './types'
@@ -123,28 +122,6 @@ export async function uploadImage(
   return { filename: j.name, subfolder: j.subfolder ?? '' }
 }
 
-/**
- * Upload one video and return the name the graph must cite.
- *
- * Same endpoint ComfyUI's own image upload uses (`/upload/image`) — measured
- * live on this box 2026-09-07 that it takes a video's bytes unchanged (the
- * handler is content-agnostic) and the file is immediately selectable by
- * `LoadVideo`/`VHS_LoadVideo`'s own folder-listing combo. Named separately
- * from `uploadImage`, and takes the `File` directly rather than a data URL —
- * a plate's data-URL contract exists so it survives a reload without the box,
- * which a video picked fresh off disk for one chain start never needs, and a
- * 20s+ video is commonly tens to hundreds of MB, not worth serializing twice.
- */
-export async function uploadVideo(ep: ComfyEndpoint, file: File): Promise<{ filename: string; subfolder: string }> {
-  const form = new FormData()
-  form.append('image', file, file.name)
-  form.append('overwrite', 'true')
-  const r = await fetch(`${trim(ep.baseUrl)}/upload/image`, { method: 'POST', body: form })
-  if (!r.ok) throw new Error(`Upload failed (${r.status}): ${(await r.text()).slice(0, 200)}`)
-  const j = (await r.json()) as { name: string; subfolder?: string }
-  return { filename: j.name, subfolder: j.subfolder ?? '' }
-}
-
 export async function submit(ep: ComfyEndpoint, graph: Record<string, ComfyNode>): Promise<string> {
   const r = await fetch(`${trim(ep.baseUrl)}/prompt`, {
     method: 'POST',
@@ -226,36 +203,6 @@ export async function poll(ep: ComfyEndpoint, promptId: string): Promise<PollRes
   const files = collectOutputFiles(entry)
   const output = files[files.length - 1]
   return { done: true, output, failed: output ? undefined : 'The run finished but produced no file.' }
-}
-
-/**
- * Poll a Contex-Loop chain job. Unlike `poll()`, this cannot just take
- * whichever file came back — a chain job's history carries every scene's
- * checkpoint MP4 alongside the assembled film, and picking the wrong one
- * looks exactly like success (a valid, playable file at a plausible path).
- * `pickAssembledVideo` (chain.ts) is what tells them apart.
- */
-export async function pollChain(ep: ComfyEndpoint, promptId: string, runName: string): Promise<PollResult> {
-  const entry = await fetchHistoryEntry(ep, promptId)
-  if (!entry) return { done: false }
-
-  const status = entry.status ?? {}
-  if (status.status_str === 'error') {
-    const messages = JSON.stringify(status.messages ?? status).slice(0, 300)
-    return { done: true, failed: messages }
-  }
-  if (!status.completed) return { done: false }
-
-  const files = collectOutputFiles(entry)
-  const output = pickAssembledVideo(files, runName)
-  return {
-    done: true,
-    output,
-    failed: output
-      ? undefined
-      : `The chain job finished, but no assembled film matching run '${runName}' was found among ${files.length} output(s) — ` +
-        `check ComfyUI's output/h3_chains/${runName}/ directly.`,
-  }
 }
 
 export interface ExtenderPollResult extends PollResult {
@@ -369,52 +316,6 @@ export function lastFrameOf(src: string, signal?: AbortSignal): Promise<string> 
         v.currentTime = t
       } else grab()
     }
-  })
-}
-
-export interface VideoMetadata {
-  durationSeconds: number
-  width: number
-  height: number
-}
-
-/**
- * Read a video's own duration/geometry in the browser, without downloading
- * it — `preload="metadata"` asks for just the container header. This is what
- * lets the video door's "what you will get" table state a source's real
- * length (56.928s for `dhee_src.mp4`, measured live 2026-09-07) instead of
- * asking the operator to already know it.
- */
-export function videoMetadata(src: string, signal?: AbortSignal): Promise<VideoMetadata> {
-  return new Promise((resolve, reject) => {
-    const v = document.createElement('video')
-    let settled = false
-    const cleanup = () => signal?.removeEventListener('abort', onAbort)
-    const finish = (value: VideoMetadata) => {
-      if (settled) return
-      settled = true
-      cleanup()
-      resolve(value)
-    }
-    const fail = (e: Error) => {
-      if (settled) return
-      settled = true
-      cleanup()
-      reject(e)
-    }
-    const onAbort = () => {
-      v.pause()
-      v.removeAttribute('src')
-      v.load()
-      fail(new DOMException('The operation was aborted.', 'AbortError'))
-    }
-    if (signal?.aborted) return onAbort()
-    signal?.addEventListener('abort', onAbort, { once: true })
-    v.preload = 'metadata'
-    v.muted = true
-    v.src = src
-    v.onerror = () => fail(new Error('Could not read that video.'))
-    v.onloadedmetadata = () => finish({ durationSeconds: v.duration || 0, width: v.videoWidth, height: v.videoHeight })
   })
 }
 

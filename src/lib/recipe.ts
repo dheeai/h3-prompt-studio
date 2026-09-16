@@ -1,4 +1,4 @@
-import type { Binding, BindingSlot, ComfyNode, Recipe, Settings } from './types'
+import type { Binding, BindingSlot, ComfyNode, Recipe } from './types'
 
 /**
  * Reading a user's own ComfyUI workflow, and writing only the slots we own.
@@ -179,13 +179,13 @@ export function oomRisk(width: number, height: number, frames: number): boolean 
 
 /**
  * Fallback geometry when a workflow's H3 node has no LITERAL width/height to
- * read (a wired link, not a value — the shipped Contex-Loop workflow is
- * exactly this shape). This must never be the OOM tier: `makeRecipe` used to
- * fall back to 1344×768 — `OOM_WIDTH`/`OOM_HEIGHT` themselves — so every
- * auto-bound recipe silently defaulted to the one geometry measured to crash
- * ComfyUI past 362 frames, and a crashed render is indistinguishable from one
- * never submitted (`/history` comes back empty either way). 1216×672 is the
- * validated tier the 27-clip film of 2026-09-06 shipped on instead.
+ * read (a wired link, not a value). This must never be the OOM tier:
+ * `makeRecipe` used to fall back to 1344×768 — `OOM_WIDTH`/`OOM_HEIGHT`
+ * themselves — so a recipe with a wired-not-literal geometry silently
+ * defaulted to the one size measured to crash ComfyUI past 362 frames, and a
+ * crashed render is indistinguishable from one never submitted (`/history`
+ * comes back empty either way). 1216×672 is the validated tier the 27-clip
+ * film of 2026-09-06 shipped on instead.
  */
 export const FALLBACK_WIDTH = 1216
 export const FALLBACK_HEIGHT = 672
@@ -204,148 +204,6 @@ export function makeRecipe(name: string, graph: Record<string, ComfyNode>, id?: 
     defaults: { width, height, fps: 24, seconds: secondsForFrames(length) },
     addedAt: Date.now(),
   }
-}
-
-/**
- * The two Contex-Loop chain graphs the app ships with, so a fresh profile can
- * render before an operator ever drops a workflow of their own, and can
- * switch between them. Served from `public/workflows/`:
- *
- *  - SLA — `minimax_h3_contexloop_sla_api.json` — same bytes as
- *    `lib/__fixtures__/contexloop_workflow.json` except its
- *    `LTX_lora_loader.stack_data` is stripped to `[]` for public distribution
- *    (the fixture keeps the real h3-shots `submit.mjs --dry` output, style alpha
- *    baked in, so the golden-graph test in `chain.test.ts` stays meaningful).
- *    This is the measured-known-good path — the founder's 27-clip film of
- *    2026-09-06 rendered on it — so it is the DEFAULT.
- *  - VSA gate — `minimax_h3_contexloop_vsa_api.json` — same bytes as
- *    `lib/__fixtures__/contexloop_vsa_workflow.json`. Faster, unproven at
- *    production shapes; one selection away via `Settings.chainRecipeId`.
- *
- * `chain.ts`'s `chainMinSteps` reads which of these is bound from the graph
- * itself (`H3SLAAttention` vs `Ref2VAVSAGatePatch`) and derives the step
- * floor accordingly — never a single global constant.
- */
-export const SHIPPED_CHAIN_RECIPE_SLA_ID = 'shipped-contexloop-sla-v1'
-export const SHIPPED_CHAIN_RECIPE_VSA_ID = 'shipped-contexloop-vsa-v1'
-
-interface ShippedChainSpec {
-  id: string
-  path: string
-  name: string
-}
-
-const SHIPPED_CHAIN_SPECS: ShippedChainSpec[] = [
-  { id: SHIPPED_CHAIN_RECIPE_SLA_ID, path: 'workflows/minimax_h3_contexloop_sla_api.json', name: 'Contex-Loop SLA · 6 steps (shipped)' },
-  { id: SHIPPED_CHAIN_RECIPE_VSA_ID, path: 'workflows/minimax_h3_contexloop_vsa_api.json', name: 'Contex-Loop VSA gate · 4 steps (shipped)' },
-]
-
-/**
- * Fetch and parse every shipped chain workflow into a Recipe with its stable
- * id above, exactly the way a dropped file becomes one (`parseWorkflow` +
- * `detectBindings` via `makeRecipe`). Never throws: a missing or malformed
- * asset is just skipped, so a build that only ships one variant (or neither)
- * still returns whatever did parse.
- */
-export async function fetchShippedChainRecipes(): Promise<Recipe[]> {
-  const out: Recipe[] = []
-  for (const spec of SHIPPED_CHAIN_SPECS) {
-    try {
-      const res = await fetch(new URL(spec.path, document.baseURI).toString(), { cache: 'no-cache' })
-      if (!res.ok) continue
-      const graph = parseWorkflow(await res.text())
-      out.push(makeRecipe(spec.name, graph, spec.id))
-    } catch {
-      // skip — the caller falls back to whatever else did parse
-    }
-  }
-  return out
-}
-
-/** Bump when the shipped variant SET changes, so existing profiles are topped
- * up once with anything new. 1 = single Contex-Loop; 2 = SLA + VSA gate. */
-export const SHIPPED_SET_VERSION = 2
-
-/** Every shipped chain recipe id, for callers that need to tell one of ours
- * from an operator's own. */
-export const SHIPPED_CHAIN_IDS: string[] = SHIPPED_CHAIN_SPECS.map((s) => s.id)
-
-export interface ChainAutoBindResult {
-  recipes: Recipe[]
-  chainRecipeId: string
-  chainRecipeAutoBound: true
-  shippedRecipeSetVersion?: number
-  /** The recipes actually stored this call — empty when nothing new was
-   * added (an already-bound recipe, or every shipped variant already present
-   * in `recipes`). */
-  added: Recipe[]
-}
-
-/**
- * Decide whether to bind the shipped Contex-Loop recipes, and do it — pure
- * except for the injected `fetchShipped`, so the decision is unit-testable
- * without `fetch`/`document`.
- *
- * Gated on `chainRecipeAutoBound`, never on whether `chainRecipeId` currently
- * resolves — so a deliberate later deletion of a shipped recipe (which can
- * leave `chainRecipeId` pointing at nothing) is never silently re-bound on a
- * later reload, and an operator's own chosen recipe is never overridden.
- *
- * On a fresh profile, BOTH shipped variants are fetched and added to
- * `recipes` (so both show up as selectable chips), but only the SLA one —
- * the measured-known-good path — becomes `chainRecipeId`; VSA stays one
- * selection away. Returns `null` only when the flag was already set (nothing
- * to do) or neither variant could be fetched/parsed — in that failure case
- * the caller should leave `chainRecipeAutoBound` unset so this retries
- * fail-soft on the next reload.
- */
-export async function resolveChainRecipeAutoBind(
-  recipes: Recipe[],
-  settings: Pick<Settings, 'chainRecipeId' | 'chainRecipeAutoBound' | 'shippedRecipeSetVersion' | 'dismissedShippedRecipes'>,
-  fetchShipped: () => Promise<Recipe[]>,
-): Promise<ChainAutoBindResult | null> {
-  const alreadyPresent = (id: string) => recipes.some((r) => r.id === id)
-
-  // A profile that auto-bound when only ONE variant shipped has the flag set,
-  // so a plain boolean gate would never offer the second one — the operator
-  // ends up with a single chip and nothing to switch to. `SHIPPED_SET_VERSION`
-  // bumps whenever the shipped SET changes, so such a profile is topped up
-  // exactly once: the MISSING variants are added and the existing binding is
-  // left alone. A variant the operator later deletes stays deleted, because
-  // the version is recorded whether or not anything was added.
-  const offeredVersion = settings.shippedRecipeSetVersion ?? (settings.chainRecipeAutoBound ? 1 : 0)
-  if (offeredVersion >= SHIPPED_SET_VERSION) return null
-
-  if (settings.chainRecipeAutoBound) {
-    // A deletion is remembered, so topping up never resurrects one.
-    const dismissed = new Set(settings.dismissedShippedRecipes ?? [])
-    const missing = SHIPPED_CHAIN_SPECS.map((sp) => sp.id).filter((id) => !alreadyPresent(id) && !dismissed.has(id))
-    if (!missing.length) {
-      return { recipes, chainRecipeId: settings.chainRecipeId ?? '', chainRecipeAutoBound: true, added: [] }
-    }
-    const topUp = (await fetchShipped()).filter((r) => !alreadyPresent(r.id))
-    // Binding untouched: this only makes the other variant selectable.
-    return {
-      recipes: topUp.length ? [...recipes, ...topUp] : recipes,
-      chainRecipeId: settings.chainRecipeId ?? SHIPPED_CHAIN_RECIPE_SLA_ID,
-      chainRecipeAutoBound: true,
-      added: topUp,
-    }
-  }
-
-  if (settings.chainRecipeId && recipes.some((r) => r.id === settings.chainRecipeId)) {
-    return { recipes, chainRecipeId: settings.chainRecipeId, chainRecipeAutoBound: true, added: [] }
-  }
-  const missingIds = SHIPPED_CHAIN_SPECS.map((s) => s.id).filter((id) => !alreadyPresent(id))
-  const fetched = missingIds.length ? await fetchShipped() : []
-  const added = fetched.filter((r) => !alreadyPresent(r.id))
-  const merged = added.length ? [...recipes, ...added] : recipes
-
-  const dflt =
-    merged.find((r) => r.id === SHIPPED_CHAIN_RECIPE_SLA_ID) ?? merged.find((r) => r.id === SHIPPED_CHAIN_RECIPE_VSA_ID)
-  if (!dflt) return null
-
-  return { recipes: merged, chainRecipeId: dflt.id, chainRecipeAutoBound: true, added }
 }
 
 export interface RenderInputs {

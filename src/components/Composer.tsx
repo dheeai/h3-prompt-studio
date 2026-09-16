@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { useApp } from '../app/state'
 import { classifyInput } from '../lib/lint'
-import { SCENE_LENGTH_CHIPS, secondsLabel } from '../lib/chainDisplay'
+import { SCENE_LENGTH_CHIPS, secondsLabel } from '../lib/filmDisplay'
 import { LoraStackEditor } from './LoraStackEditor'
 import { DraftingStatus } from './DraftingStatus'
 import { listLoraNames } from '../lib/comfy'
-import { localLoraStackOverride, readBakedLoraStack } from '../lib/loras'
+import { localLoraStackOverride } from '../lib/loras'
 import { framesForSeconds } from '../lib/recipe'
 
 function autosize(el: HTMLTextAreaElement | null) {
@@ -35,25 +35,22 @@ const EXAMPLES: { label: string; text: string }[] = [
  *
  * There is no entry-mode picker: text, attachments and length live here, and
  * the ONLY genuine variable is "one scene" vs "break into scenes" — see the
- * module comment on `lib/entry.ts`. Attachments (footage to continue from,
- * reference images) are controls ON the composer, not a separate panel —
- * burying video upload in another panel was the reported bug.
+ * module comment on `lib/entry.ts`. Attachments (reference images) are
+ * controls ON the composer, not a separate panel.
  *
  * Nothing here gates rendering behind an LLM stage: "Draft it for me" is an
  * offer, and the primary button always renders whatever is currently typed
  * or pasted, whether or not that offer was ever taken.
  */
 export function Composer({
-  onOpenExternalVideo,
   onOpenPlates,
   onOpenCheck,
 }: {
-  onOpenExternalVideo: () => void
   onOpenPlates: () => void
   onOpenCheck: () => void
 }) {
   const app = useApp()
-  const { story, setStory, settings, patchSettings, breakIntoScenes, setBreakIntoScenes, streaming, providers, probes, clip, isFreshChainStart, externalVideo, plates, chainBlockers, rendering, gpuBusy, findings, scenesFrom, setLoraStack, chainRecipe, endpoint, loraStack, pendingAutoDraft } = app
+  const { story, setStory, settings, patchSettings, breakIntoScenes, setBreakIntoScenes, streaming, providers, probes, clip, plates, sceneBlockers, rendering, gpuBusy, findings, scenesFrom, setLoraStack, extenderDefaultLoraStack, endpoint, loraStack, pendingAutoDraft } = app
   const ref = useRef<HTMLTextAreaElement>(null)
   // The box's own LoRA folder — `/object_info` is on ComfyUI's light paths, so
   // listing it never forces a GPU backend switch.
@@ -83,16 +80,15 @@ export function Composer({
   const probe = provider ? probes[provider.id] : undefined
   const connected = probe?.state === 'ok' && !!settings.model
   const busy = !!streaming
-  const targetSceneIndex = (clip?.chain?.sceneIndex ?? 0) + 1
+  const targetSceneIndex = (clip?.extender?.sceneIndex ?? 0) + 1
   const isContinuation = !!clip
   const standing = classifyInput(story)
   const currentFrames = framesForSeconds(settings.seconds, 24)
   const rendering2 = !!rendering || gpuBusy === 'render'
-  const renderDisabled = busy || rendering2 || chainBlockers.length > 0
-  // Continuing from an EARLIER scene (not the newest) writes over scene
-  // targetSceneIndex, which is append-only fatal to every scene after it —
-  // the same "state the count, make it deliberate" treatment Replace gets
-  // on the scenes strip. Free (no confirm) when there is nothing to lose.
+  const renderDisabled = busy || rendering2 || sceneBlockers.length > 0
+  // Continuing from an EARLIER scene (not the newest) discards every scene
+  // after it out of local state — the Master Extender's own validated-clip
+  // cache is a linear prefix. Free (no confirm) when there is nothing to lose.
   const laterDiscarded = clip ? scenesFrom(clip.id, targetSceneIndex + 1) : 0
 
   const draftItForMe = async () => {
@@ -111,7 +107,7 @@ export function Composer({
       return
     }
     setConfirmingRender(false)
-    await app.renderChain()
+    await app.renderExtender()
   }
 
   const actionableFindings = findings.filter((f) => f.severity !== 'pass').length
@@ -137,14 +133,6 @@ export function Composer({
           placeholder={isContinuation ? 'Write what happens next, or let the studio draft it…' : 'A woman crosses an empty stone courtyard before dawn…'}
         />
         <div className="composer-footer">
-          <button
-            className={`chip${!isFreshChainStart ? ' off' : ''}`}
-            disabled={!isFreshChainStart}
-            title={isFreshChainStart ? undefined : 'Only scene 1 of a fresh chain can start from footage'}
-            onClick={onOpenExternalVideo}
-          >
-            {externalVideo ? `continuing ${externalVideo.filename}` : 'Continue from footage'}
-          </button>
           <button className="chip" onClick={onOpenPlates}>
             Reference images{plates.length > 0 ? ` ${plates.length}` : ''}
           </button>
@@ -185,7 +173,7 @@ export function Composer({
             stack={loraStack}
             defaultStack={localLoraStackOverride(import.meta.env?.VITE_LOCAL_LORA_STACK) .length
               ? localLoraStackOverride(import.meta.env?.VITE_LOCAL_LORA_STACK)
-              : readBakedLoraStack(chainRecipe?.graph ?? null)}
+              : extenderDefaultLoraStack}
             available={loraNames}
             onChange={setLoraStack}
           />
@@ -211,9 +199,9 @@ export function Composer({
                   : `Make scene ${targetSceneIndex}`}
             </button>
           </div>
-          {chainBlockers.length > 0 && (
+          {sceneBlockers.length > 0 && (
             <div className="composer-blockers">
-              {chainBlockers.map((b) => <div key={b} className="tok">{b}</div>)}
+              {sceneBlockers.map((b) => <div key={b} className="tok">{b}</div>)}
             </div>
           )}
         </div>

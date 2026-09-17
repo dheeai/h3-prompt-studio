@@ -475,3 +475,113 @@ export function parseShotList(raw: string, maxRuntimeSeconds: number): ShotList 
 
   return { spine: o.spine.trim(), maxRuntimeSeconds, shots, at: Date.now() }
 }
+
+// ── incremental parsing, for a shot list still arriving ─────────────────
+
+/**
+ * Find the end (exclusive) of the balanced `{...}` object starting at
+ * `text[from]` (which must be `'{'`), respecting string literals (so a brace
+ * inside a `covers` string is never mistaken for structure) and backslash
+ * escapes inside them. Returns `null` when the object never closes within
+ * `text` — the caller's signal that this is the trailing, still-arriving
+ * object, not a complete one.
+ */
+function balancedObjectEnd(text: string, from: number): number | null {
+  let depth = 0
+  let inStr = false
+  let esc = false
+  for (let i = from; i < text.length; i++) {
+    const ch = text[i]
+    if (inStr) {
+      if (esc) esc = false
+      else if (ch === '\\') esc = true
+      else if (ch === '"') inStr = false
+      continue
+    }
+    if (ch === '"') inStr = true
+    else if (ch === '{') depth++
+    else if (ch === '}') {
+      depth--
+      if (depth === 0) return i + 1
+    }
+  }
+  return null
+}
+
+/** JSON's own escape-sequence meanings, for `partialSpine`'s char-by-char
+ * unescape (a `\uXXXX` escape is passed through raw rather than decoded —
+ * a spine has no real use for one, and decoding it right would need its own
+ * four-digit lookahead for no practical gain here). */
+const JSON_ESCAPES: Record<string, string> = { '"': '"', '\\': '\\', '/': '/', n: '\n', t: '\t', r: '\r', b: '\b', f: '\f' }
+
+/** The complete `"spine": "..."` value, or `''` while it is still arriving
+ * (an unterminated string) or absent. Deliberately narrow: it only reads a
+ * plain JSON string value, same as `parseShotList` trusts the model for. */
+function partialSpine(text: string): string {
+  const m = text.match(/"spine"\s*:\s*"/)
+  if (!m || m.index === undefined) return ''
+  let out = ''
+  for (let i = m.index + m[0].length; i < text.length; i++) {
+    const ch = text[i]
+    if (ch === '\\') {
+      const next = text[i + 1]
+      if (next === undefined) break // escape cut off mid-stream — still arriving
+      out += JSON_ESCAPES[next] ?? next
+      i++
+      continue
+    }
+    if (ch === '"') return out // closed
+    out += ch
+  }
+  return '' // never closed — still arriving
+}
+
+/**
+ * `parseShotList`, run against a shot list that may still be streaming in.
+ *
+ * Pure and total: never throws, on anything from an empty string to raw
+ * garbage. Scans for `"shots": [` and then walks the array taking only
+ * OBJECTS THAT HAVE FULLY CLOSED — via `balancedObjectEnd` — parsing each one
+ * on its own with a plain `JSON.parse` (a single small, complete object, so
+ * this never needs a second schema). The first object that has not closed
+ * yet (the trailing, still-arriving one) stops the scan; it is not returned
+ * half-built, matching the brief's "a partial trailing object is simply not
+ * shown yet."
+ *
+ * On a COMPLETE document this returns exactly the same `{ spine, shots }`
+ * `parseShotList` would (modulo the fields — `maxRuntimeSeconds` and `at` —
+ * that come from the caller/clock rather than the text, so they are not this
+ * function's to produce).
+ */
+export function parsePartialShotList(raw: string): { spine: string; shots: Shot[] } {
+  const text = stripFence(raw)
+  const spine = partialSpine(text)
+
+  const shotsKey = text.match(/"shots"\s*:\s*\[/)
+  if (!shotsKey || shotsKey.index === undefined) return { spine, shots: [] }
+
+  const shots: Shot[] = []
+  let i = shotsKey.index + shotsKey[0].length
+  let nextIndex = 1
+  for (;;) {
+    while (i < text.length && /[\s,]/.test(text[i])) i++
+    if (i >= text.length || text[i] !== '{') break
+    const end = balancedObjectEnd(text, i)
+    if (end === null) break // the trailing, still-arriving object — stop here
+    const objText = text.slice(i, end)
+    try {
+      const parsed = JSON.parse(objText) as Record<string, unknown>
+      shots.push({
+        index: Number(parsed.index) || nextIndex,
+        covers: typeof parsed.covers === 'string' ? parsed.covers.trim() : '',
+        seconds: Number(parsed.seconds) || 0,
+      })
+    } catch {
+      // A complete-looking object that still didn't parse (stray control
+      // character, etc.) — skip it rather than aborting the whole scan.
+    }
+    nextIndex++
+    i = end
+  }
+  return { spine, shots }
+}

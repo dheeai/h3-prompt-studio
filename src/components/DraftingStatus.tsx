@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useApp } from '../app/state'
+import type { DraftingProgress } from '../lib/studio-workflow'
 
 /**
  * What the model is doing, while it does it.
@@ -8,8 +9,14 @@ import { useApp } from '../app/state'
  * but nothing rendered any of it — the only feedback was a greyed-out button,
  * so a long reasoning pass looked identical to a hang. thinkingcap in
  * particular thinks for a while before emitting a single visible token.
+ *
+ * Typed against `DraftingProgress` rather than `Api['streaming']` directly so
+ * a caller with its own progress slot (the shots stage's `shotStreaming` —
+ * see `state.tsx`'s module comment) can feed this same component; `Api`'s own
+ * `streaming` (keyed to a `StageId`) is a subtype of it, so every existing
+ * caller is unaffected.
  */
-export function DraftingStatus({ streaming }: { streaming: NonNullable<ReturnType<typeof useApp>['streaming']> }) {
+export function DraftingStatus({ streaming }: { streaming: DraftingProgress }) {
   const { cancel } = useApp()
   const [now, setNow] = useState(Date.now())
   useEffect(() => {

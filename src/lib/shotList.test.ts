@@ -17,6 +17,7 @@ import {
   fillShotListTemplate,
   shotListResponseFormat,
   parseShotList,
+  parsePartialShotList,
   SHOT_LIST_TEMPLATE,
 } from './shotList'
 
@@ -305,4 +306,99 @@ test('parseShotList: malformed replies return null rather than a half-built plan
   assert.equal(parseShotList('not json at all', 30), null)
   assert.equal(parseShotList(JSON.stringify({ spine: 's' }), 30), null) // no shots
   assert.equal(parseShotList(JSON.stringify({ shots: [] }), 30), null) // no spine, empty shots
+})
+
+// ── parsePartialShotList: reading a shot list still arriving ────────────
+
+const COMPLETE_DOC = JSON.stringify({
+  spine: 'a woman finds a key',
+  shots: [
+    { index: 1, covers: 'she enters the room', seconds: 4 },
+    { index: 2, covers: 'she sees the key on the table', seconds: 3 },
+    { index: 3, covers: 'she picks it up', seconds: 2 },
+  ],
+})
+
+test('parsePartialShotList: agrees with parseShotList on a complete document', () => {
+  const complete = parseShotList(COMPLETE_DOC, 60)
+  const partial = parsePartialShotList(COMPLETE_DOC)
+  assert.ok(complete)
+  assert.equal(partial.spine, complete!.spine)
+  assert.deepEqual(partial.shots, complete!.shots)
+})
+
+test('parsePartialShotList: agrees with parseShotList on a complete, fenced document', () => {
+  const fenced = '```json\n' + COMPLETE_DOC + '\n```'
+  const complete = parseShotList(fenced, 60)
+  const partial = parsePartialShotList(fenced)
+  assert.ok(complete)
+  assert.deepEqual(partial.shots, complete!.shots)
+  assert.equal(partial.spine, complete!.spine)
+})
+
+test('parsePartialShotList: truncated mid-object shows only the shots that fully closed', () => {
+  // Cut partway through shot 3's object — after shot 2 has closed, before shot 3 has.
+  const cut = COMPLETE_DOC.indexOf('"she picks')
+  const partial = parsePartialShotList(COMPLETE_DOC.slice(0, cut))
+  assert.equal(partial.shots.length, 2)
+  assert.equal(partial.shots[0].covers, 'she enters the room')
+  assert.equal(partial.shots[1].covers, 'she sees the key on the table')
+})
+
+test('parsePartialShotList: truncated mid-string (inside an open "covers" value) shows nothing for that shot', () => {
+  // Cut inside shot 2's "covers" string, before its closing quote.
+  const cut = COMPLETE_DOC.indexOf('sees the key')
+  const partial = parsePartialShotList(COMPLETE_DOC.slice(0, cut))
+  assert.equal(partial.shots.length, 1)
+  assert.equal(partial.shots[0].covers, 'she enters the room')
+})
+
+test('parsePartialShotList: truncated right after "shots": [ with nothing closed yet shows an empty list, not a throw', () => {
+  const cut = COMPLETE_DOC.indexOf('[', COMPLETE_DOC.indexOf('"shots"')) + 1
+  assert.doesNotThrow(() => parsePartialShotList(COMPLETE_DOC.slice(0, cut)))
+  const partial = parsePartialShotList(COMPLETE_DOC.slice(0, cut))
+  assert.deepEqual(partial.shots, [])
+})
+
+test('parsePartialShotList: truncated before "shots" even appears shows the spine alone, or nothing', () => {
+  const cut = COMPLETE_DOC.indexOf('"shots"')
+  const partial = parsePartialShotList(COMPLETE_DOC.slice(0, cut))
+  assert.deepEqual(partial.shots, [])
+  assert.equal(partial.spine, 'a woman finds a key')
+})
+
+test('parsePartialShotList: truncated mid-spine string returns an empty spine rather than a mangled one', () => {
+  const cut = COMPLETE_DOC.indexOf('woman finds')
+  const partial = parsePartialShotList(COMPLETE_DOC.slice(0, cut))
+  assert.equal(partial.spine, '')
+  assert.deepEqual(partial.shots, [])
+})
+
+test('parsePartialShotList: an empty string never throws and returns nothing', () => {
+  assert.doesNotThrow(() => parsePartialShotList(''))
+  assert.deepEqual(parsePartialShotList(''), { spine: '', shots: [] })
+})
+
+test('parsePartialShotList: raw garbage never throws', () => {
+  for (const garbage of ['not json at all', '{{{{', '"shots": [', '{"shots": [{{{', '  garbled ', '{"spine": "unterminated']) {
+    assert.doesNotThrow(() => parsePartialShotList(garbage))
+  }
+  assert.deepEqual(parsePartialShotList('not json at all'), { spine: '', shots: [] })
+})
+
+test('parsePartialShotList: a brace inside a covers string is not mistaken for object structure', () => {
+  const doc = JSON.stringify({ spine: 's', shots: [{ index: 1, covers: 'a sign reading "CLOSED {for now}"', seconds: 2 }] })
+  const partial = parsePartialShotList(doc)
+  assert.equal(partial.shots.length, 1)
+  assert.equal(partial.shots[0].covers, 'a sign reading "CLOSED {for now}"')
+})
+
+test('parsePartialShotList: shots accumulate one at a time as more of the stream arrives (never shrinks, never jitters)', () => {
+  let prevCount = 0
+  for (let end = 1; end <= COMPLETE_DOC.length; end++) {
+    const { shots } = parsePartialShotList(COMPLETE_DOC.slice(0, end))
+    assert.ok(shots.length >= prevCount, `shot count went backward at cut ${end}`)
+    prevCount = shots.length
+  }
+  assert.equal(prevCount, 3)
 })

@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { useApp } from '../app/state'
-import { checkRuntimeCeiling, groupsAffectedByCut } from '../lib/shotList'
+import { checkRuntimeCeiling, groupsAffectedByCut, parsePartialShotList } from '../lib/shotList'
 import { ceilingAlert, groupBandState } from '../lib/shotScreens'
 import type { GroupBandState } from '../lib/shotScreens'
+import { DraftingStatus } from './DraftingStatus'
 
 function bandColor(state: GroupBandState): string {
   if (state === 'kept') return 'var(--grn)'
@@ -28,7 +29,7 @@ export function StoryAndShots({ onOpenClipInHand }: { onOpenClipInHand: (groupIn
   const app = useApp()
   const {
     plot, setPlot, maxRuntimeSeconds, setMaxRuntimeSeconds, shotList, shotGroups, shotGroupIssues,
-    shotListBusy, makeShotList, reviseShotsFrom, approveShotGroups, breakdown, extenderPlanPreview,
+    shotListBusy, shotStreaming, makeShotList, reviseShotsFrom, approveShotGroups, breakdown, extenderPlanPreview,
     setEditingGroupIndex, streaming,
   } = app
 
@@ -104,6 +105,38 @@ export function StoryAndShots({ onOpenClipInHand }: { onOpenClipInHand: (groupIn
           </button>
         </div>
       </div>
+
+      {shotStreaming && (
+        <div className="card" style={{ marginTop: 9 }}>
+          <DraftingStatus streaming={shotStreaming} />
+          {(() => {
+            // Shots close off in ARRIVAL order and never get rewritten once
+            // closed (the model is a forward-only token stream), so — unlike
+            // a band that reflects render/approval state and can flip
+            // colors — a running total here only ever grows. Showing it live
+            // is a plain "how far in are we", not something that can jitter;
+            // see `parsePartialShotList`'s module comment for why a shot only
+            // appears once its object has fully closed.
+            const partial = parsePartialShotList(shotStreaming.text)
+            if (!partial.shots.length) return null
+            const total = partial.shots.reduce((sum, s) => sum + s.seconds, 0)
+            return (
+              <div style={{ marginTop: 9 }}>
+                <div className="tok">
+                  {partial.shots.length} shot{partial.shots.length === 1 ? '' : 's'} so far · {total.toFixed(1)}s of {maxRuntimeSeconds.toFixed(1)}s
+                </div>
+                {partial.shots.map((s) => (
+                  <div key={s.index} className="tok" style={{ display: 'flex', gap: 9, padding: '2px 0', color: 'var(--ink2)' }}>
+                    <span style={{ width: 20, flex: '0 0 auto', color: 'var(--ink3)' }}>{s.index}</span>
+                    <span style={{ flex: '1 1 auto' }}>{s.covers}</span>
+                    <span style={{ color: 'var(--ink3)' }}>{s.seconds}s</span>
+                  </div>
+                ))}
+              </div>
+            )
+          })()}
+        </div>
+      )}
 
       {shotList && (
         <>

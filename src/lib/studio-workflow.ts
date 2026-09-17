@@ -83,6 +83,27 @@ export function clipsNeedingPrompt(breakdown: Breakdown, versions: readonly Vers
 
 export type StudioRunPhase = 'thinking' | 'writing' | 'continuing' | 'thinking-recovery'
 
+/**
+ * What `DraftingStatus` needs to render progress for one in-flight call.
+ *
+ * `run()`'s own `streaming` state already carries exactly these fields, keyed
+ * to a `StageId`. This is that same shape with `stage` widened to `string` —
+ * the one change needed for a caller with no `StageId` of its own (the shots
+ * stage; see `shotList.ts`'s module comment on why it stays off that chain on
+ * purpose) to drive the identical component from its own state slot, instead
+ * of either forcing a fake `StageId` into that enum or building a second
+ * progress indicator that could drift out of step with the real one.
+ */
+export interface DraftingProgress {
+  stage: string
+  text: string
+  reasoning: string
+  startedAt: number
+  continuations: number
+  phase?: StudioRunPhase
+  auto?: boolean
+}
+
 /** Human-readable status for a run; avoids presenting long reasoning as calls. */
 export function runStatusText(stage: StageId, phase: StudioRunPhase = 'thinking', continuations = 0): string {
   if (phase === 'thinking-recovery') return 'Recovering the answer from model thinking…'

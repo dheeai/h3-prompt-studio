@@ -26,7 +26,8 @@ import { fetchBundledSkills, loadSkills, removeSkill, saveSkill } from '../lib/s
 import { estTokens } from '../lib/tokens'
 import { authoringModeForContent, authorContinuation, canAutoAuthorNext, clearDraftContext, continuationSource, interruptedReasoningText, migrateBreakIntoScenes, nextPlanClipToAuthor, previousPromptForClip, promptSourceForAuthoringMode, withContinuationFrame } from '../lib/entry'
 import type { AuthoringMode } from '../lib/entry'
-import { clipsNeedingPrompt, isSingleRequestStage, type StudioRunPhase } from '../lib/studio-workflow'
+import { clipsNeedingPrompt, isSingleRequestStage, type DraftingProgress, type StudioRunPhase } from '../lib/studio-workflow'
+import { streamingCallbacks } from '../lib/streamingProgress'
 import { normalizeThinkingBudgets, resolveThinkingBudget } from '../lib/thinking'
 import {
   SHOT_LIST_TEMPLATE, fillShotListTemplate, groupShotsIntoClips, parseShotList, reviseShotsFromIndex,
@@ -360,6 +361,10 @@ export interface Api {
   shotGroupIssues: string[]
   /** A shots/revision model call is in flight. */
   shotListBusy: boolean
+  /** `makeShotList`/`reviseShotsFrom`'s own progress, for `DraftingStatus` —
+   * see `shotStreaming`'s module comment (by its `useState`) for why this is
+   * a slot of its own rather than a reuse of `streaming`. */
+  shotStreaming: DraftingProgress | null
   /** One model call using the foundation's `SHOT_LIST_TEMPLATE`/
    * `shotListResponseFormat`/`parseShotList`, from `plot`/`maxRuntimeSeconds`. */
   makeShotList: () => Promise<void>
@@ -611,6 +616,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     phase?: StudioRunPhase
     auto?: boolean
   } | null>(null)
+  /** `makeShotList`/`reviseShotsFrom`'s own progress, shown via
+   * `DraftingStatus` exactly as `run()`'s `streaming` is above — but kept as
+   * its OWN state slot rather than reusing `streaming` itself. The shots
+   * stage has no `StageId` (see `shotList.ts`'s module comment on why it
+   * stays off that chain), and `Composer.tsx` — unedited by this build —
+   * already shows `DraftingStatus` for `streaming.stage !== 'breakdown'`;
+   * writing a shots pass into that same slot would make it pop up in the
+   * Studio composer, which is mounted (only CSS-hidden) even while Full
+   * Story's tab is the one showing. A separate slot keeps the two
+   * structurally incapable of crossing into each other's screen. Declared
+   * here (rather than down by `shotListBusy`, its more natural neighbor) so
+   * `cancel()` — defined well before Full Story's own actions — can close
+   * over it directly. */
+  const [shotStreaming, setShotStreaming] = useState<DraftingProgress | null>(null)
   const [error, setError] = useState<string | null>(null)
   // Advisory, non-blocking, and deliberately a SEPARATE channel from `error`:
   // a model swap is a cost to state, not a failure to refuse (see modelLock.ts).
@@ -1067,13 +1086,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const selectVersion = useCallback((id: string) => setSession((s) => ({ ...s, currentId: id })), [])
 
   const cancel = useCallback(() => {
-    const thought = interruptedReasoningText(streaming?.reasoning ?? '')
+    // Exactly one of `streaming`/`shotStreaming` is ever live at a time (the
+    // GPU mutex single-flights both onto the same `abortRef`), so reading
+    // whichever has reasoning covers either without needing to know which.
+    const thought = interruptedReasoningText(streaming?.reasoning ?? shotStreaming?.reasoning ?? '')
     if (thought) setInterruptedReasoning(thought)
     continuationAbortRef.current?.abort()
     abortRef.current?.abort()
     abortRef.current = null
     setStreaming(null)
-  }, [streaming?.reasoning])
+    setShotStreaming(null)
+  }, [streaming?.reasoning, shotStreaming?.reasoning])
 
   /**
    * Abort any in-flight PIPELINE (background) authoring and wait for the GPU
@@ -1261,13 +1284,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 ]
               : []),
           ],
-          onDelta: (chunk) => setStreaming((s) => (s ? { ...s, text: s.text + chunk, phase: s.phase === 'thinking' ? 'writing' : s.phase } : s)),
-          onReasoning: (chunk) => setStreaming((s) => (s ? { ...s, reasoning: s.reasoning + chunk, phase: s.text ? s.phase : 'thinking' } : s)),
-          onContinuation: (round, kind) =>
-            setStreaming((s) => (s ? { ...s, continuations: round, phase: kind === 'thinking' ? 'thinking-recovery' : 'continuing' } : s)),
-          // A continuation resumes from the last complete line, so the partial
-          // one already on the page has to come back off it.
-          onRewind: (chars) => setStreaming((s) => (s ? { ...s, text: s.text.slice(0, Math.max(0, s.text.length - chars)) } : s)),
+          ...streamingCallbacks(setStreaming),
           maxContinuations: continuationBudgetFor(stage),
           retryOnLimit: !isSingleRequestStage(stage),
         })
@@ -1573,6 +1590,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setError(null)
     const ac = new AbortController()
     abortRef.current = ac
+    setShotStreaming({ stage: 'shots', text: '', reasoning: '', startedAt: Date.now(), continuations: 0, phase: 'thinking' })
     try {
       const user = fillShotListTemplate(SHOT_LIST_TEMPLATE, plot, maxRuntimeSeconds)
       const result = await streamChatComplete({
@@ -1584,7 +1602,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         responseFormat: provider.supportsJsonSchema ? shotListResponseFormat() : undefined,
         signal: ac.signal,
         messages: [{ role: 'user', content: user }],
-        onDelta: () => {},
+        ...streamingCallbacks(setShotStreaming),
       })
       if (!result.text.trim()) throw new Error('The model returned nothing.')
       const parsed = parseShotList(result.text, maxRuntimeSeconds)
@@ -1598,6 +1616,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } finally {
       abortRef.current = null
       setShotListBusy(false)
+      setShotStreaming(null)
       endGpuUse()
     }
   }, [providers, settings, beginGpuUse, endGpuUse])
@@ -1626,6 +1645,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setError(null)
       const ac = new AbortController()
       abortRef.current = ac
+      setShotStreaming({ stage: 'shots', text: '', reasoning: '', startedAt: Date.now(), continuations: 0, phase: 'thinking' })
       try {
         const before = list.shots.filter((s) => s.index < cutShotIndex)
         const already = before.length
@@ -1644,7 +1664,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           responseFormat: provider.supportsJsonSchema ? shotListResponseFormat() : undefined,
           signal: ac.signal,
           messages: [{ role: 'user', content: user }],
-          onDelta: () => {},
+          ...streamingCallbacks(setShotStreaming),
         })
         if (!result.text.trim()) throw new Error('The model returned nothing.')
         const tail = parseShotList(result.text, maxRuntimeSeconds)
@@ -1696,6 +1716,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       } finally {
         abortRef.current = null
         setShotListBusy(false)
+        setShotStreaming(null)
         endGpuUse()
       }
     },
@@ -2888,6 +2909,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     shotGroups: session.shotGroups ?? [],
     shotGroupIssues: session.shotGroupIssues ?? [],
     shotListBusy,
+    shotStreaming,
     makeShotList,
     reviseShotsFrom,
     approveShotGroups,

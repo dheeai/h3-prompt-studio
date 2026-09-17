@@ -19,6 +19,8 @@ import { parseWorkflow } from '../lib/workflow'
 import { EXTENDER_REF_SLOTS, ExtenderError, buildExtenderGraph, extenderCostEstimate, extenderGeometryFromInputs, platesFreezeReason, readExtenderMasterInputs } from '../lib/extender'
 import { mergeExtenderInputs } from '../lib/extenderSettings'
 import type { ExtenderNodeSchema } from '../lib/extenderSettings'
+import { watchExtenderProgress } from '../lib/extenderLiveProgress'
+import type { ExtenderLiveProgress, ExtenderProgressHandle } from '../lib/extenderLiveProgress'
 import { readBakedLoraStack } from '../lib/loras'
 import type { ExtenderClipInput, ExtenderCostEstimate, ExtenderPlate, ExtenderPreviewInfo } from '../lib/extender'
 import { clipsAfterStop, countFromIndex, dropFromIndex, dropInvalidatedAutoDraft, redoSeed, validatedClipAt } from '../lib/filmEdit'
@@ -462,6 +464,16 @@ export interface Api {
    * Extender job — `h3_preview_info`, read straight from `/history` rather
    * than shown as a bare spinner. Null before anything has been submitted. */
   extenderProgress: ExtenderPreviewInfo | null
+  /** Live per-clip progress off the node's own `master_extender_progress`
+   * websocket event (issue #33's corrected scope) — "clip 4 of 6 · sampling
+   * · 40%" in place of a bare "Rendering… 71.0s". Best-effort only: a socket
+   * that never connects, drops, or is blocked by the browser leaves this
+   * `null` and the render still completes exactly as it does today (the
+   * existing `/history` poll-to-done, `extenderProgress` above included, is
+   * untouched) — see `watchExtenderProgress`'s module comment. Cleared at
+   * the start of every render and once it ends, fails or is stopped, by
+   * both `renderExtenderPlan` and `renderExtender` alike. */
+  extenderLiveProgress: ExtenderLiveProgress | null
   /** End-to-end continuation progress, retained as a receipt once ready or failed. */
   continuation: ContinuationStatus | null
   addPlate: (p: Omit<Plate, 'id' | 'addedAt'>) => Promise<void>
@@ -676,6 +688,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // fetched once at boot (below) as a plain asset, never through an idb store.
   const [extenderGraph, setExtenderGraph] = useState<Record<string, ComfyNode> | null>(null)
   const [extenderProgress, setExtenderProgress] = useState<ExtenderPreviewInfo | null>(null)
+  // Live per-clip progress — see `Api.extenderLiveProgress`'s module comment.
+  const [extenderLiveProgress, setExtenderLiveProgress] = useState<ExtenderLiveProgress | null>(null)
   // What was actually recorded as each film's frozen settings the last time a
   // submit of it succeeded — keyed by the film's own node id, so
   // `checkExtenderSignature` (inside `buildExtenderGraph`) has something to
@@ -2201,9 +2215,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setCurrentClipId(draftClips[draftClips.length - 1]?.id ?? null)
       setRenderingId(draftClips[0]?.id ?? null)
       setExtenderProgress(null)
+      setExtenderLiveProgress(null)
 
       const patchFilmClips = (patch: Partial<Clip>) =>
         setClips((prev) => prev.map((c) => (c.extender?.nodeId === nodeId ? { ...c, ...patch } : c)))
+
+      // Best-effort live progress (issue #33) — opened right before submit,
+      // closed unconditionally in the `finally` below (done, failed or
+      // stopped), same lifetime as the render itself. See
+      // `watchExtenderProgress`'s module comment for why nothing here can
+      // ever block or fail the render proper.
+      let progressHandle: ExtenderProgressHandle | null = null
 
       try {
         // Same upload contract as every other render path: a plate already
@@ -2242,6 +2264,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         // a rejected/failed render never becomes the new baseline.
         const masterInputsUsed = built.graph[nodeId].inputs
 
+        progressHandle = watchExtenderProgress(endpoint, nodeId, (evt) => setExtenderLiveProgress(evt))
         const promptId = await submit(endpoint, built.graph)
         patchFilmClips({ state: 'rendering', promptId })
 
@@ -2300,6 +2323,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           setError(msg)
         }
       } finally {
+        progressHandle?.close()
+        setExtenderLiveProgress(null)
         setRenderingId(null)
         endGpuUse()
       }
@@ -2444,6 +2469,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setCurrentClipId(id)
     setRenderingId(id)
     setExtenderProgress(null)
+    setExtenderLiveProgress(null)
 
     // HAZARD 1 (2026-09-16 brief): a scene at or before `sceneIndex` being
     // (re)written invalidates a pipeline-authored draft that was written
@@ -2481,6 +2507,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     ]
 
     let landed = false
+    // Same best-effort lifetime as `renderExtenderPlan`'s own — see its
+    // comment beside `progressHandle`.
+    let progressHandle: ExtenderProgressHandle | null = null
     try {
       // Same upload contract as `renderExtenderPlan`: a plate already on
       // THIS box (picked, or uploaded by an earlier clip) is cited by name
@@ -2513,6 +2542,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       })
       const masterInputsUsed = built.graph[nodeId].inputs
 
+      progressHandle = watchExtenderProgress(endpoint, nodeId, (evt) => setExtenderLiveProgress(evt))
       const promptId = await submit(endpoint, built.graph)
       patchClip(id, { state: 'rendering', promptId })
 
@@ -2565,6 +2595,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setError(msg)
       }
     } finally {
+      progressHandle?.close()
+      setExtenderLiveProgress(null)
       setRenderingId(null)
       endGpuUse()
       // Task 1, 2026-09-16: begin authoring the next clip's draft the
@@ -3040,6 +3072,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     platesFrozenReason,
     extenderFilm,
     extenderProgress,
+    extenderLiveProgress,
     renderExtenderPlan,
     stopRender,
     submitTickedPrompts,

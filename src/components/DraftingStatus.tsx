@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useApp } from '../app/state'
 import type { DraftingProgress } from '../lib/studio-workflow'
+import type { ExtenderLiveProgress } from '../lib/extenderLiveProgress'
 
 /**
  * What the model is doing, while it does it.
@@ -54,6 +55,36 @@ export function DraftingStatus({ streaming }: { streaming: DraftingProgress }) {
         <button className="btn sm" onClick={cancel}>Stop</button>
       </div>
       {tail ? <div className="composer-drafting-body tok">{tail}</div> : <div className="composer-drafting-body tok">waiting for the first token…</div>}
+    </div>
+  )
+}
+
+/**
+ * A Master Extender render's live state, while it renders — the render-loop
+ * counterpart of `DraftingStatus` above, and deliberately built from the
+ * SAME primitives (`.composer-drafting`/`.dot`/`.lbl`/`.tok`) rather than a
+ * second progress idiom invented for renders (2026-09-17 brief, issue #33).
+ *
+ * Fed by `watchExtenderProgress`'s `master_extender_progress` events
+ * (`lib/extenderLiveProgress.ts`) — best-effort only. Nothing here is on the
+ * path that actually finishes a render (the existing `/history`
+ * poll-to-done in `comfy.ts` is); a caller with no live event yet (the
+ * socket never connected, dropped, or the browser blocked it) simply never
+ * renders this component, and the render completes exactly as it does
+ * today. See `ClipPlan.tsx`'s and `ScenesStrip.tsx`'s own call sites for
+ * what each shows in that fallback case.
+ */
+export function RenderProgress({ progress }: { progress: ExtenderLiveProgress }) {
+  const pct = Math.round(progress.percent * 100)
+  return (
+    <div className="composer-drafting">
+      <div className="composer-drafting-head">
+        <span className="dot err" />
+        <span className="lbl">clip {progress.clipIndex + 1} of {progress.totalClips}{progress.stage ? ` · ${progress.stage}` : ''}</span>
+        <span className="studio-grow" />
+        <span className="tok">{pct}%</span>
+      </div>
+      {progress.message ? <div className="composer-drafting-body tok">{progress.message}</div> : null}
     </div>
   )
 }

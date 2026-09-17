@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useApp } from '../app/state'
 import type { FilmSceneRow } from '../app/state'
 import { deliveredVsAskedLine, secondsLabel } from '../lib/filmDisplay'
+import { RenderProgress } from './DraftingStatus'
 
 const WORK_DOT: Record<string, string> = {
   checkpointed: 'ok',
@@ -34,7 +35,7 @@ const WORK_DOT: Record<string, string> = {
  * sends anything by itself.
  */
 export function ScenesStrip() {
-  const { extenderFilm: film, rendering, gpuBusy, scenesFrom, prepareContinuation, redoScene, pendingAutoDraft } = useApp()
+  const { extenderFilm: film, rendering, gpuBusy, scenesFrom, prepareContinuation, redoScene, pendingAutoDraft, extenderLiveProgress } = useApp()
   const [expanded, setExpanded] = useState<string | null>(null)
   const [showPrompt, setShowPrompt] = useState<string | null>(null)
   const [keepSeedFor, setKeepSeedFor] = useState<Record<string, boolean>>({})
@@ -146,6 +147,11 @@ export function ScenesStrip() {
           </span>
         </div>
       </div>
+      {filmIsRendering && extenderLiveProgress && (
+        <div style={{ marginTop: 8 }}>
+          <RenderProgress progress={extenderLiveProgress} />
+        </div>
+      )}
       {filmIsRendering && (
         <div className="scenes-strip-note tok">
           Sampling scene {rendering?.extender?.sceneIndex} only — every earlier scene above is served from the box's own validated-clip cache, not resampled.

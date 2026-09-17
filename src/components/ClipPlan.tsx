@@ -5,6 +5,7 @@ import { listLoraNames } from '../lib/comfy'
 import { localLoraStackOverride } from '../lib/loras'
 import { clipsNeedingPrompt } from '../lib/studio-workflow'
 import { latestPromptForClip } from '../lib/stages'
+import { RenderProgress } from './DraftingStatus'
 
 
 /**
@@ -146,7 +147,7 @@ export function ClipPlan() {
  */
 function ExtenderPlanSubmit() {
   const app = useApp()
-  const { extenderPlanPreview, extenderReady, rendering, renderExtenderPlan, stopRender, redoPlanClip, extenderProgress } = app
+  const { extenderPlanPreview, extenderReady, rendering, renderExtenderPlan, stopRender, redoPlanClip, extenderProgress, extenderLiveProgress } = app
   const [busy, setBusy] = useState(false)
   const [confirmingRedo, setConfirmingRedo] = useState<number | null>(null)
   const [confirmingStop, setConfirmingStop] = useState(false)
@@ -242,7 +243,12 @@ function ExtenderPlanSubmit() {
         </div>
       )}
 
-      {rendering && extenderProgress && (
+      {rendering && extenderLiveProgress && (
+        <div style={{ marginTop: 10 }}>
+          <RenderProgress progress={extenderLiveProgress} />
+        </div>
+      )}
+      {rendering && !extenderLiveProgress && extenderProgress && (
         <div className="tok" style={{ display: 'block', marginTop: 10 }}>
           clip {extenderProgress.clip}/{extenderProgress.totalClips} · {extenderProgress.cacheMode}
         </div>

@@ -194,6 +194,58 @@ export interface Breakdown {
   at: number
 }
 
+// ── Full Story mode — a shot list, finer-grained than a Breakdown ─────────
+//
+// `Breakdown`/`BreakdownClip` above are a CLIP-level plan: one entry already
+// IS one H3 clip, with a role and continuity text. Full Story mode's model
+// call is one level finer than that — a `Shot` is the smallest fixed unit
+// ("what happens", nothing about how it's shot), and several shots are
+// PACKED into one clip-sized `ShotGroup` afterwards, by pure grouping logic,
+// not a second model call. See `shotList.ts`'s module comment for why this
+// coexists with `Breakdown` (derives one) rather than replacing or
+// duplicating it.
+
+/** One shot — the whole film's finest grain. Bare content only: camera,
+ * performance and sound are decided later, in the per-clip expansion step
+ * (`STAGE_INFO.direct`/`draft` in `stages.ts`) — never here. */
+export interface Shot {
+  /** 1-based position in the whole film. Stable identity across a revision:
+   * "cut from shot N" always means this number, never a re-derived position. */
+  index: number
+  /** What happens — fixed elements only (who, where, what happens, how it
+   * ends). No camera, no shot construction, no performance, no sound. */
+  covers: string
+  /** This shot's own authored length, in seconds. */
+  seconds: number
+}
+
+/** The whole film's shot list — Full Story mode's step 2 output, before any
+ * grouping into clip-sized sets. */
+export interface ShotList {
+  /** The film's spine in one line — same notion as `Breakdown.spine`. */
+  spine: string
+  /** The operator's own hard runtime ceiling, in seconds, that the shots'
+   * total was asked to fit inside — see `shotList.ts`'s `checkRuntimeCeiling`. */
+  maxRuntimeSeconds: number
+  shots: Shot[]
+  at: number
+}
+
+/** One clip-sized grouping of consecutive shots — Full Story mode's step 3
+ * output. A group is the unit that becomes one H3 clip. */
+export interface ShotGroup {
+  /** 1-based position among the film's groups — becomes `BreakdownClip.index`
+   * / the Master Extender's `sceneIndex` once expanded (see
+   * `shotList.ts`'s `breakdownClipsFromShotGroups`). */
+  index: number
+  /** The `Shot.index` values this group covers, in order — always
+   * contiguous, and a shot is never split across two groups. */
+  shotIndices: number[]
+  /** Sum of the covered shots' own `seconds` — authored, not grid-snapped;
+   * see `geometry.ts`'s `framesForSeconds` for the grid-snapped figure. */
+  seconds: number
+}
+
 export interface ChatTurn {
   role: 'user' | 'assistant'
   text: string

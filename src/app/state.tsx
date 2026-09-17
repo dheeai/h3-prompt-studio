@@ -9,7 +9,10 @@ import type { ChatContentPart } from '../lib/llm'
 import { DEFAULT_PROVIDERS, loadProviders, probe, saveProviders, LOCAL_LLM_URL, LOCAL_LLM_MODEL} from '../lib/providers'
 import { PROMPT_STAGES, SCHEMA_STAGES, STAGE_LABEL, continuationFrameBlock, durationBlock, fillTemplateWithDuration, filmBlock, platesBlock, hasPromptBlock, latestPromptForClip, nextRole, parseBreakdown, splitPromptReplacement, splitReply, templateFor } from '../lib/stages'
 import { h3ResponseFormat, joinH3Sections } from '../lib/schema'
-import { DEFAULT_ENDPOINTS, fetchExtenderNodeSchema, lastFrameOf, poll, pollExtender, probeComfy, submit, uploadImage, viewUrl } from '../lib/comfy'
+import {
+  DEFAULT_ENDPOINTS, RenderStopped, clearQueue, fetchExtenderNodeSchema, interrupt, lastFrameOf, nextPollStep, poll,
+  pollExtender, probeComfy, submit, uploadImage, viewUrl,
+} from '../lib/comfy'
 import type { PollResult } from '../lib/comfy'
 import { framesForSeconds } from '../lib/geometry'
 import { parseWorkflow } from '../lib/workflow'
@@ -18,7 +21,7 @@ import { mergeExtenderInputs } from '../lib/extenderSettings'
 import type { ExtenderNodeSchema } from '../lib/extenderSettings'
 import { readBakedLoraStack } from '../lib/loras'
 import type { ExtenderClipInput, ExtenderCostEstimate, ExtenderPlate, ExtenderPreviewInfo } from '../lib/extender'
-import { countFromIndex, dropFromIndex, dropInvalidatedAutoDraft, redoSeed, validatedClipAt } from '../lib/filmEdit'
+import { clipsAfterStop, countFromIndex, dropFromIndex, dropInvalidatedAutoDraft, redoSeed, validatedClipAt } from '../lib/filmEdit'
 import type { PendingAutoDraft } from '../lib/filmEdit'
 import { cumulativeFilm, sceneWorkLabel } from '../lib/filmDisplay'
 import type { PaddedClip, SceneWorkLabel } from '../lib/filmDisplay'
@@ -474,6 +477,19 @@ export interface Api {
    */
   renderExtenderPlan: (runMode: 'clip_by_clip' | 'full_batch') => Promise<void>
   /**
+   * Stop the render in flight — one shared Stop for both render paths (the
+   * GPU mutex guarantees only one is ever running). Posts ComfyUI's own
+   * `/interrupt` (kills whatever is executing) and clears `/queue` (drops
+   * anything still pending behind it), then lets the render's own poll loop
+   * notice on its next tick and unwind: the GPU mutex releases
+   * (`endGpuUse`), the poller stops, and every clip this submit was
+   * rendering reads as `'queued'` — not rendered — never `'failed'`. Cannot
+   * damage anything already finished: a validated clip lives in the Master
+   * Extender node's OWN disk cache, so this only fails to produce the ONE
+   * clip that was still sampling. A no-op when nothing is rendering.
+   */
+  stopRender: () => void
+  /**
    * Gate A — approve one or several already-authored prompts and submit
    * exactly those (plus every already-validated clip, which always rides
    * along for free) as ONE Master Extender job. Never a second submit path:
@@ -663,6 +679,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // the studio's WORK clean (see the boot effect's own comment), and this is
   // exactly that — bookkeeping about work in progress, not configuration.
   const extenderFrozenRef = useRef<Record<string, Record<string, unknown>>>({})
+  /**
+   * Set the instant `beginGpuUse('render')` succeeds, cleared the instant
+   * `stopRender` is pressed. Checked once per poll tick by `nextPollStep`
+   * inside BOTH render loops (`renderExtenderPlan`/`renderExtender`) — a
+   * plain ref, not state, because it must be read synchronously inside an
+   * async closure already in flight (same reasoning as `sessionRef`/
+   * `clipsRef`), and there is never more than one render in flight to track
+   * (the GPU mutex — `gpuBusyRef` — guarantees it).
+   */
+  const renderStopRef = useRef(false)
   /**
    * A redo's seed choice, one-shot, keyed by `${nodeId}:${sceneIndex}` — set
    * only by `redoScene`/`redoPlanClip` when `keepSeed` is asked for (never
@@ -2029,6 +2055,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [])
 
   /**
+   * Stop the render in flight — the studio's only Stop control, shared by
+   * BOTH render paths (`renderExtenderPlan` and `renderExtender`) since the
+   * GPU mutex guarantees at most one of them is ever running. A no-op unless
+   * one actually is.
+   *
+   * Two network calls, both fire-and-forget and both gateway-light (answer
+   * without waiting on a GPU-holding backend switch, per the 2026-09-17
+   * brief): `interrupt` kills whatever ComfyUI is SAMPLING right now;
+   * `clearQueue` drops anything else still queued behind it, so it can't
+   * start the moment the interrupt clears. Neither is awaited — the render
+   * loop notices `renderStopRef` on its own very next poll tick (at most
+   * ~2.5s), and the operator should see "stopping" immediately rather than
+   * wait on a fetch to a box that may already be gone.
+   *
+   * Cannot damage anything already finished: a validated clip lives in the
+   * Master Extender node's OWN disk cache, on the box, independent of this
+   * request — interrupting only fails to produce the ONE clip that was
+   * still sampling. Nothing here rolls anything back.
+   */
+  const stopRender = useCallback(() => {
+    if (gpuBusyRef.current !== 'render' || !endpoint) return
+    renderStopRef.current = true
+    void interrupt(endpoint)
+    void clearQueue(endpoint)
+  }, [endpoint])
+
+  /**
    * Submit the clip plan as ONE Master Extender job — see `Api.renderExtenderPlan`'s
    * module comment and `lib/extender.ts` for the graph-building/guard logic
    * this calls into. The node itself takes the WHOLE plan on every submit
@@ -2102,6 +2155,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
 
       if (!beginGpuUse('render')) return
+      renderStopRef.current = false
 
       const jobId = `c${Date.now().toString(36)}`
       const t0 = Date.now()
@@ -2182,9 +2236,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
             lastPreview = res.preview
             setExtenderProgress(res.preview)
           }
-          if (!res.done) continue
-          if (res.failed) throw new Error(res.failed)
-          output = res.output
+          const step = nextPollStep(res, renderStopRef.current)
+          if (step.kind === 'continue') continue
+          if (step.kind === 'stopped') throw new RenderStopped()
+          if (step.kind === 'failed') throw new Error(step.message)
+          output = step.output
           break
         }
 
@@ -2207,9 +2263,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }),
         )
       } catch (e) {
-        const msg = e instanceof ExtenderError ? e.message : String((e as Error).message || e)
-        patchFilmClips({ state: 'failed', error: msg, ms: Date.now() - t0 })
-        setError(msg)
+        if (e instanceof RenderStopped) {
+          // Not a failure — the operator asked for exactly this. Every clip
+          // of this submit reverts to 'queued', never 'failed': local state
+          // has no reliable way to tell which indices the node's OWN disk
+          // cache already finished before the interrupt landed (see
+          // `stopRender`'s module comment), so resubmitting is the safe
+          // default either way — worst case it costs a resample for
+          // something that was already cached, never a lost clip.
+          setClips((prev) => clipsAfterStop(prev, nodeId))
+          setNotice(
+            'Stopped. Whatever this batch had already finished on the box stays cached there; the clip that was ' +
+              'still rendering does not exist. Submit again to pick up where it left off.',
+          )
+        } else {
+          const msg = e instanceof ExtenderError ? e.message : String((e as Error).message || e)
+          patchFilmClips({ state: 'failed', error: msg, ms: Date.now() - t0 })
+          setError(msg)
+        }
       } finally {
         setRenderingId(null)
         endGpuUse()
@@ -2327,6 +2398,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return
     }
     if (!beginGpuUse('render')) return
+    renderStopRef.current = false
 
     const id = `c${Date.now().toString(36)}`
     const t0 = Date.now()
@@ -2431,9 +2503,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         await new Promise((r) => setTimeout(r, 2500))
         const res = await pollExtender(endpoint, promptId)
         if (res.preview) setExtenderProgress(res.preview)
-        if (!res.done) continue
-        if (res.failed) throw new Error(res.failed)
-        output = res.output
+        const step = nextPollStep(res, renderStopRef.current)
+        if (step.kind === 'continue') continue
+        if (step.kind === 'stopped') throw new RenderStopped()
+        if (step.kind === 'failed') throw new Error(step.message)
+        output = step.output
         break
       }
 
@@ -2460,9 +2534,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
       redoTargetRef.current = null
       landed = true
     } catch (e) {
-      const msg = e instanceof ExtenderError ? e.message : String((e as Error).message || e)
-      patchClip(id, { state: 'failed', error: msg, ms: Date.now() - t0 })
-      setError(msg)
+      if (e instanceof RenderStopped) {
+        // Not a failure — see the matching branch in `renderExtenderPlan`.
+        // This scene's own record is the only one this call ever touches
+        // (every EARLIER scene of this film is a separate, untouched Clip),
+        // so it alone reverts to 'queued'.
+        setClips((prev) => clipsAfterStop(prev, nodeId))
+        setNotice(`Stopped. Scene ${sceneIndex} does not exist — nothing was produced. Earlier scenes of this film stay exactly as they rendered.`)
+      } else {
+        const msg = e instanceof ExtenderError ? e.message : String((e as Error).message || e)
+        patchClip(id, { state: 'failed', error: msg, ms: Date.now() - t0 })
+        setError(msg)
+      }
     } finally {
       setRenderingId(null)
       endGpuUse()
@@ -2939,6 +3022,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     extenderFilm,
     extenderProgress,
     renderExtenderPlan,
+    stopRender,
     submitTickedPrompts,
     discardGroupRender,
     addPlate,

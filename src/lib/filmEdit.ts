@@ -103,3 +103,23 @@ export function dropInvalidatedAutoDraft<V extends { id: string }>(
   if (!pending || pending.sceneIndex <= fromIndex) return { versions: versions as V[], discarded: false }
   return { versions: versions.filter((v) => v.id !== pending.versionId), discarded: true }
 }
+
+/**
+ * What every clip of a STOPPED submit reverts to (2026-09-17 brief: "no way
+ * to cancel a job"). Shared by both render paths — `renderExtenderPlan`'s
+ * whole-plan submit and `renderExtender`'s single scene — since the GPU
+ * mutex guarantees at most one job, and therefore at most one nodeId's worth
+ * of `'rendering'` clips, exists at a time.
+ *
+ * Never `'failed'`: nothing failed, the operator asked for exactly this.
+ * Never left `'rendering'`: the mutex releases in the same breath the job is
+ * told to stop, so nothing should still read as in flight. Only a clip
+ * actually `'rendering'` for THIS nodeId is touched — a clip of the SAME
+ * film that had already landed `'done'` before this submit even started (or
+ * one from an unrelated film entirely) is left exactly as it is.
+ */
+export function clipsAfterStop<T extends StatedClip>(clips: readonly T[], nodeId: string): T[] {
+  return clips.map((c) =>
+    c.extender?.nodeId === nodeId && c.state === 'rendering' ? ({ ...c, state: 'queued' } as T) : c,
+  )
+}

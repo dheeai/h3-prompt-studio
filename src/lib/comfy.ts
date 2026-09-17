@@ -274,6 +274,54 @@ export async function interrupt(ep: ComfyEndpoint): Promise<void> {
 }
 
 /**
+ * Drop everything ComfyUI has QUEUED but not yet started, for this endpoint.
+ *
+ * `interrupt` only kills whatever is EXECUTING right now — a job already
+ * sitting behind it in `/queue` (queued from this tab, another tab, or
+ * another client entirely) would start the moment the interrupt clears, so
+ * a real Stop needs both calls. ComfyUI's own `/queue` POST accepts
+ * `{clear: true}` to drop every pending item at once; there is no per-job
+ * cancel for something that never started, and nothing here needs one —
+ * a queued-not-started job never produced anything to roll back.
+ * Gateway-light and best-effort, same as `interrupt` above.
+ */
+export async function clearQueue(ep: ComfyEndpoint): Promise<void> {
+  await fetch(`${trim(ep.baseUrl)}/queue`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ clear: true }),
+  }).catch(() => {})
+}
+
+/** Thrown by an Extender poll loop when the operator has pressed Stop —
+ * distinguished from a real render failure so the caller's `catch` can leave
+ * a "never rendered" record instead of a "failed" one. See `nextPollStep`. */
+export class RenderStopped extends Error {}
+
+/** What one iteration of an Extender poll loop should do next. */
+export type PollStep =
+  | { kind: 'continue' }
+  | { kind: 'stopped' }
+  | { kind: 'failed'; message: string }
+  | { kind: 'done'; output: Clip['output'] }
+
+/**
+ * Decide the next step of an Extender poll loop, given the latest poll
+ * result and whether a stop has been requested.
+ *
+ * The stop check applies ONLY when the job is not yet done — a job that
+ * actually finished in the very same tick Stop was pressed still comes back
+ * `'done'`, never `'stopped'`: nothing already produced should be thrown
+ * away for a click that landed a beat late. Pulled out of the render loops
+ * in `state.tsx` so this one decision is testable without a live box.
+ */
+export function nextPollStep(res: PollResult, stopRequested: boolean): PollStep {
+  if (!res.done) return stopRequested ? { kind: 'stopped' } : { kind: 'continue' }
+  if (res.failed) return { kind: 'failed', message: res.failed }
+  return { kind: 'done', output: res.output }
+}
+
+/**
  * Grab a clip's final frame as a PNG data URL, in the browser.
  *
  * This is what closes the loop: the frame becomes the next clip's <Picture 1>.

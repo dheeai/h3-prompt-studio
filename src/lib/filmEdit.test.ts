@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { countFromIndex, dropFromIndex, dropInvalidatedAutoDraft, redoSeed, validatedClipAt } from './filmEdit'
+import { clipsAfterStop, countFromIndex, dropFromIndex, dropInvalidatedAutoDraft, redoSeed, validatedClipAt } from './filmEdit'
 
 type FakeClip = { id: string; state?: string; extender?: { nodeId: string; sceneIndex: number } }
 
@@ -120,4 +120,38 @@ test('redoSeed: keepSeed reuses the prior seed exactly, never drawing a fresh on
 
 test('redoSeed: keepSeed with no prior seed on record falls back to 0, same default buildExtenderClipsJson elsewhere applies', () => {
   assert.equal(redoSeed(undefined, true, () => 999), 0)
+})
+
+// ── clipsAfterStop — what a STOPPED render leaves behind (2026-09-17 brief:
+// ── "no way to cancel a job") ────────────────────────────────────────────
+
+test('clipsAfterStop: a rendering clip of the stopped job reverts to queued, never failed', () => {
+  const clips = [scene('c1', 'film-a', 1, 'rendering')]
+  const after = clipsAfterStop(clips, 'film-a')
+  assert.equal(after[0].state, 'queued')
+})
+
+test('clipsAfterStop: every rendering clip of the whole batch reverts, not just one', () => {
+  const clips = [scene('c1', 'film-a', 1, 'rendering'), scene('c2', 'film-a', 2, 'rendering'), scene('c3', 'film-a', 3, 'rendering')]
+  const after = clipsAfterStop(clips, 'film-a')
+  assert.deepEqual(after.map((c) => c.state), ['queued', 'queued', 'queued'])
+})
+
+test('clipsAfterStop: a clip already done before this submit is left alone — a stop cannot un-finish it', () => {
+  const clips = [scene('c1', 'film-a', 1, 'done'), scene('c2', 'film-a', 2, 'rendering')]
+  const after = clipsAfterStop(clips, 'film-a')
+  assert.equal(after[0].state, 'done')
+  assert.equal(after[1].state, 'queued')
+})
+
+test('clipsAfterStop: a clip of an unrelated film is untouched, even mid-render', () => {
+  const clips = [scene('c1', 'film-a', 1, 'rendering'), scene('other', 'film-b', 1, 'rendering')]
+  const after = clipsAfterStop(clips, 'film-a')
+  assert.equal(after[0].state, 'queued')
+  assert.equal(after[1].state, 'rendering')
+})
+
+test('clipsAfterStop: nothing rendering is a no-op', () => {
+  const clips = [scene('c1', 'film-a', 1, 'done'), scene('c2', 'film-a', 2, 'queued')]
+  assert.deepEqual(clipsAfterStop(clips, 'film-a'), clips)
 })

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useApp } from './state'
 import { ConnectPanel } from '../components/ConnectPanel'
 import { SkillsPanel } from '../components/SkillsPanel'
@@ -42,6 +42,7 @@ export function App() {
   const [workspace, setWorkspace] = useState<'studio' | 'story' | 'agent'>('studio')
   const [storyTab, setStoryTab] = useState<StoryTab>('shots')
   const [confirmClear, setConfirmClear] = useState(false)
+  const [confirmStop, setConfirmStop] = useState(false)
 
   const loadedSkills = skills.filter((s) => settings.selection[s.id]?.length)
   const endpointOk = app.endpoint ? app.comfyProbes[app.endpoint.id]?.state === 'ok' : false
@@ -52,6 +53,16 @@ export function App() {
   // `pass2_steps` are baked into the shipped workflow and cannot be
   // overridden from here (issue #30).
   const { width, height, steps } = app.extenderDefaults ?? { width: undefined, height: undefined, steps: undefined }
+
+  // A render in flight is a Studio-wide fact, not owned by whichever panel
+  // started it (the composer's single scene, the plan's whole-batch submit,
+  // Gate A's "approve and render", "Generate the rest", a Gate B redo, the
+  // Agent's own render action) — so the confirm chip belongs here, in the
+  // one header mounted no matter which workspace tab is showing, rather
+  // than duplicated into every panel that can start one.
+  useEffect(() => {
+    if (!app.rendering) setConfirmStop(false)
+  }, [app.rendering])
 
   if (!ready) {
     return (
@@ -71,6 +82,20 @@ export function App() {
           <button className={workspace === 'agent' ? 'active' : ''} aria-current={workspace === 'agent' ? 'page' : undefined} onClick={() => setWorkspace('agent')}>Agent <span>(beta)</span></button>
         </nav>
         <div className="studio-grow" />
+        {app.rendering && (
+          confirmStop ? (
+            <div className="studio-clear-confirm" role="status">
+              <span className="tok">
+                stop rendering scene {app.rendering.extender?.sceneIndex ?? app.rendering.index}? it will not exist — anything
+                else in this batch already finished stays cached.
+              </span>
+              <button className="btn pri sm" onClick={() => { app.stopRender(); setConfirmStop(false) }}>Stop</button>
+              <button className="btn ghost sm" onClick={() => setConfirmStop(false)}>Keep rendering</button>
+            </div>
+          ) : (
+            <button className="btn sm" onClick={() => setConfirmStop(true)}>Stop render</button>
+          )
+        )}
         <span className="tok setup-readiness">
           <span className={`dot ${ready2 ? 'ok' : 'warn'}`} /> {ready2 ? 'ready' : 'not ready'}
           {width && height ? ` · ${width}×${height} · ${steps} steps` : ''}

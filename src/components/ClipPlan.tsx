@@ -146,10 +146,14 @@ export function ClipPlan() {
  */
 function ExtenderPlanSubmit() {
   const app = useApp()
-  const { extenderPlanPreview, extenderReady, rendering, renderExtenderPlan, redoPlanClip, extenderProgress } = app
+  const { extenderPlanPreview, extenderReady, rendering, renderExtenderPlan, stopRender, redoPlanClip, extenderProgress } = app
   const [busy, setBusy] = useState(false)
   const [confirmingRedo, setConfirmingRedo] = useState<number | null>(null)
+  const [confirmingStop, setConfirmingStop] = useState(false)
   const [keepSeedFor, setKeepSeedFor] = useState<Record<number, boolean>>({})
+  useEffect(() => {
+    if (!rendering) setConfirmingStop(false)
+  }, [rendering])
   if (!extenderPlanPreview) return null
 
   const { clips, cost, issues } = extenderPlanPreview
@@ -244,14 +248,29 @@ function ExtenderPlanSubmit() {
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 9, marginTop: 12 }}>
+      <div style={{ display: 'flex', gap: 9, marginTop: 12, alignItems: 'baseline' }}>
         <button className="btn pri" disabled={blocked} onClick={() => void submit('clip_by_clip')}>
           {rendering ? 'Rendering…' : 'Render the next clip'}
         </button>
         <button className="btn" disabled={blocked} onClick={() => void submit('full_batch')}>
           Render every pending clip
         </button>
+        {rendering && !confirmingStop && (
+          <button className="btn sm ghost" onClick={() => setConfirmingStop(true)}>Stop</button>
+        )}
       </div>
+      {rendering && confirmingStop && (
+        <div style={{ marginTop: 8 }}>
+          <div className="tok" style={{ display: 'block' }}>
+            Stops now. Whatever this batch already finished stays cached on the box; scene {rendering.extender?.sceneIndex ?? rendering.index}
+            {' '}will not exist — resubmit to pick up where it left off.
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+            <button className="btn sm" onClick={() => { stopRender(); setConfirmingStop(false) }}>Stop rendering</button>
+            <button className="btn sm ghost" onClick={() => setConfirmingStop(false)}>Keep rendering</button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

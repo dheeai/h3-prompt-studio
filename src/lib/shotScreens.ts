@@ -3,15 +3,18 @@ import { breakdownClipsFromShotGroups, groupsAffectedByCut, type RuntimeCeilingC
 import { dropFromIndex } from './filmEdit'
 
 /**
- * Pure logic behind Full Story mode's two screens — "Story & shots" and "The
- * clip in hand" — kept apart from `state.tsx`/the components so it is
- * testable without a React harness, same reasoning as `shotList.ts` and
+ * Pure logic behind Full Story mode's four screens — "Story & shots", "The
+ * clip in hand", "Approve the prompts" (Gate A) and "Watch, then keep"
+ * (Gate B) — kept apart from `state.tsx`/the components so it is testable
+ * without a React harness, same reasoning as `shotList.ts` and
  * `filmEdit.ts`. This file never invents a second grouping or invalidation
  * mechanism: it calls `shotList.ts`'s `groupShotsIntoClips`/
  * `breakdownClipsFromShotGroups`/`groupsAffectedByCut` and `filmEdit.ts`'s
  * `dropFromIndex` exactly as they are, and only adds the small amount of glue
  * a screen needs on top (which sets are already approved, taking N of them at
- * once, and the manual boundary moves the automatic packer cannot express).
+ * once, the manual boundary moves the automatic packer cannot express, which
+ * of several authored prompts one submission actually sends, and which shot
+ * group a "keep" surfaces next).
  */
 
 // ── render state of one shot group, on Screen 1's bands ─────────────────
@@ -219,4 +222,84 @@ export function pushShotToNext(shots: readonly Shot[], groups: readonly ShotGrou
     if (gi === i + 1) return reseconds(shots, { ...next, shotIndices: [moved, ...next.shotIndices] })
     return g
   })
+}
+
+// ── the hole: reconciling the breakdown + authored-prompt layer ─────────
+
+/**
+ * Reconcile the BREAKDOWN + AUTHORED-PROMPT layer against the SAME cut a
+ * shot-list revision already applies to the RENDER layer
+ * (`clipsDiscardedByShotRevision`/`groupsAffectedByCut`'s `fromGroupIndex`),
+ * and what Gate B's "wrong shots" exit applies to one clip directly.
+ *
+ * THE RULE — shared with the render layer, never a second one invented here
+ * for this layer: a group at or after `fromGroupIndex` is discarded WHOLE —
+ * its derived `BreakdownClip` AND every authored prompt `Version` for it —
+ * because the shots underneath it no longer match what that clip/prompt was
+ * built from, and (once it has rendered too) the Master Extender's
+ * validated-clip cache is a linear prefix that cannot keep half of one clip
+ * cached while re-rendering the rest — the founder-accepted rule
+ * `groupsAffectedByCut`'s own module comment already states for the render
+ * layer. A group that straddles the cut (some shots kept, some cut) is
+ * discarded exactly the same as one entirely past it: `reviseShotsFromIndex`
+ * may keep its early shots as authored TEXT, but this function still drops
+ * the CLIP and PROMPT built from the whole group, which no longer exists in
+ * that shape. A version with no `clipIndex` (a plain composer pass, never
+ * part of a plan) is never touched.
+ */
+export function discardBreakdownFromIndex<V extends { clipIndex?: number }>(
+  breakdown: Breakdown,
+  versions: readonly V[],
+  fromGroupIndex: number,
+): { breakdown: Breakdown; versions: V[] } {
+  return {
+    breakdown: { ...breakdown, clips: breakdown.clips.filter((c) => c.index < fromGroupIndex) },
+    versions: versions.filter((v) => v.clipIndex === undefined || v.clipIndex < fromGroupIndex),
+  }
+}
+
+// ── Gate A: ticking one or several authored prompts, submitted together ──
+
+/**
+ * Split a Master Extender plan into what ONE submission actually sends
+ * versus what stays held back — Gate A's "I should be able to do 1 or
+ * multiple prompts all together and submit them together" / "untick one to
+ * hold it back" (the brief). An already-VALIDATED clip is never a choice —
+ * it rides along for free, reused from the box's own cache, exactly as
+ * `renderExtenderPlan` already treats it — only a PENDING clip needs a tick
+ * to be included. `toSubmit` is what a caller hands to
+ * `extenderCostEstimate` for the cost line shown before anything renders,
+ * and what it narrows the breakdown down to before calling
+ * `renderExtenderPlan('full_batch')` — never a second submit path.
+ */
+export function planForTickedSubmission<T extends { index: number; validated: boolean }>(
+  clips: readonly T[],
+  tickedIndices: ReadonlySet<number>,
+): { toSubmit: T[]; heldBack: T[] } {
+  const toSubmit: T[] = []
+  const heldBack: T[] = []
+  for (const c of clips) {
+    if (c.validated || tickedIndices.has(c.index)) toSubmit.push(c)
+    else heldBack.push(c)
+  }
+  return { toSubmit, heldBack }
+}
+
+// ── Gate B: keeping a clip is what brings up the next shots ─────────────
+
+/**
+ * The first shot group with no `BreakdownClip` yet — Gate B's "it stands"
+ * exit calls this to bring up the next shots the instant a clip is kept
+ * (the brief: "keeping a clip is what makes the next set available"/
+ * "brings up the next shots"). There is no background author-ahead here —
+ * `autoAuthorNext` stays off (2026-09-17) — this only decides which set the
+ * UI opens next for the operator's own next click. `undefined` once every
+ * group has already been approved.
+ */
+export function nextUnwrittenGroupIndex(groups: readonly ShotGroup[], breakdown: Breakdown | null): number | undefined {
+  const approved = new Set((breakdown?.clips ?? []).map((c) => c.index))
+  return [...groups]
+    .map((g) => g.index)
+    .sort((a, b) => a - b)
+    .find((i) => !approved.has(i))
 }

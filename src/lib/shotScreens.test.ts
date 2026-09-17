@@ -1,14 +1,18 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import type { Breakdown, Shot, ShotGroup, ShotList } from './types'
+import type { Breakdown, Shot, ShotGroup, ShotList, Version } from './types'
 import { checkRuntimeCeiling, groupShotsIntoClips, groupsAffectedByCut } from './shotList'
 import { dropFromIndex } from './filmEdit'
+import { extenderCostEstimate } from './extender'
 import {
   addShotToGroup,
   ceilingAlert,
   clipsDiscardedByShotRevision,
+  discardBreakdownFromIndex,
   dropShot,
   groupBandState,
+  nextUnwrittenGroupIndex,
+  planForTickedSubmission,
   pullShotFromNext,
   pushShotToNext,
   retimeShot,
@@ -197,4 +201,112 @@ test('pullShotFromNext / pushShotToNext: move exactly one shot across the bounda
     { index: 2, shotIndices: [2, 3, 4], seconds: 15 },
   ]
   assert.deepEqual(pushShotToNext(s, singleGroups, 1), singleGroups)
+})
+
+// ── the hole: a revision must reconcile the breakdown + prompt layer too ──
+
+function versionForClip(clipIndex: number | undefined, id: string): Version {
+  return { id, stage: 'draft', label: 'Draft', text: `prompt for ${clipIndex}`, model: 'm', providerId: 'p', at: 1, ms: 1, clipIndex }
+}
+
+test('discardBreakdownFromIndex: drops the BreakdownClip and its authored prompt(s) at or after the cut, keeps everything before it', () => {
+  const breakdown: Breakdown = {
+    spine: 'spine',
+    at: 1,
+    clips: [1, 2, 3].map((i) => ({ index: i, title: `Clip ${i}`, role: 'rising', seconds: 15, covers: `c${i}`, precedes: '', follows: '' })),
+  }
+  const versions: Version[] = [versionForClip(1, 'v1'), versionForClip(2, 'v2'), versionForClip(3, 'v3'), versionForClip(undefined, 'v-composer')]
+
+  const { breakdown: nextBreakdown, versions: nextVersions } = discardBreakdownFromIndex(breakdown, versions, 2)
+
+  assert.deepEqual(nextBreakdown.clips.map((c) => c.index), [1])
+  // Group 2's prompt AND group 3's (never authored past the cut) are gone;
+  // a version with no clipIndex (a plain composer pass) is never touched.
+  assert.deepEqual(nextVersions.map((v) => v.id), ['v1', 'v-composer'])
+})
+
+test('discardBreakdownFromIndex: a cut past every approved group discards nothing', () => {
+  const breakdown: Breakdown = { spine: 'spine', at: 1, clips: [{ index: 1, title: 'Clip 1', role: 'standalone', seconds: 15, covers: '', precedes: '', follows: '' }] }
+  const versions: Version[] = [versionForClip(1, 'v1')]
+  const { breakdown: nextBreakdown, versions: nextVersions } = discardBreakdownFromIndex(breakdown, versions, 5)
+  assert.deepEqual(nextBreakdown, breakdown)
+  assert.deepEqual(nextVersions, versions)
+})
+
+test('a shot-list revision reconciles ALL THREE layers with the SAME cut — bare shots, breakdown+prompt, and render', () => {
+  // 9 shots, packed into 3 groups of 15s each; approve+author all three,
+  // and render (validate) group 1 only.
+  const shotList: ShotList = { spine: 'spine', maxRuntimeSeconds: 60, shots: shots([5, 5, 5, 5, 5, 5, 5, 5, 5]), at: 1 }
+  const { groups } = groupShotsIntoClips(shotList.shots) // [[1,2,3],[4,5,6],[7,8,9]]
+  const breakdown: Breakdown = { spine: 'spine', at: 1, clips: groups.map((g) => ({ index: g.index, title: `Clip ${g.index}`, role: 'rising', seconds: g.seconds, covers: '', precedes: '', follows: '' })) }
+  const versions: Version[] = [versionForClip(1, 'v1'), versionForClip(2, 'v2'), versionForClip(3, 'v3')]
+  const nodeId = 'm_x'
+  const clips = [{ id: 'a', extender: { nodeId, sceneIndex: 1 } }, { id: 'b', extender: { nodeId, sceneIndex: 2 } }]
+
+  // A cut at shot 5 lands inside group 2 (shots 4,5,6).
+  const { cut, remainingClips } = clipsDiscardedByShotRevision(clips, nodeId, groups, 5)
+  assert.equal(cut.fromGroupIndex, 2)
+  assert.deepEqual(remainingClips.map((c) => c.id), ['a']) // scene 2's render discarded
+
+  const { breakdown: nextBreakdown, versions: nextVersions } = discardBreakdownFromIndex(breakdown, versions, cut.fromGroupIndex!)
+  assert.deepEqual(nextBreakdown.clips.map((c) => c.index), [1]) // group 2 & 3's plan clip gone too
+  assert.deepEqual(nextVersions.map((v) => v.id), ['v1']) // and their authored prompts
+})
+
+// ── Gate A: ticking a subset, and the cost estimate that matches it ──────
+
+test('planForTickedSubmission: a validated clip always rides along; only a PENDING one needs a tick', () => {
+  const plan = [
+    { index: 1, seconds: 15, validated: true },
+    { index: 2, seconds: 15, validated: false },
+    { index: 3, seconds: 15, validated: false },
+  ]
+  const { toSubmit, heldBack } = planForTickedSubmission(plan, new Set([2]))
+  assert.deepEqual(toSubmit.map((c) => c.index), [1, 2])
+  assert.deepEqual(heldBack.map((c) => c.index), [3])
+})
+
+test('planForTickedSubmission: the cost estimate over toSubmit matches exactly what would be sent', () => {
+  const plan = [
+    { index: 1, seconds: 10, validated: true },
+    { index: 2, seconds: 12, validated: false },
+    { index: 3, seconds: 14, validated: false },
+  ]
+  // Tick only clip 2 — hold clip 3 back.
+  const { toSubmit } = planForTickedSubmission(plan, new Set([2]))
+  const cost = extenderCostEstimate(toSubmit)
+  assert.equal(cost.clipCount, 2)
+  assert.equal(cost.toSample, 1) // clip 2 only
+  assert.equal(cost.fromCache, 1) // clip 1, validated
+  assert.equal(cost.totalSeconds, 22) // 10 + 12, NOT clip 3's 14
+})
+
+test('planForTickedSubmission: ticking every pending clip submits the whole plan, holding nothing back', () => {
+  const plan = [{ index: 1, seconds: 5, validated: false }, { index: 2, seconds: 5, validated: false }]
+  const { toSubmit, heldBack } = planForTickedSubmission(plan, new Set([1, 2]))
+  assert.equal(toSubmit.length, 2)
+  assert.equal(heldBack.length, 0)
+})
+
+// ── Gate B: keeping a clip is what brings up the next shots ─────────────
+
+test('nextUnwrittenGroupIndex: the first group with no BreakdownClip yet', () => {
+  const groups: ShotGroup[] = [
+    { index: 1, shotIndices: [1], seconds: 5 },
+    { index: 2, shotIndices: [2], seconds: 5 },
+    { index: 3, shotIndices: [3], seconds: 5 },
+  ]
+  const breakdown: Breakdown = { spine: '', at: 1, clips: [{ index: 1, title: 'Clip 1', role: 'opening', seconds: 5, covers: '', precedes: '', follows: '' }] }
+  assert.equal(nextUnwrittenGroupIndex(groups, breakdown), 2)
+})
+
+test('nextUnwrittenGroupIndex: undefined once every group is approved', () => {
+  const groups: ShotGroup[] = [{ index: 1, shotIndices: [1], seconds: 5 }]
+  const breakdown: Breakdown = { spine: '', at: 1, clips: [{ index: 1, title: 'Clip 1', role: 'standalone', seconds: 5, covers: '', precedes: '', follows: '' }] }
+  assert.equal(nextUnwrittenGroupIndex(groups, breakdown), undefined)
+})
+
+test('nextUnwrittenGroupIndex: with no breakdown at all, the first group is next', () => {
+  const groups: ShotGroup[] = [{ index: 1, shotIndices: [1], seconds: 5 }]
+  assert.equal(nextUnwrittenGroupIndex(groups, null), 1)
 })

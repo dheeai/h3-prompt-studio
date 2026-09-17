@@ -6,7 +6,7 @@ import {
 import type { ExtenderLiveProgress, MinimalSocket, SocketCtor } from './extenderLiveProgress'
 import type { ComfyEndpoint } from './types'
 
-const EP: ComfyEndpoint = { id: 'e1', label: 'the box', baseUrl: 'https://5090.tail3cca41.ts.net/comfyui', builtIn: true }
+const EP: ComfyEndpoint = { id: 'e1', label: 'the box', baseUrl: 'https://box.example.ts.net/comfyui', builtIn: true }
 
 const RAW_EVENT = {
   type: 'master_extender_progress',
@@ -85,7 +85,7 @@ test('matchesOwner: false for a different job\'s owner — another tab/film must
 // ── extenderWsUrl — same endpoint every other comfy.ts call uses ─────────
 
 test('extenderWsUrl: swaps https for wss and appends /ws?clientId=', () => {
-  assert.equal(extenderWsUrl(EP, 'h3-prompt-studio'), 'wss://5090.tail3cca41.ts.net/comfyui/ws?clientId=h3-prompt-studio')
+  assert.equal(extenderWsUrl(EP, 'h3-prompt-studio'), 'wss://box.example.ts.net/comfyui/ws?clientId=h3-prompt-studio')
 })
 
 test('extenderWsUrl: swaps http for ws for a plain local box', () => {

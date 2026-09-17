@@ -13,8 +13,11 @@ import { FilmRegion } from '../components/FilmRegion'
 import { ScenesStrip } from '../components/ScenesStrip'
 import { Composer } from '../components/Composer'
 import { AgentPanel } from '../components/AgentPanel'
+import { StoryAndShots } from '../components/StoryAndShots'
+import { ClipInHand } from '../components/ClipInHand'
 
 type Modal = 'connect' | 'skills' | 'settings' | 'plates' | 'extender-settings' | 'endpoint' | 'check' | null
+type StoryTab = 'shots' | 'hand' | 'film'
 
 /**
  * ONE COMPOSER. There are no entry-mode doors — see the module comment on
@@ -34,7 +37,8 @@ export function App() {
   const { ready, skills, settings, versions, story, error, notice } = app
   const [modal, setModal] = useState<Modal>(null)
   const [setupOpen, setSetupOpen] = useState(false)
-  const [workspace, setWorkspace] = useState<'studio' | 'agent'>('studio')
+  const [workspace, setWorkspace] = useState<'studio' | 'story' | 'agent'>('studio')
+  const [storyTab, setStoryTab] = useState<StoryTab>('shots')
   const [confirmClear, setConfirmClear] = useState(false)
 
   const loadedSkills = skills.filter((s) => settings.selection[s.id]?.length)
@@ -61,6 +65,7 @@ export function App() {
         <div className="studio-wordmark"><span className="studio-mark">H3</span><span>Prompt Studio</span></div>
         <nav className="workspace-tabs" aria-label="Workspace">
           <button className={workspace === 'studio' ? 'active' : ''} aria-current={workspace === 'studio' ? 'page' : undefined} onClick={() => setWorkspace('studio')}>Studio</button>
+          <button className={workspace === 'story' ? 'active' : ''} aria-current={workspace === 'story' ? 'page' : undefined} onClick={() => setWorkspace('story')}>Full Story</button>
           <button className={workspace === 'agent' ? 'active' : ''} aria-current={workspace === 'agent' ? 'page' : undefined} onClick={() => setWorkspace('agent')}>Agent <span>(beta)</span></button>
         </nav>
         <div className="studio-grow" />
@@ -134,6 +139,25 @@ export function App() {
         )}
         {error && <div className="alert err composer-error"><span>{error}</span><button className="btn sm ghost" onClick={app.clearError}>dismiss</button></div>}
         {notice && <div className="alert warn composer-error"><span>{notice}</span><button className="btn sm ghost" onClick={app.clearNotice}>dismiss</button></div>}
+      </div>
+
+      <div className={`workspace-view ${workspace === 'story' ? 'is-active' : 'is-hidden'}`} aria-hidden={workspace !== 'story'}>
+        <nav className="workspace-tabs" aria-label="Full Story" style={{ margin: '10px 26px 0', borderLeft: 0, paddingLeft: 0 }}>
+          <button className={storyTab === 'shots' ? 'active' : ''} aria-current={storyTab === 'shots' ? 'page' : undefined} onClick={() => setStoryTab('shots')}>Story &amp; shots</button>
+          <button className={storyTab === 'hand' ? 'active' : ''} aria-current={storyTab === 'hand' ? 'page' : undefined} onClick={() => setStoryTab('hand')}>The clip in hand</button>
+          <button className={storyTab === 'film' ? 'active' : ''} aria-current={storyTab === 'film' ? 'page' : undefined} onClick={() => setStoryTab('film')}>The film</button>
+        </nav>
+        <div hidden={storyTab !== 'shots'}>
+          <StoryAndShots onOpenClipInHand={() => setStoryTab('hand')} />
+        </div>
+        <div hidden={storyTab !== 'hand'}>
+          <ClipInHand onOpenStoryAndShots={() => setStoryTab('shots')} />
+        </div>
+        <div hidden={storyTab !== 'film'}>
+          <FilmRegion />
+          <ScenesStrip />
+        </div>
+        {error && <div className="alert err composer-error"><span>{error}</span><button className="btn sm ghost" onClick={app.clearError}>dismiss</button></div>}
       </div>
 
       <div className={`workspace-view ${workspace === 'agent' ? 'is-active' : 'is-hidden'}`} aria-hidden={workspace !== 'agent'}>

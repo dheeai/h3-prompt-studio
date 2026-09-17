@@ -39,7 +39,9 @@ export function App() {
   const { ready, skills, settings, versions, story, error, notice } = app
   const [modal, setModal] = useState<Modal>(null)
   const [setupOpen, setSetupOpen] = useState(false)
-  const [workspace, setWorkspace] = useState<'studio' | 'story' | 'agent'>('studio')
+  // Full Story is the default (founder, 2026-09-17): it is the way a film gets
+  // made now, and Studio is the single-clip surface you drop into for one shot.
+  const [workspace, setWorkspace] = useState<'studio' | 'story' | 'agent'>('story')
   const [storyTab, setStoryTab] = useState<StoryTab>('shots')
   const [confirmClear, setConfirmClear] = useState(false)
   const [confirmStop, setConfirmStop] = useState(false)
@@ -77,8 +79,8 @@ export function App() {
       <header className="studio-topbar">
         <div className="studio-wordmark"><span className="studio-mark">H3</span><span>Prompt Studio</span></div>
         <nav className="workspace-tabs" aria-label="Workspace">
-          <button className={workspace === 'studio' ? 'active' : ''} aria-current={workspace === 'studio' ? 'page' : undefined} onClick={() => setWorkspace('studio')}>Studio</button>
           <button className={workspace === 'story' ? 'active' : ''} aria-current={workspace === 'story' ? 'page' : undefined} onClick={() => setWorkspace('story')}>Full Story</button>
+          <button className={workspace === 'studio' ? 'active' : ''} aria-current={workspace === 'studio' ? 'page' : undefined} onClick={() => setWorkspace('studio')}>Studio</button>
           <button className={workspace === 'agent' ? 'active' : ''} aria-current={workspace === 'agent' ? 'page' : undefined} onClick={() => setWorkspace('agent')}>Agent <span>(beta)</span></button>
         </nav>
         <div className="studio-grow" />

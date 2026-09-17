@@ -3,22 +3,27 @@ import assert from 'node:assert/strict'
 import type { Shot, ShotGroup } from './types'
 import { dropFromIndex } from './filmEdit'
 import {
-  MIN_CLIP_SECONDS,
   MAX_CLIP_SECONDS,
+  MIN_CLIP_SECONDS,
+  RUNTIME_MAX_SECONDS,
+  RUNTIME_MIN_SECONDS,
+  RUNTIME_STEP_SECONDS,
+  SHOT_LIST_TEMPLATE,
   TARGET_CLIP_SECONDS,
-  groupShotsIntoClips,
-  checkRuntimeCeiling,
-  reviseShotsFromIndex,
-  groupsAffectedByCut,
-  rolesForGroupCount,
   breakdownClipsFromShotGroups,
   breakdownFromShotList,
+  checkRuntimeCeiling,
+  clampRuntimeSeconds,
   clipTiming,
   fillShotListTemplate,
-  shotListResponseFormat,
-  parseShotList,
+  formatRuntime,
+  groupShotsIntoClips,
+  groupsAffectedByCut,
   parsePartialShotList,
-  SHOT_LIST_TEMPLATE,
+  parseShotList,
+  reviseShotsFromIndex,
+  rolesForGroupCount,
+  shotListResponseFormat,
 } from './shotList'
 
 function shots(seconds: number[]): Shot[] {
@@ -401,4 +406,48 @@ test('parsePartialShotList: shots accumulate one at a time as more of the stream
     prevCount = shots.length
   }
   assert.equal(prevCount, 3)
+})
+
+// ── the runtime ceiling's 15s grid ──────────────────────────────────────
+// The slider moves in whole clips, so the CEILING lives on the same grid the
+// grouping already works in (TARGET_CLIP_SECONDS). An off-grid ceiling is what
+// produced near-misses the grouping could never honour.
+
+test('clampRuntimeSeconds snaps to the 15s grid', () => {
+  assert.equal(clampRuntimeSeconds(60), 60)
+  assert.equal(clampRuntimeSeconds(67), 60)   // nearer 60 than 75
+  assert.equal(clampRuntimeSeconds(68), 75)   // and 68 tips the other way
+  assert.equal(clampRuntimeSeconds(52), 45)
+})
+
+test('clampRuntimeSeconds holds the 15s..10m range at both ends', () => {
+  assert.equal(clampRuntimeSeconds(0), RUNTIME_MIN_SECONDS)
+  assert.equal(clampRuntimeSeconds(-99), RUNTIME_MIN_SECONDS)
+  assert.equal(clampRuntimeSeconds(99999), RUNTIME_MAX_SECONDS)
+  assert.equal(RUNTIME_MIN_SECONDS, 15)
+  assert.equal(RUNTIME_MAX_SECONDS, 600)
+})
+
+test('clampRuntimeSeconds rescues an unusable stored value rather than propagating it', () => {
+  // A profile saved before the slider existed can hold anything at all.
+  // Anything non-finite is unusable rather than "very large", so it lands on
+  // the safe floor -- silently starting a film at a 10-minute ceiling because a
+  // stored value was corrupt would be the worse failure.
+  assert.equal(clampRuntimeSeconds(Number.NaN), RUNTIME_MIN_SECONDS)
+  assert.equal(clampRuntimeSeconds(Number.POSITIVE_INFINITY), RUNTIME_MIN_SECONDS)
+})
+
+test('every slider position is a whole number of 15s clips', () => {
+  for (let v = RUNTIME_MIN_SECONDS; v <= RUNTIME_MAX_SECONDS; v += RUNTIME_STEP_SECONDS) {
+    assert.equal(clampRuntimeSeconds(v), v, `${v}s should already be on the grid`)
+    assert.equal(v % TARGET_CLIP_SECONDS, 0, `${v}s should be a whole number of clips`)
+  }
+})
+
+test('formatRuntime reads as minutes past a minute', () => {
+  assert.equal(formatRuntime(15), '15s')
+  assert.equal(formatRuntime(45), '45s')
+  assert.equal(formatRuntime(60), '1m')
+  assert.equal(formatRuntime(150), '2m 30s')
+  assert.equal(formatRuntime(600), '10m')
 })

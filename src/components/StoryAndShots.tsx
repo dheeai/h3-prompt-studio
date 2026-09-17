@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useApp } from '../app/state'
-import { checkRuntimeCeiling, groupsAffectedByCut, parsePartialShotList } from '../lib/shotList'
+import { RUNTIME_MAX_SECONDS, RUNTIME_MIN_SECONDS, RUNTIME_STEP_SECONDS, checkRuntimeCeiling, clampRuntimeSeconds, formatRuntime, groupsAffectedByCut, parsePartialShotList } from '../lib/shotList'
 import { ceilingAlert, groupBandState } from '../lib/shotScreens'
 import type { GroupBandState } from '../lib/shotScreens'
 import { EXTENDER_REF_SLOTS } from '../lib/extender'
@@ -161,16 +161,24 @@ export function StoryAndShots({
           placeholder="What happens, start to finish…"
         />
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 9, flexWrap: 'wrap' }}>
-          <label className="tok" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <label className="tok" style={{ display: 'flex', alignItems: 'center', gap: 9, flexGrow: 1, minWidth: 260 }}>
             maximum runtime
             <input
-              type="number"
-              min={5}
-              value={maxRuntimeSeconds}
-              onChange={(e) => setMaxRuntimeSeconds(Number(e.target.value) || maxRuntimeSeconds)}
-              style={{ width: 64 }}
+              type="range"
+              min={RUNTIME_MIN_SECONDS}
+              max={RUNTIME_MAX_SECONDS}
+              step={RUNTIME_STEP_SECONDS}
+              value={clampRuntimeSeconds(maxRuntimeSeconds)}
+              onChange={(e) => setMaxRuntimeSeconds(clampRuntimeSeconds(Number(e.target.value)))}
+              style={{ flexGrow: 1, maxWidth: 300 }}
             />
-            seconds
+            <span className="tok" style={{ color: 'var(--ink)', minWidth: 52 }}>
+              {formatRuntime(clampRuntimeSeconds(maxRuntimeSeconds))}
+            </span>
+            <span className="tok">
+              ≈ {Math.round(clampRuntimeSeconds(maxRuntimeSeconds) / RUNTIME_STEP_SECONDS)} clip
+              {Math.round(clampRuntimeSeconds(maxRuntimeSeconds) / RUNTIME_STEP_SECONDS) === 1 ? '' : 's'}
+            </span>
           </label>
           <div style={{ flexGrow: 1 }} />
           <button className="btn pri" disabled={!plot.trim() || busy} onClick={() => void makeShotList()}>

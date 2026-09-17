@@ -58,6 +58,43 @@ export const MAX_CLIP_SECONDS = secondsForFrames(SCENE_LENGTH_CHIPS[SCENE_LENGTH
  * ceiling are the hard constraints; this only breaks ties between them. */
 export const TARGET_CLIP_SECONDS = 15
 
+/**
+ * The operator's runtime ceiling moves in whole clips, not arbitrary seconds.
+ *
+ * WHY 15s STEPS. `TARGET_CLIP_SECONDS` is 15, so one step of this slider is one
+ * more clip in the film. A free-text seconds field invited values the grouping
+ * can never honour -- ask for 67s and you get four clips totalling 60 or five
+ * totalling 75, because a shot is never split across clips and a group under
+ * MIN_CLIP_SECONDS is folded back into its predecessor. Snapping the CEILING to
+ * the same grid the grouping already works in removes that whole class of
+ * near-miss.
+ *
+ * The range is 15s (one clip) to 10 minutes. The ceiling is not a promise the
+ * box can render that much in one job -- it is what the shot list is allowed to
+ * add up to.
+ */
+export const RUNTIME_MIN_SECONDS = 15
+export const RUNTIME_MAX_SECONDS = 600
+export const RUNTIME_STEP_SECONDS = 15
+
+/** Snap to the 15s grid and clamp into range. Anything unusable (NaN, a stored
+ * off-grid value from before the slider existed) lands on a legal value rather
+ * than propagating. */
+export function clampRuntimeSeconds(n: number): number {
+  if (!Number.isFinite(n)) return RUNTIME_MIN_SECONDS
+  const snapped = Math.round(n / RUNTIME_STEP_SECONDS) * RUNTIME_STEP_SECONDS
+  return Math.min(RUNTIME_MAX_SECONDS, Math.max(RUNTIME_MIN_SECONDS, snapped))
+}
+
+/** "45s" / "2m" / "2m 30s" -- minutes read faster than 150s once past a minute. */
+export function formatRuntime(seconds: number): string {
+  const n = Math.round(seconds)
+  if (n < 60) return `${n}s`
+  const m = Math.floor(n / 60)
+  const rem = n % 60
+  return rem === 0 ? `${m}m` : `${m}m ${rem}s`
+}
+
 function sumSeconds(shots: readonly Shot[], indices: readonly number[]): number {
   const byIndex = new Map(shots.map((s) => [s.index, s.seconds]))
   return indices.reduce((sum, i) => sum + (byIndex.get(i) ?? 0), 0)

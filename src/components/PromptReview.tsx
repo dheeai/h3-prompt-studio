@@ -2,26 +2,32 @@ import { useState } from 'react'
 import { useApp } from '../app/state'
 import { lint, summarise } from '../lib/lint'
 import { extenderCostEstimate } from '../lib/extender'
-import { planForTickedSubmission } from '../lib/shotScreens'
+import { planForTickedSubmission, promptIsStale, shotsForGroup, toggledSet } from '../lib/shotScreens'
+import { PromptDoc } from './PromptDoc'
 
 /**
  * Gate A — "approve the prompts, one or several, and submit together"
- * (2026-09-17 brief). Reads every authored-but-not-yet-rendered prompt side
- * by side, each with its own lint result (`lib/lint.ts` — no new checks) and
- * which shots it came from, and a per-prompt tick (default ON). Approving
- * ticks every ticked prompt (plus whatever is already validated, which
- * always rides along for free) into ONE `submitTickedPrompts` call, which is
- * `renderExtenderPlan('full_batch')` under a temporarily narrowed plan —
- * never a second submit path. The cost line reuses `extenderCostEstimate`
- * over exactly `toSubmit`, so what is shown is what is sent.
+ * (2026-09-17 brief; inverted 2026-09-17 per issue #32). Leads with the
+ * shots each prompt came from — the index, what happens, and its
+ * duration — the same band+shot-row treatment `StoryAndShots` already uses,
+ * so the two screens read as one product. The six-section prompt
+ * (`PromptDoc`, otherwise unused since the Full Story rewrite — see its own
+ * file) collapses by default and opens PER PROMPT, never globally, via
+ * `toggledSet` keyed on the prompt's own index. Everything Gate A already
+ * did rides along unchanged: the per-prompt tick, the lint result
+ * (`lib/lint.ts` — no new checks), the cost line
+ * (`extenderCostEstimate`), and ONE `submitTickedPrompts` call
+ * (`renderExtenderPlan('full_batch')` under a temporarily narrowed plan) —
+ * never a second submit path.
  */
 export function PromptReview({ onOpenClipInHand }: { onOpenClipInHand: (groupIndex: number) => void }) {
   const app = useApp()
   const {
-    extenderPlanPreview, shotList, shotGroups, settings, submitTickedPrompts, extenderReady, rendering,
+    extenderPlanPreview, shotList, shotGroups, breakdown, settings, submitTickedPrompts, extenderReady, rendering,
     setEditingGroupIndex,
   } = app
   const [held, setHeld] = useState<Set<number>>(new Set())
+  const [expanded, setExpanded] = useState<Set<number>>(new Set())
   const [busy, setBusy] = useState(false)
 
   if (!extenderPlanPreview) {
@@ -41,18 +47,20 @@ export function PromptReview({ onOpenClipInHand }: { onOpenClipInHand: (groupInd
   const cost = extenderCostEstimate(toSubmit)
   const busyNow = busy || !!rendering
 
-  const toggle = (i: number) =>
-    setHeld((prev) => {
-      const next = new Set(prev)
-      if (next.has(i)) next.delete(i)
-      else next.add(i)
-      return next
-    })
+  const toggle = (i: number) => setHeld((prev) => toggledSet(prev, i))
+  const toggleExpanded = (i: number) => setExpanded((prev) => toggledSet(prev, i))
 
   const shotsFor = (groupIndex: number) => {
     const g = shotGroups.find((x) => x.index === groupIndex)
     if (!g || !shotList) return []
-    return shotList.shots.filter((s) => g.shotIndices.includes(s.index))
+    return shotsForGroup(shotList.shots, g)
+  }
+
+  const staleFor = (groupIndex: number): boolean => {
+    const g = shotGroups.find((x) => x.index === groupIndex)
+    const bc = breakdown?.clips.find((x) => x.index === groupIndex)
+    if (!g || !bc || !shotList) return false
+    return promptIsStale(bc, shotList.shots, g)
   }
 
   const openInHand = (groupIndex: number) => {
@@ -85,6 +93,8 @@ export function PromptReview({ onOpenClipInHand }: { onOpenClipInHand: (groupInd
         const findings = lint(c.prompt, settings.mode)
         const counts = summarise(findings)
         const shots = shotsFor(c.index)
+        const stale = staleFor(c.index)
+        const isExpanded = expanded.has(c.index)
         return (
           <div className="card" key={c.index} style={{ marginBottom: 7 }}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 9, flexWrap: 'wrap' }}>
@@ -100,14 +110,32 @@ export function PromptReview({ onOpenClipInHand }: { onOpenClipInHand: (groupInd
               </span>
               <button className="btn sm ghost" onClick={() => openInHand(c.index)}>open in “the clip in hand”</button>
             </div>
-            {shots.length > 0 && (
-              <div className="tok" style={{ marginTop: 6, display: 'block', color: 'var(--ink3)' }}>
-                from shot{shots.length === 1 ? '' : 's'} {shots.map((s) => s.index).join(', ')}
+
+            <div style={{ marginTop: 7 }}>
+              {shots.map((s) => (
+                <div key={s.index} className="tok" style={{ display: 'flex', gap: 9, padding: '2px 0', color: 'var(--ink2)' }}>
+                  <span style={{ width: 20, flex: '0 0 auto', color: 'var(--ink3)' }}>{s.index}</span>
+                  <span style={{ flex: '1 1 auto' }}>{s.covers}</span>
+                  <span style={{ color: 'var(--ink3)' }}>{s.seconds}s</span>
+                </div>
+              ))}
+            </div>
+
+            {stale && (
+              <div className="alert warn" style={{ marginTop: 8 }}>
+                Clip {c.index}’s shots have changed since this prompt was written — reopen it in “the clip in hand” to
+                rewrite it against what they say now.
               </div>
             )}
-            <div className="tok" style={{ marginTop: 8, display: 'block', whiteSpace: 'pre-wrap', lineHeight: 1.55, color: 'var(--ink2)' }}>
-              {c.prompt}
-            </div>
+
+            <button className="btn sm ghost" style={{ marginTop: 8 }} onClick={() => toggleExpanded(c.index)}>
+              {isExpanded ? 'hide the full prompt' : 'show the full prompt'}
+            </button>
+            {isExpanded && (
+              <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--rule)' }}>
+                <PromptDoc text={c.prompt} />
+              </div>
+            )}
           </div>
         )
       })}

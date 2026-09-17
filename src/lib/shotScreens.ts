@@ -1,4 +1,4 @@
-import type { Breakdown, Shot, ShotGroup, ShotList } from './types'
+import type { Breakdown, BreakdownClip, Shot, ShotGroup, ShotList } from './types'
 import { breakdownClipsFromShotGroups, groupsAffectedByCut, type RuntimeCeilingCheck } from './shotList'
 import { dropFromIndex } from './filmEdit'
 
@@ -302,4 +302,61 @@ export function nextUnwrittenGroupIndex(groups: readonly ShotGroup[], breakdown:
     .map((g) => g.index)
     .sort((a, b) => a - b)
     .find((i) => !approved.has(i))
+}
+
+// ── Gate A rework (issue #32): lead with the shots, prompt on demand ────
+
+/**
+ * Exactly the shots a group covers, in `shotIndices` order — the order that
+ * is authoritative (contiguous, ascending — see `Shot.index`'s own module
+ * comment), never whatever order `shots` itself happens to be in. Screen 1
+ * (`StoryAndShots`) gets this for free by filtering an already-sorted
+ * `shotList.shots`; Gate A needs the same list keyed off a group it does not
+ * render inline, so this is that lookup, factored out and tested once rather
+ * than trusting array order at each call site.
+ */
+export function shotsForGroup(shots: readonly Shot[], group: Pick<ShotGroup, 'shotIndices'>): Shot[] {
+  const byIndex = new Map(shots.map((s) => [s.index, s]))
+  return group.shotIndices.map((i) => byIndex.get(i)).filter((s): s is Shot => !!s)
+}
+
+/**
+ * Toggle one item's membership in a Set, returning a new one — the exact
+ * shape Gate A's per-prompt tick already used inline, and now also backs its
+ * per-prompt "show the full prompt" disclosure. Factored out once both
+ * needed it: a Set keyed by index is inherently PER-ITEM, so toggling one
+ * prompt's tick or disclosure never touches any other prompt's — there is no
+ * shared flag anywhere for either to collide on.
+ */
+export function toggledSet<T>(set: ReadonlySet<T>, item: T): Set<T> {
+  const next = new Set(set)
+  if (next.has(item)) next.delete(item)
+  else next.add(item)
+  return next
+}
+
+/**
+ * Whether a group's shots have moved since the `BreakdownClip` (and the
+ * prompt authored from it) were derived — the gap the brief's "a shot edited
+ * after the prompt was written" points at.
+ *
+ * `approveShotGroups`/`takeShotGroups` (`state.tsx`) freeze a group's
+ * `covers`/`seconds` into `BreakdownClip` at the moment of (re-)approval, via
+ * this exact same `breakdownClipsFromShotGroups` join. But "the clip in
+ * hand"'s own shot editors (`rewordShotText`/`retimeShotSeconds`/
+ * `addShotInGroup`/`dropShotByIndex`/`pullShotIntoGroup`/`pushShotOutOfGroup`
+ * in `state.tsx`) touch `session.shotList`/`shotGroups` ONLY — none of them
+ * re-derives or re-writes `session.breakdown` — so an already-approved
+ * group's shots can keep changing under a prompt that was written from an
+ * earlier version of them, with nothing to say so.
+ *
+ * No new signal is invented for this: re-running the SAME join the approval
+ * step already used, against the CURRENT shots and group, and comparing it
+ * to the frozen `BreakdownClip` is the whole check — the disagreement is
+ * already sitting in state, just never read back.
+ */
+export function promptIsStale(breakdownClip: Pick<BreakdownClip, 'covers' | 'seconds'>, shots: readonly Shot[], group: ShotGroup): boolean {
+  const [live] = breakdownClipsFromShotGroups(shots, [group])
+  if (!live) return false
+  return live.covers !== breakdownClip.covers || live.seconds !== breakdownClip.seconds
 }

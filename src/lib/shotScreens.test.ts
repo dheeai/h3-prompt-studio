@@ -13,11 +13,14 @@ import {
   groupBandState,
   nextUnwrittenGroupIndex,
   planForTickedSubmission,
+  promptIsStale,
   pullShotFromNext,
   pushShotToNext,
   retimeShot,
   rewordShot,
+  shotsForGroup,
   takeShotGroups,
+  toggledSet,
 } from './shotScreens'
 
 function shots(seconds: number[]): Shot[] {
@@ -309,4 +312,66 @@ test('nextUnwrittenGroupIndex: undefined once every group is approved', () => {
 test('nextUnwrittenGroupIndex: with no breakdown at all, the first group is next', () => {
   const groups: ShotGroup[] = [{ index: 1, shotIndices: [1], seconds: 5 }]
   assert.equal(nextUnwrittenGroupIndex(groups, null), 1)
+})
+
+// ── Gate A rework (issue #32): lead with the shots, prompt on demand ────
+
+test('shotsForGroup: exactly this group\'s shots, in shotIndices order — never another group\'s, regardless of array order', () => {
+  const s: Shot[] = [
+    { index: 3, covers: 'third', seconds: 5 },
+    { index: 1, covers: 'first', seconds: 5 },
+    { index: 2, covers: 'second', seconds: 5 },
+    { index: 4, covers: 'fourth', seconds: 5 },
+  ]
+  const group: ShotGroup = { index: 1, shotIndices: [1, 2, 3], seconds: 15 }
+  const result = shotsForGroup(s, group)
+  assert.deepEqual(result.map((x) => x.index), [1, 2, 3])
+  assert.deepEqual(result.map((x) => x.covers), ['first', 'second', 'third'])
+})
+
+test('shotsForGroup: a shot the group references but that no longer exists is skipped, not thrown', () => {
+  const s: Shot[] = [{ index: 1, covers: 'first', seconds: 5 }]
+  const group: ShotGroup = { index: 1, shotIndices: [1, 2], seconds: 10 }
+  assert.deepEqual(shotsForGroup(s, group).map((x) => x.index), [1])
+})
+
+test('toggledSet: toggling one item adds/removes only that item, others untouched — per-item, never global', () => {
+  const held = new Set([2, 5])
+  const added = toggledSet(held, 3)
+  assert.deepEqual([...added].sort(), [2, 3, 5])
+  assert.deepEqual([...held].sort(), [2, 5]) // input untouched
+  const removed = toggledSet(added, 3)
+  assert.deepEqual([...removed].sort(), [2, 5])
+})
+
+test('promptIsStale: false right after the group was derived from the current shots', () => {
+  const s = shots([5, 5, 5])
+  const group: ShotGroup = { index: 1, shotIndices: [1, 2, 3], seconds: 15 }
+  const bc = { index: 1, title: 'Clip 1', role: 'standalone' as const, seconds: 15, covers: 'shot 1 shot 2 shot 3', precedes: '', follows: '' }
+  assert.equal(promptIsStale(bc, s, group), false)
+})
+
+test('promptIsStale: true once a shot INSIDE the group is reworded after approval', () => {
+  const s = shots([5, 5, 5])
+  const group: ShotGroup = { index: 1, shotIndices: [1, 2, 3], seconds: 15 }
+  const bc = { index: 1, title: 'Clip 1', role: 'standalone' as const, seconds: 15, covers: 'shot 1 shot 2 shot 3', precedes: '', follows: '' }
+  const reworded = rewordShot(s, 2, 'a rewritten shot 2')
+  assert.equal(promptIsStale(bc, reworded, group), true)
+})
+
+test('promptIsStale: true once a shot INSIDE the group is retimed after approval', () => {
+  const s = shots([5, 5, 5])
+  const group: ShotGroup = { index: 1, shotIndices: [1, 2, 3], seconds: 15 }
+  const bc = { index: 1, title: 'Clip 1', role: 'standalone' as const, seconds: 15, covers: 'shot 1 shot 2 shot 3', precedes: '', follows: '' }
+  const { shots: retimed, groups: retimedGroups } = retimeShot(s, [group], 2, 10)
+  assert.equal(promptIsStale(bc, retimed, retimedGroups[0]), true)
+})
+
+test('promptIsStale: editing a DIFFERENT group\'s shot never marks this one stale', () => {
+  const s = shots([5, 5, 5, 5, 5, 5])
+  const groupA: ShotGroup = { index: 1, shotIndices: [1, 2, 3], seconds: 15 }
+  const groupB: ShotGroup = { index: 2, shotIndices: [4, 5, 6], seconds: 15 }
+  const bcA = { index: 1, title: 'Clip 1', role: 'standalone' as const, seconds: 15, covers: 'shot 1 shot 2 shot 3', precedes: '', follows: '' }
+  const reworded = rewordShot(s, 5, 'a rewritten shot 5') // inside groupB, not groupA
+  assert.equal(promptIsStale(bcA, reworded, groupA), false)
 })

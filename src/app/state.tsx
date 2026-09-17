@@ -469,6 +469,21 @@ export interface Api {
    */
   renderExtenderPlan: (runMode: 'clip_by_clip' | 'full_batch') => Promise<void>
   /**
+   * Gate A — approve one or several already-authored prompts and submit
+   * exactly those (plus every already-validated clip, which always rides
+   * along for free) as ONE Master Extender job. Never a second submit path:
+   * this narrows the breakdown, calls `renderExtenderPlan('full_batch')`
+   * unchanged, then restores whichever clips were held back.
+   */
+  submitTickedPrompts: (tickedIndices: number[]) => Promise<void>
+  /**
+   * Gate B's "wrong shots" exit — discards this group's `BreakdownClip`,
+   * its authored prompt(s), and its render (and every later group's, same
+   * linear-prefix rule as a redo/revision), and opens "the clip in hand" on
+   * it (`editingGroupIndex`) so the operator can fix the shots directly.
+   */
+  discardGroupRender: (groupIndex: number) => void
+  /**
    * Render the composer's current text as one Master Extender scene — the
    * single-scene equivalent of `renderExtenderPlan`: every earlier scene of
    * this session's film resends exactly what was recorded when it rendered
@@ -2183,6 +2198,54 @@ export function AppProvider({ children }: { children: ReactNode }) {
   )
 
   /**
+   * Gate A's one submit path — never a second one alongside
+   * `renderExtenderPlan` (the brief: "which is what renderExtenderPlan
+   * ('full_batch') already does. Do not add a second submit path."). Every
+   * already-validated clip always rides along for free
+   * (`planForTickedSubmission`); a ticked PENDING clip joins it for THIS
+   * job; an unticked one is held back — its `BreakdownClip` and authored
+   * prompt are left exactly as they are, only excluded from this one
+   * `clips_json`, so a later Gate A pass can still tick it. Achieved by
+   * narrowing `session.breakdown.clips` down to exactly what should render,
+   * calling the existing `renderExtenderPlan('full_batch')` unchanged, then
+   * restoring the held-back clips once it settles (success or failure) —
+   * `renderExtenderPlan` never itself touches `breakdown`, so this is safe
+   * to narrow-then-restore around it.
+   */
+  const submitTickedPrompts = useCallback(
+    async (tickedIndices: number[]) => {
+      const snap = sessionRef.current
+      const b = snap.breakdown
+      if (!b || !b.clips.length) return
+      const nodeId = `m_${b.at.toString(36)}`
+      const ticked = new Set(tickedIndices)
+      const plan = b.clips.map((c) => ({ index: c.index, validated: !!validatedClipAt(clipsRef.current, nodeId, c.index) }))
+      const { toSubmit, heldBack } = planForTickedSubmission(plan, ticked)
+      if (!toSubmit.length) return
+
+      const submitIndices = new Set(toSubmit.map((c) => c.index))
+      const heldBackIndices = new Set(heldBack.map((c) => c.index))
+      const narrowed = { ...b, clips: b.clips.filter((c) => submitIndices.has(c.index)) }
+      sessionRef.current = { ...snap, breakdown: narrowed }
+      setSession(sessionRef.current)
+      try {
+        await renderExtenderPlan('full_batch')
+      } finally {
+        const cur = sessionRef.current
+        if (cur.breakdown) {
+          const restoredClips = [...cur.breakdown.clips, ...b.clips.filter((c) => heldBackIndices.has(c.index))].sort(
+            (x, y) => x.index - y.index,
+          )
+          const restored = { ...cur, breakdown: { ...cur.breakdown, clips: restoredClips } }
+          sessionRef.current = restored
+          setSession(restored)
+        }
+      }
+    },
+    [renderExtenderPlan],
+  )
+
+  /**
    * Render the COMPOSER'S current text as ONE Master Extender scene — every
    * earlier scene of this session's film resends exactly what was recorded
    * when IT rendered (`validated: true`), and the new one goes out
@@ -2461,6 +2524,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
 
     setClips((prev) => dropFromIndex(prev, nodeId, index))
+  }, [])
+
+  /**
+   * Gate B's "wrong shots" exit — the prompt AND this render are discarded,
+   * back to "the set" (the brief). Applies the SAME rule
+   * `discardBreakdownFromIndex` gives a shot-list revision (see its module
+   * comment in `shotScreens.ts`) to one group directly: `groupIndex` and
+   * every group after it are dropped WHOLE from the render layer
+   * (`dropFromIndex`, same as `redoPlanClip`) and from the breakdown +
+   * authored-prompt layer — never half of one clip kept, because the
+   * render cache is a linear prefix. `editingGroupIndex` is set to
+   * `groupIndex` so the caller can navigate straight to "the clip in hand"
+   * for it.
+   */
+  const discardGroupRender = useCallback((groupIndex: number) => {
+    const snap = sessionRef.current
+    const b = snap.breakdown
+    if (!b) return
+    const nodeId = `m_${b.at.toString(36)}`
+    const remainingClips = dropFromIndex(clipsRef.current, nodeId, groupIndex)
+    setClips(remainingClips)
+    clipsRef.current = remainingClips
+    const { breakdown, versions } = discardBreakdownFromIndex(b, snap.versions, groupIndex)
+    const next = { ...snap, breakdown, versions, editingGroupIndex: groupIndex }
+    sessionRef.current = next
+    setSession(next)
   }, [])
 
   /**
@@ -2828,6 +2917,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     extenderFilm,
     extenderProgress,
     renderExtenderPlan,
+    submitTickedPrompts,
+    discardGroupRender,
     addPlate,
     updatePlate,
     deletePlate,

@@ -32,7 +32,10 @@ import {
   SHOT_LIST_TEMPLATE, fillShotListTemplate, groupShotsIntoClips, parseShotList, reviseShotsFromIndex,
   shotListResponseFormat,
 } from '../lib/shotList'
-import { addShotToGroup, clipsDiscardedByShotRevision, dropShot, pullShotFromNext, pushShotToNext, retimeShot, rewordShot, takeShotGroups } from '../lib/shotScreens'
+import {
+  addShotToGroup, clipsDiscardedByShotRevision, discardBreakdownFromIndex, dropShot, planForTickedSubmission,
+  pullShotFromNext, pushShotToNext, retimeShot, rewordShot, takeShotGroups,
+} from '../lib/shotScreens'
 import type {
   Breakdown, ChatTurn, Clip, ComfyEndpoint, ComfyNode, FilmContext, Finding, LoraStackEntry, Plate, ProbeResult,
   Provider, Selection, Settings, ShotGroup, ShotList, Skill, StageId, Version,
@@ -1637,11 +1640,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
         const priorGroups = snap.shotGroups ?? []
         const b = snap.breakdown
+        // THE HOLE, fixed: a cut must reconcile all three layers with the
+        // SAME `fromGroupIndex`, not just the render one. `groupsAffectedByCut`
+        // (inside `clipsDiscardedByShotRevision`) already says which groups a
+        // cut discards; `discardBreakdownFromIndex` applies that identical
+        // rule to the derived `BreakdownClip` and its authored prompt
+        // `Version`(s) — a group at or after the cut is discarded WHOLE from
+        // every layer it has reached, never left stale in one while the
+        // others move on. See `discardBreakdownFromIndex`'s module comment
+        // in `shotScreens.ts` for why this is the SAME rule the render layer
+        // already applies, not a second one invented for this layer.
+        let nextBreakdown = b
+        let nextVersions = sessionRef.current.versions
         if (b) {
           const nodeId = `m_${b.at.toString(36)}`
-          const { remainingClips } = clipsDiscardedByShotRevision(clipsRef.current, nodeId, priorGroups, cutShotIndex)
+          const { cut, remainingClips } = clipsDiscardedByShotRevision(clipsRef.current, nodeId, priorGroups, cutShotIndex)
           setClips(remainingClips)
           clipsRef.current = remainingClips
+          if (cut.fromGroupIndex !== undefined) {
+            const reconciled = discardBreakdownFromIndex(b, sessionRef.current.versions, cut.fromGroupIndex)
+            nextBreakdown = reconciled.breakdown
+            nextVersions = reconciled.versions
+          }
         }
 
         const nextShotList: ShotList = { ...list, spine: tail.spine || list.spine, shots: revisedShots }
@@ -1651,6 +1671,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           shotGroups: revisedGroups,
           shotGroupIssues: issues,
           editingGroupIndex: null,
+          breakdown: nextBreakdown,
+          versions: nextVersions,
         }
         sessionRef.current = next
         setSession(next)

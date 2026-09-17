@@ -1,38 +1,181 @@
 import { useApp } from '../app/state'
-import { isExtenderFieldFrozen, withExtenderOverride } from '../lib/extenderSettings'
+import {
+  EXTENDER_PDD_STEPS,
+  EXTENDER_QUALITY_TIERS,
+  extenderEngineChoiceFromInputs,
+  extenderEngineOverride,
+  extenderQualityOverride,
+  extenderQualityTierFromInputs,
+  isExtenderFieldFrozen,
+  turboLoraStepCount,
+  withExtenderOverrides,
+} from '../lib/extenderSettings'
+import type { ExtenderEngineChoice, ExtenderQualityTier } from '../lib/extenderSettings'
+import { framesForSeconds, oomRisk } from '../lib/geometry'
 
 /**
- * The Master Extender's own settings, exposed — never a second graph to pick
- * (the shipped workflow stays the one and only fixed graph), just its
- * existing `overrides` argument (`buildExtenderGraph`'s own mechanism,
- * `extender.ts:346`) given a face. Every value shown here is seeded from the
- * shipped graph's own baked input (`extenderMasterDefaults`, read fresh off
- * the loaded graph) — never a hardcoded duplicate — so a swapped graph on
- * disk is what the panel follows.
+ * The Master Extender's own settings, reduced to the two decisions the
+ * founder actually wants exposed — engine+steps and quality
+ * (2026-09-17 rewrite; see the brief this replaced the 28-field editor
+ * against). Every other one of the node's 28 signature fields stays at the
+ * shipped graph's own baked value: not editable here, but not hidden either
+ * — the read-only disclosure at the bottom shows the whole configuration so
+ * an operator can see it without being invited to break it.
  *
- * Grouped by what an operator is actually deciding, not the node's own
- * arbitrary widget order: resolution/steps/denoise first (the brief's own
- * words for what should be visible), then continuity, sparse attention,
- * chunking, acceleration, the pass-2 LoRA, the semantic bridge, and the
- * detail pass. `refs_json` — also one of the 28 hashed fields — is shown
- * read-only: it is never typed here, it is BUILT from the Plates panel, so
- * giving it an edit control here would be a second, competing way to set the
- * same value.
+ * Both controls only ever write through `buildExtenderGraph`'s existing
+ * `overrides` argument (via `Settings.extenderOverrides`), and every field
+ * either one touches is one of `EXTENDER_SIGNATURE_FIELDS` — the panel warns
+ * when clips are already validated, the existing guard in `extender.ts`
+ * refuses the actual submit. Nothing here duplicates that guard's logic.
  */
 
-interface FieldSpec {
-  field: string
-  label: string
+const bakedString = (v: unknown): string => (v == null ? '' : String(v))
+
+function EngineControl({
+  baked,
+  effective,
+  turboLoras,
+  onChange,
+}: {
+  baked: Record<string, unknown>
+  effective: Record<string, unknown>
+  turboLoras: string[]
+  onChange: (choice: ExtenderEngineChoice) => void
+}) {
+  const choice = extenderEngineChoiceFromInputs(effective)
+  const bakedNfe = bakedString(baked.pdd_nfe) || '8'
+
+  // The live list (from `/object_info`) is the source of truth; the graph's
+  // own currently-baked file is folded in too so the picker is never empty
+  // before that fetch lands, and never drops the shipped default off the
+  // list if it were ever removed from the live one.
+  const bakedLora = bakedString(baked.turbo_lora)
+  const loraOptions = Array.from(new Set([...(bakedLora && bakedLora !== 'none' ? [bakedLora] : []), ...turboLoras.filter((f) => f !== 'none')]))
+
+  return (
+    <div>
+      <div className="lbl" style={{ marginBottom: 4 }}>Engine + steps</div>
+      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <input
+            type="radio"
+            name="engine-mode"
+            checked={choice?.mode === 'pdd'}
+            onChange={() => onChange({ mode: 'pdd', steps: (EXTENDER_PDD_STEPS as readonly string[]).includes(bakedNfe) ? (bakedNfe as (typeof EXTENDER_PDD_STEPS)[number]) : '8' })}
+          />
+          PDD 8-step
+        </label>
+        {choice?.mode === 'pdd' && (
+          <div style={{ display: 'flex', gap: 8 }}>
+            {EXTENDER_PDD_STEPS.map((s) => (
+              <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
+                <input type="radio" name="pdd-steps" checked={choice.steps === s} onChange={() => onChange({ mode: 'pdd', steps: s })} />
+                {s}
+              </label>
+            ))}
+          </div>
+        )}
+      </div>
+      <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <input
+            type="radio"
+            name="engine-mode"
+            checked={choice?.mode === 'turbo'}
+            onChange={() => onChange({ mode: 'turbo', lora: loraOptions[0] ?? bakedLora ?? 'none' })}
+          />
+          Turbo LoRA
+        </label>
+        {choice?.mode === 'turbo' && (
+          <>
+            <select value={choice.lora} onChange={(e) => onChange({ mode: 'turbo', lora: e.target.value })} style={{ maxWidth: 380 }}>
+              {loraOptions.length === 0 && <option value={choice.lora}>{choice.lora}</option>}
+              {loraOptions.map((f) => (
+                <option key={f} value={f}>{f}</option>
+              ))}
+            </select>
+            <span className="tok">
+              {turboLoraStepCount(choice.lora) ? `${turboLoraStepCount(choice.lora)} steps — read from the filename` : `steps: ${bakedString(effective.pdd_nfe)} (filename doesn't say — using the baked step count)`}
+            </span>
+          </>
+        )}
+      </div>
+      <div className="tok" style={{ display: 'block', marginTop: 6, lineHeight: 1.5 }}>
+        A turbo LoRA's own step count and <code>pdd_nfe</code> are set together, never separately — the node has no
+        cross-check of its own (<code>pdd_pure_engine.py</code>: turbo mode sends <code>pdd_nfe</code> straight to the
+        sampler as the step count), so picking the LoRA IS picking the steps. PDD mode only offers 4/6/8: the engine
+        itself clamps any other value to 8 and logs a warning, so those are the only three that actually run.
+      </div>
+    </div>
+  )
 }
 
-const GROUPS: Array<{ label: string; fields: FieldSpec[] }> = [
+function QualityControl({
+  tier,
+  onChange,
+  seconds,
+}: {
+  tier: ExtenderQualityTier | null
+  onChange: (tier: ExtenderQualityTier) => void
+  seconds: number
+}) {
+  const frames = framesForSeconds(seconds, 24)
+  return (
+    <div>
+      <div className="lbl" style={{ marginBottom: 4 }}>Quality</div>
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+        {EXTENDER_QUALITY_TIERS.map((t) => {
+          const risky = oomRisk(t.pass2Width, t.pass2Height, frames)
+          return (
+            <label key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <input type="radio" name="quality-tier" checked={tier?.id === t.id} onChange={() => onChange(t)} />
+              {t.label}
+              {risky && <span style={{ color: 'var(--ox)' }} title="OOM risk at the current clip length">⚠</span>}
+            </label>
+          )
+        })}
+        {!tier && <span className="tok">custom (not one of these three — pick one to replace it)</span>}
+      </div>
+      {tier && (
+        <div className="tok" style={{ display: 'block', marginTop: 6 }}>
+          pass 1 <code>{tier.pass1Resolution}</code> → pass 2 <code>{tier.pass2Resolution}</code>
+        </div>
+      )}
+      {tier && oomRisk(tier.pass2Width, tier.pass2Height, frames) && (
+        <div className="alert warn" style={{ marginTop: 8 }}>
+          This geometry at the current clip length ({seconds}s) has been measured to OOM the box past ~362 frames.
+          An OOM takes ComfyUI down and leaves no trace — a crashed render looks identical to one that was never
+          submitted. Trade resolution for length, or accept the risk.
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** One baked, non-editable field — value only, no control. Every field this
+ * disclosure lists happens to be one of the 28 signature fields, but the
+ * badge is computed from `isExtenderFieldFrozen` rather than assumed, so a
+ * field ever added here that ISN'T one still reads correctly as "free". */
+function BakedRow({ field, label, value }: { field: string; label: string; value: unknown }) {
+  const frozen = isExtenderFieldFrozen(field)
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '5px 0', borderBottom: '1px solid var(--rule)' }}>
+      <span style={{ width: 200, fontSize: 11.5, flex: '0 0 auto' }}>{label}</span>
+      <span className="tok" style={{ width: 54, flex: '0 0 auto', color: frozen ? 'var(--ox)' : 'var(--grn)' }}>{frozen ? 'frozen' : 'free'}</span>
+      <span style={{ fontSize: 12, fontFamily: 'var(--mono, monospace)' }}>{value == null ? '—' : String(value)}</span>
+    </div>
+  )
+}
+
+/** Every one of the 28 signature fields NOT covered by the two controls
+ * above — grouped the same way the old full editor was, but read-only:
+ * this is disclosure, not a second way to edit them. */
+const BAKED_GROUPS: Array<{ label: string; fields: Array<{ field: string; label: string }> }> = [
   {
-    label: 'Resolution, steps, denoise',
+    label: 'Pass 2 refine',
     fields: [
-      { field: 'pass1_resolution', label: 'Pass 1 resolution' },
-      { field: 'pass2_resolution', label: 'Pass 2 resolution' },
-      { field: 'pass2_steps', label: 'Pass 2 steps' },
       { field: 'pass2_denoise', label: 'Pass 2 denoise' },
+      { field: 'pass2_steps', label: 'Pass 2 steps (tail length)' },
     ],
   },
   {
@@ -60,10 +203,8 @@ const GROUPS: Array<{ label: string; fields: FieldSpec[] }> = [
     ],
   },
   {
-    label: 'Acceleration',
+    label: 'Turbo LoRA (baked strength/sampler)',
     fields: [
-      { field: 'accel_mode', label: 'Acceleration mode' },
-      { field: 'turbo_lora', label: 'Turbo LoRA' },
       { field: 'turbo_lora_strength', label: 'Turbo LoRA strength' },
       { field: 'turbo_sampler', label: 'Turbo sampler' },
       { field: 'turbo_scheduler', label: 'Turbo scheduler' },
@@ -88,86 +229,36 @@ const GROUPS: Array<{ label: string; fields: FieldSpec[] }> = [
   {
     label: 'Detail pass',
     fields: [
-      { field: 'pdd_nfe', label: 'PDD NFE' },
       { field: 'pdd_file', label: 'PDD file' },
       { field: 'upscaler_model', label: 'Upscaler model' },
     ],
   },
 ]
 
-/** One field's control — its INPUT KIND is decided by the type of the
- * graph's own baked value (boolean → checkbox, number → number input,
- * anything else → text), never guessed or hardcoded per field name. This is
- * what lets all 27 editable fields share one control instead of 27 bespoke
- * widgets, and it is honest about what we actually know: the node's true
- * combo enumerations (e.g. which strings `accel_mode` accepts) live in
- * ComfyUI's `/object_info`, not in this repo, so a free-form control that
- * preserves the baked value's own JS type is the offer that cannot silently
- * send the wrong shape. */
-function FieldRow({
-  spec,
-  baked,
-  override,
-  onChange,
-}: {
-  spec: FieldSpec
-  baked: unknown
-  override: unknown
-  onChange: (value: unknown) => void
-}) {
-  const frozen = isExtenderFieldFrozen(spec.field)
-  const current = override !== undefined ? override : baked
-  const overridden = override !== undefined
-  const kind = typeof baked
-
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', borderBottom: '1px solid var(--rule)' }}>
-      <span style={{ width: 176, fontSize: 11.5, flex: '0 0 auto' }}>{spec.label}</span>
-      <span
-        className="tok"
-        title={frozen ? 'Frozen once any clip in this film is validated — changing it then re-renders the whole film.' : 'Safe to change mid-film.'}
-        style={{ width: 54, flex: '0 0 auto', color: frozen ? 'var(--ox)' : 'var(--grn)' }}
-      >
-        {frozen ? 'frozen' : 'free'}
-      </span>
-
-      {kind === 'boolean' ? (
-        <input type="checkbox" checked={current === true} onChange={(e) => onChange(e.target.checked)} />
-      ) : kind === 'number' ? (
-        <input
-          type="number"
-          value={current == null ? '' : Number(current)}
-          onChange={(e) => onChange(e.target.value === '' ? baked : Number(e.target.value))}
-          style={{ width: 120 }}
-        />
-      ) : (
-        <input
-          type="text"
-          value={current == null ? '' : String(current)}
-          onChange={(e) => onChange(e.target.value)}
-          style={{ flexGrow: 1, minWidth: 0 }}
-        />
-      )}
-
-      <div style={{ flexGrow: 1 }} />
-      {overridden && (
-        <button className="btn sm ghost" onClick={() => onChange(baked)}>
-          reset
-        </button>
-      )}
-    </div>
-  )
-}
-
 export function ExtenderSettingsPanel({ onClose }: { onClose: () => void }) {
-  const { extenderMasterDefaults, extenderReady, settings, patchSettings, extenderFilm } = useApp()
+  const { extenderMasterDefaults, extenderNodeSchema, extenderReady, settings, patchSettings, extenderFilm } = useApp()
 
   const overrides = settings.extenderOverrides ?? {}
   const overrideCount = Object.keys(overrides).length
   const validatedCount = extenderFilm?.scenes.filter((s) => s.clip.state === 'done').length ?? 0
 
-  const setField = (field: string, value: unknown) => {
-    patchSettings({ extenderOverrides: withExtenderOverride(settings.extenderOverrides, extenderMasterDefaults, field, value) })
+  const effective = extenderMasterDefaults ? { ...extenderMasterDefaults, ...overrides } : null
+  const engineChoice = extenderEngineChoiceFromInputs(effective)
+  const qualityTier = extenderQualityTierFromInputs(effective)
+
+  const setEngine = (choice: ExtenderEngineChoice) => {
+    if (!extenderMasterDefaults) return
+    const bakedNfe = bakedString(extenderMasterDefaults.pdd_nfe) || '8'
+    patchSettings({
+      extenderOverrides: withExtenderOverrides(settings.extenderOverrides, extenderMasterDefaults, extenderEngineOverride(choice, bakedNfe)),
+    })
+  }
+
+  const setQuality = (tier: ExtenderQualityTier) => {
+    if (!extenderMasterDefaults) return
+    patchSettings({
+      extenderOverrides: withExtenderOverrides(settings.extenderOverrides, extenderMasterDefaults, extenderQualityOverride(tier)),
+    })
   }
 
   return (
@@ -177,7 +268,7 @@ export function ExtenderSettingsPanel({ onClose }: { onClose: () => void }) {
           <div>
             <div className="serif" style={{ fontSize: 19 }}>Render settings</div>
             <div style={{ fontSize: 11.5, color: 'var(--ink3)', marginTop: 3 }}>
-              The shipped Master Extender graph's own configuration — the graph itself stays fixed; these are overrides onto it.
+              Two decisions: engine + steps, and quality. Everything else stays at the shipped graph's own value.
             </div>
           </div>
           <div style={{ flexGrow: 1 }} />
@@ -190,48 +281,53 @@ export function ExtenderSettingsPanel({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="modal-body">
-          {!extenderReady || !extenderMasterDefaults ? (
+          {!extenderReady || !extenderMasterDefaults || !effective ? (
             <div className="card err">
               The Master Extender workflow has not loaded — check public/workflows/minimax_h3_master_extender_api.json.
             </div>
           ) : (
             <>
               <div className="tok" style={{ display: 'block', lineHeight: 1.6, marginBottom: 10 }}>
-                <span style={{ color: 'var(--ox)' }}>frozen</span> fields are hashed by the node itself — the first submit
-                after any clip in a film is validated that moves one is refused, naming what changed and how many clips it
-                would cost, unless you explicitly accept the reset. <span style={{ color: 'var(--grn)' }}>free</span> fields
-                can change on the very next scene. <code>refs_json</code> is also frozen but is never edited here — it comes
-                from the Plates panel.
+                Both controls below touch fields the node itself hashes — the first submit after any clip in a film
+                is validated that moves one is refused, naming what changed and how many clips it would cost, unless
+                you explicitly accept the reset.
               </div>
 
               {validatedCount > 0 && (
                 <div className="alert warn" style={{ marginBottom: 12 }}>
-                  {validatedCount} clip{validatedCount === 1 ? '' : 's'} validated in the current film — changing a frozen
-                  field below will be refused at submit time until you accept discarding {validatedCount === 1 ? 'it' : 'them'}.
+                  {validatedCount} clip{validatedCount === 1 ? '' : 's'} validated in the current film — changing
+                  either control below will be refused at submit time until you accept discarding{' '}
+                  {validatedCount === 1 ? 'it' : 'them'}.
                 </div>
               )}
 
-              {GROUPS.map((group) => (
-                <div key={group.label} style={{ marginBottom: 18 }}>
-                  <div className="lbl" style={{ marginBottom: 4 }}>{group.label}</div>
-                  {group.fields.map((spec) => (
-                    <FieldRow
-                      key={spec.field}
-                      spec={spec}
-                      baked={extenderMasterDefaults[spec.field]}
-                      override={overrides[spec.field]}
-                      onChange={(v) => setField(spec.field, v)}
-                    />
-                  ))}
-                </div>
-              ))}
+              <div style={{ marginBottom: 20 }}>
+                <EngineControl
+                  baked={extenderMasterDefaults}
+                  effective={effective}
+                  turboLoras={extenderNodeSchema?.turboLoras ?? []}
+                  onChange={setEngine}
+                />
+              </div>
+
+              <div style={{ marginBottom: 20 }}>
+                <QualityControl tier={qualityTier} onChange={setQuality} seconds={settings.seconds} />
+              </div>
 
               <div style={{ marginTop: 4 }}>
-                <div className="lbl" style={{ marginBottom: 4 }}>References</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0' }}>
-                  <span style={{ width: 176, fontSize: 11.5, flex: '0 0 auto' }}>refs_json</span>
+                <div className="lbl" style={{ marginBottom: 4 }}>Everything else — fixed at the shipped value</div>
+                {BAKED_GROUPS.map((group) => (
+                  <div key={group.label} style={{ marginBottom: 14 }}>
+                    <div className="tok" style={{ marginBottom: 2, display: 'block' }}>{group.label}</div>
+                    {group.fields.map((spec) => (
+                      <BakedRow key={spec.field} field={spec.field} label={spec.label} value={extenderMasterDefaults[spec.field]} />
+                    ))}
+                  </div>
+                ))}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '5px 0' }}>
+                  <span style={{ width: 200, fontSize: 11.5, flex: '0 0 auto' }}>refs_json</span>
                   <span className="tok" style={{ width: 54, flex: '0 0 auto', color: 'var(--ox)' }}>frozen</span>
-                  <span className="tok">set from the Plates panel — swapping a plate re-freezes the film the same way any field above does</span>
+                  <span className="tok">set from the Plates panel — swapping a plate re-freezes the film the same way either control above does</span>
                 </div>
               </div>
             </>

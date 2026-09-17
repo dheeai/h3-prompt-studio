@@ -1,6 +1,8 @@
 import { mixedContentBlocked } from './providers'
 import { parseExtenderPreviewInfo, pickExtenderVideo } from './extender'
 import type { ExtenderPreviewInfo } from './extender'
+import { parseExtenderNodeSchema } from './extenderSettings'
+import type { ExtenderNodeSchema } from './extenderSettings'
 import type { Clip, ComfyEndpoint, ComfyNode, ProbeResult } from './types'
 
 /**
@@ -103,6 +105,27 @@ export async function probeComfy(ep: ComfyEndpoint, signal?: AbortSignal): Promi
     hint: found.length ? undefined : 'Could not confirm the H3 nodes are installed on this box.',
     models: found,
     at,
+  }
+}
+
+/**
+ * The Master Extender node's own live schema — right now, just the
+ * `turbo_lora` file list (see `parseExtenderNodeSchema`'s module comment in
+ * `extenderSettings.ts` for why this one enum is never hardcoded).
+ * `object_info` is a gateway-light path — it answers from the node's own
+ * `INPUT_TYPES()`, no GPU touched — so this is safe to call whenever the
+ * settings panel opens or the endpoint changes, not just at render time.
+ * Returns `null` on anything short of a clean 200 (box unreachable, node not
+ * installed, unparseable body); the caller falls back to the graph's own
+ * baked `turbo_lora` value rather than showing an empty picker.
+ */
+export async function fetchExtenderNodeSchema(ep: ComfyEndpoint, signal?: AbortSignal): Promise<ExtenderNodeSchema | null> {
+  try {
+    const r = await fetch(`${trim(ep.baseUrl)}/object_info/MiniMaxH3MasterExtender`, { signal })
+    if (!r.ok) return null
+    return parseExtenderNodeSchema(await r.json())
+  } catch {
+    return null
   }
 }
 

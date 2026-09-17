@@ -193,6 +193,30 @@ test('the signature guard proceeds when acceptReset is passed, and reports what 
   assert.match(result.refusalAccepted as string, /pass2_denoise/)
 })
 
+test('the signature guard refuses a quality-tier change (the settings panel\'s own override shape) once a clip is validated', () => {
+  // Exercises the exact patch `extenderQualityOverride` produces (both
+  // pass1_resolution AND pass2_resolution together) through the real build
+  // path — the panel only ever writes through `overrides`, never around the
+  // guard, and this is what proves that end to end rather than by reading
+  // the panel's source.
+  const priorInputs = { ...fixtureGraph()['6'].inputs, refs_json: buildExtenderRefsJson([]) }
+  let caught: unknown
+  try {
+    buildExtenderGraph({
+      graph: fixtureGraph(), nodeId: 'm_a', clips: guardClips, plates: [], runMode: 'clip_by_clip',
+      overrides: { pass1_resolution: '704x384', pass2_resolution: '1344x768 (16:9)' },
+      priorMasterInputs: priorInputs, validatedCount: 2,
+    })
+  } catch (e) {
+    caught = e
+  }
+  assert.ok(caught instanceof ExtenderError)
+  const msg = (caught as Error).message
+  assert.match(msg, /pass1_resolution/)
+  assert.match(msg, /pass2_resolution/)
+  assert.match(msg, /2 validated clip\(s\)/)
+})
+
 test('the signature is unaffected by FREE fields (prompt/duration/seed/title/clip count are never hashed)', () => {
   const inputs = { ...fixtureGraph()['6'].inputs, refs_json: buildExtenderRefsJson([]) }
   assert.equal(extenderSignature(inputs), extenderSignature(inputs))

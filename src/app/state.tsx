@@ -9,12 +9,13 @@ import type { ChatContentPart } from '../lib/llm'
 import { DEFAULT_PROVIDERS, loadProviders, probe, saveProviders, LOCAL_LLM_URL, LOCAL_LLM_MODEL} from '../lib/providers'
 import { PROMPT_STAGES, SCHEMA_STAGES, STAGE_LABEL, continuationFrameBlock, durationBlock, fillTemplateWithDuration, filmBlock, platesBlock, hasPromptBlock, latestPromptForClip, nextRole, parseBreakdown, splitPromptReplacement, splitReply, templateFor } from '../lib/stages'
 import { h3ResponseFormat, joinH3Sections } from '../lib/schema'
-import { DEFAULT_ENDPOINTS, lastFrameOf, poll, pollExtender, probeComfy, submit, uploadImage, viewUrl } from '../lib/comfy'
+import { DEFAULT_ENDPOINTS, fetchExtenderNodeSchema, lastFrameOf, poll, pollExtender, probeComfy, submit, uploadImage, viewUrl } from '../lib/comfy'
 import type { PollResult } from '../lib/comfy'
 import { framesForSeconds } from '../lib/geometry'
 import { parseWorkflow } from '../lib/workflow'
 import { EXTENDER_REF_SLOTS, ExtenderError, buildExtenderGraph, extenderCostEstimate, extenderGeometryFromInputs, readExtenderMasterInputs } from '../lib/extender'
 import { mergeExtenderInputs } from '../lib/extenderSettings'
+import type { ExtenderNodeSchema } from '../lib/extenderSettings'
 import { readBakedLoraStack } from '../lib/loras'
 import type { ExtenderClipInput, ExtenderCostEstimate, ExtenderPlate, ExtenderPreviewInfo } from '../lib/extender'
 import { countFromIndex, dropFromIndex, dropInvalidatedAutoDraft, redoSeed, validatedClipAt } from '../lib/filmEdit'
@@ -333,6 +334,11 @@ export interface Api {
    * control from and compares an edit against (`readExtenderMasterInputs`).
    * Null before the graph has loaded. */
   extenderMasterDefaults: Record<string, unknown> | null
+  /** The Master Extender node's live `turbo_lora` file list off the CURRENT
+   * endpoint's own `/object_info` — never hardcoded (see
+   * `fetchExtenderNodeSchema`'s module comment). Null before it has been
+   * fetched, or when the endpoint is unreachable / has no such node. */
+  extenderNodeSchema: ExtenderNodeSchema | null
   /** The Master Extender's own baked style-stack default
    * (`LTX_lora_loader.stack_data` on the shipped graph) — what
    * `LoraStackEditor` seeds an edit from before the operator customizes it. */
@@ -503,6 +509,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [plates, setPlates] = useState<Plate[]>([])
   const [endpoints, setEndpointsState] = useState<ComfyEndpoint[]>(DEFAULT_ENDPOINTS)
   const [comfyProbes, setComfyProbes] = useState<Record<string, ProbeResult>>({})
+  /** The Master Extender node's live `turbo_lora` file list, per endpoint —
+   * see `fetchExtenderNodeSchema`'s module comment. Refreshed alongside the
+   * probe below; `null` for an endpoint not yet fetched or unreachable, so
+   * the settings panel can fall back to the graph's own baked value. */
+  const [extenderNodeSchemas, setExtenderNodeSchemas] = useState<Record<string, ExtenderNodeSchema | null>>({})
   const [renderingId, setRenderingId] = useState<string | null>(null)
   // ── Master Extender (the studio's only render path) ────────────────────
   //
@@ -1609,6 +1620,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, endpoints.map((e) => `${e.id}:${e.baseUrl}`).join('|')])
 
+  // The Master Extender's live turbo LoRA list, fetched alongside the probe
+  // above (same "one entry per endpoint" shape) — see `fetchExtenderNodeSchema`.
+  useEffect(() => {
+    if (!ready) return
+    for (const e of endpoints) {
+      void fetchExtenderNodeSchema(e).then((schema) => setExtenderNodeSchemas((prev) => ({ ...prev, [e.id]: schema })))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, endpoints.map((e) => `${e.id}:${e.baseUrl}`).join('|')])
+
   const clipUrl = useCallback(
     (c: Clip) => {
       const ep = endpoints.find((e) => e.id === c.endpointId) ?? endpoint
@@ -2377,6 +2398,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // ACTUALLY render (issue #30), never the baked value alone once an
   // override is set.
   const extenderMasterDefaults = useMemo(() => readExtenderMasterInputs(extenderGraph), [extenderGraph])
+  const extenderNodeSchema = useMemo(
+    () => (endpoint ? extenderNodeSchemas[endpoint.id] ?? null : null),
+    [endpoint, extenderNodeSchemas],
+  )
   const extenderEffectiveInputs = useMemo(
     () => mergeExtenderInputs(extenderMasterDefaults, settings.extenderOverrides),
     [extenderMasterDefaults, settings.extenderOverrides],
@@ -2428,6 +2453,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     extenderReady: !!extenderGraph,
     extenderDefaults,
     extenderMasterDefaults,
+    extenderNodeSchema,
     extenderDefaultLoraStack,
     extenderPlanPreview,
     extenderFilm,

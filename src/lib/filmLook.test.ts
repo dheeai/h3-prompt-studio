@@ -54,3 +54,52 @@ test('an unrecognised stored preset id still writes something rather than silent
   const block = describeFilmLook({ preset: 'a-preset-id-since-removed' })
   assert.match(block, /a-preset-id-since-removed/)
 })
+
+// ── named camera + lens hardware (2026-09-17 correction) ───────────────────
+// The founder's own read: a generative video model has strong learned
+// associations with named hardware, so the lever is the camera/lens NAME,
+// not an abstract aspect/palette description on its own. Every preset must
+// still carry that look grammar, but it now opens on real, specific gear.
+
+test('every preset names a real camera body AND a specific piece of glass — not just an abstract look', () => {
+  for (const p of FILM_LOOK_PRESETS) {
+    // "shot on a/an <body> with a/an <glass>" — the founder's own sentence shape.
+    assert.match(
+      p.description,
+      /shot on (?:a|an) [A-Za-z0-9./ -]+ with (?:a|an) [A-Za-z0-9./ -]+lens/,
+      `${p.id} must open on a named body + named lens, in that sentence shape`,
+    )
+  }
+})
+
+test('every preset names a camera SUPPORT default (tripod, handheld, dolly, Steadicam, crane, shoulder) as the film baseline, not a hard rule', () => {
+  const supportWords = /tripod|handheld|dolly|steadicam|crane|shoulder-mounted/i
+  for (const p of FILM_LOOK_PRESETS) {
+    assert.match(p.description, supportWords, `${p.id} must name a default camera support`)
+    // it must read as a DEFAULT a shot can still depart from, never a fixed constraint
+    assert.match(p.description, /default camera behaviour|not a rule/i, `${p.id}'s support must read as the film's default, not a fixed constraint`)
+  }
+})
+
+test('every preset still carries the h3-cinematography look grammar alongside the hardware name: aspect, grain, palette', () => {
+  for (const p of FILM_LOOK_PRESETS) {
+    assert.match(p.description, /\d+(\.\d+)?:1|16:9/, `${p.id} must state an aspect ratio`)
+    assert.match(p.description, /grain/i, `${p.id} must state a grain register`)
+    assert.match(p.description, /reduced digital sharpening/i, `${p.id} must suppress sharpening`)
+    assert.match(p.description, /no influencer plastic texture/i, `${p.id} must ban the plastic texture`)
+    assert.match(p.description, /palette/i, `${p.id} must state a palette`)
+  }
+})
+
+test('exactly one preset reuses the h3-cinematography skill\'s own worked palette example verbatim', () => {
+  const matches = FILM_LOOK_PRESETS.filter((p) =>
+    p.description.includes('warm brown, soft gold, matte cream, low-saturation vintage black'),
+  )
+  assert.equal(matches.length, 1)
+})
+
+test('preset copy never promises measured optical accuracy', () => {
+  for (const p of FILM_LOOK_PRESETS) {
+    assert.doesNotMatch(p.description, /guarantee|measured|accurate|true field of view|true optical/i)
+  }
+})

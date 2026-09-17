@@ -1,52 +1,54 @@
 /**
- * ONE MODEL PER SESSION. The Studio must never swap the model out from under the box.
+ * MODEL SWAPS ARE EXPENSIVE, NOT FORBIDDEN.
  *
- * WHY THIS IS A HARD GUARD AND NOT A HINT. The 5090 gateway single-flights the GPU and
- * llama-server holds ~31.8 of 32 GB, so changing the selected model does not "switch a
- * setting" — it evicts and reloads tens of gigabytes. Two consequences, both measured
- * elsewhere in this repo's notes: renders that take 1.3-4 s on a free card took 241-581 s
- * under swap contention (~150x, entirely swap overhead), and an author->critic swap on
- * every cycle of an authoring loop thrashes residency continuously. The global rule is
- * already "use the SAME local model as both implementer and critic to prevent GPU
- * thrashing"; this is that rule made mechanical for the Studio.
+ * WHAT A SWAP ACTUALLY COSTS, because the number is the whole point of warning at
+ * all. The 5090 gateway single-flights the GPU and llama-server holds tens of GB,
+ * so changing the selected model does not "change a setting" — it evicts and
+ * reloads. Measured elsewhere in this repo's notes: renders that take 1.3-4 s on
+ * a free card took 241-581 s under swap contention (~150x, entirely swap
+ * overhead), and an author->critic swap on every cycle of an authoring loop
+ * thrashes residency continuously.
  *
- * The Studio already routes EVERY call through `settings.model` — authoring stages, the
- * agent surface, and the plate/vision analysis in PlatesPanel — so there is no per-stage
- * swap to remove. The hole this closes is a swap BETWEEN calls: nothing stopped the user
- * changing the selection mid-session and paying a reload on the next stage.
+ * WHY THIS IS NOW ADVISORY (founder directive, 2026-09-17). It shipped as a hard
+ * refusal, on the reasoning that an accidental swap is exactly what you want to
+ * prevent. That was wrong in practice: changing model between scenes is a normal
+ * thing to want — comparing two models on the same film is the obvious example —
+ * and a blocker turned a deliberate choice into a dead end that needed a hidden
+ * Settings release to escape. The cost is real, so it is still stated plainly;
+ * the decision belongs to the operator.
  *
- * Design: the lock arms on the first model call of a session and pins that model. A
- * different model is refused with the reason, not silently honoured. Releasing is
- * deliberate (`releaseReason` explains what the user must do), because an accidental
- * release is exactly the thing being prevented.
+ * The pin therefore re-arms to whatever was chosen, and warns ONCE per change
+ * rather than on every subsequent call: the second scene authored on the new
+ * model is no longer news.
  */
 
 export type ModelLock = { model: string; provider: string; armedAt: number } | null
 
-/** Arm the lock on the first call. Idempotent for the same model+provider. */
+/** Arm on the first call, and RE-arm on a deliberate change so the warning is
+ * emitted once per swap rather than on every call that follows it. */
 export function armModelLock(lock: ModelLock, model: string, provider: string, now = Date.now()): ModelLock {
-  if (lock && lock.model === model && lock.provider === provider) return lock;
-  if (lock) return lock;                      // never silently re-arm to a different model
-  return { model, provider, armedAt: now };
+  if (lock && lock.model === model && lock.provider === provider) return lock
+  return { model, provider, armedAt: now }
 }
 
 /**
- * @returns null when the call may proceed, or the reason it may not.
+ * @returns null when nothing changed, or an advisory describing the swap and
+ * what it costs. The caller SHOWS this and proceeds — it is not a refusal.
  */
-export function modelLockViolation(lock: ModelLock, model: string, provider: string): string | null {
-  if (!lock) return null;
-  if (lock.model === model && lock.provider === provider) return null;
+export function modelSwapWarning(lock: ModelLock, model: string, provider: string): string | null {
+  if (!lock) return null
+  if (lock.model === model && lock.provider === provider) return null
   const what = lock.provider !== provider && lock.model !== model
     ? `provider "${lock.provider}" → "${provider}" and model "${lock.model}" → "${model}"`
     : lock.provider !== provider
       ? `provider "${lock.provider}" → "${provider}"`
-      : `model "${lock.model}" → "${model}"`;
-  return `This session is pinned to ${lock.provider}/${lock.model}. Changing ${what} would evict ~30 GB and reload — `
-       + `the gateway single-flights the GPU, and swap contention has been measured at ~150x on render times. `
-       + `Finish or clear this session before switching, or release the pin deliberately in Settings.`;
+      : `model "${lock.model}" → "${model}"`
+  return `Switching ${what}. The box evicts and reloads the model, so the next call pays that once — `
+       + `and swap contention has been measured at ~150x on render times, so avoid alternating `
+       + `models mid-film. Continuing.`
 }
 
-/** Human-readable state, for the UI to show why a selection is refused. */
+/** Human-readable state, for the UI. */
 export function describeModelLock(lock: ModelLock): string {
-  return lock ? `pinned to ${lock.provider}/${lock.model}` : 'not pinned — the next model call will pin this session';
+  return lock ? `using ${lock.provider}/${lock.model}` : 'no model used yet this session'
 }

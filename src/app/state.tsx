@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { ReactNode } from 'react'
 import { idb } from '../lib/db'
 import { buildContext, buildH3SystemPrompt, type BuiltContext, selectionForStage, selectionKey } from '../lib/context'
-import { armModelLock, modelLockViolation, describeModelLock, type ModelLock } from '../lib/modelLock'
+import { armModelLock, modelSwapWarning, describeModelLock, type ModelLock } from '../lib/modelLock'
 import { classifyInput, findingsToText, lint, looksLikePrompt, standingToText } from '../lib/lint'
 import { continuationBudgetFor, streamChatComplete } from '../lib/llm'
 import type { ChatContentPart } from '../lib/llm'
@@ -457,6 +457,9 @@ export interface Api {
   cancel: () => void
   selectVersion: (id: string) => void
   clearError: () => void
+  /** Advisory message — shown, never blocking. See `notice` in the provider. */
+  notice: string | null
+  clearNotice: () => void
   reset: () => Promise<void>
   /** Claim the GPU mutex for a caller OUTSIDE `run()`/the render paths — the
    * Agent's own LLM loop, which does not go through `run()`. Returns false
@@ -467,7 +470,6 @@ export interface Api {
   /** The model this session is pinned to, and a deliberate release. */
   modelLock: ModelLock
   modelLockLabel: string
-  releaseModelLock: () => void
 }
 
 const Ctx = createContext<Api | null>(null)
@@ -502,6 +504,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     auto?: boolean
   } | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Advisory, non-blocking, and deliberately a SEPARATE channel from `error`:
+  // a model swap is a cost to state, not a failure to refuse (see modelLock.ts).
+  // Folding it into `error` would have made a normal choice look like a fault.
+  const [notice, setNotice] = useState<string | null>(null)
   const [context, setContext] = useState<BuiltContext | null>(null)
   const [failedReasoning, setFailedReasoning] = useState<string | null>(null)
   const [interruptedReasoning, setInterruptedReasoning] = useState<string | null>(null)
@@ -617,8 +623,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return false
     }
     if (kind === 'llm') {
-      const why = modelLockViolation(modelLockRef.current, settings.model, settings.providerId)
-      if (why) { setError(why); return false }
+      // A swap is expensive, not forbidden (founder, 2026-09-17). State the cost
+      // once per change and proceed — `armModelLock` re-arms to the new model, so
+      // the scene after this one is not warned about a choice already made.
+      const swap = modelSwapWarning(modelLockRef.current, settings.model, settings.providerId)
+      if (swap) setNotice(swap)
       const armed = armModelLock(modelLockRef.current, settings.model, settings.providerId)
       if (armed !== modelLockRef.current) { modelLockRef.current = armed; setModelLock(armed) }
     }
@@ -626,11 +635,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setGpuBusyState(kind)
     return true
   }, [settings.model, settings.providerId])
-  /** Deliberate release — an accidental one is what the lock exists to prevent. */
-  const releaseModelLock = useCallback(() => {
-    modelLockRef.current = null
-    setModelLock(null)
-  }, [])
   const endGpuUse = useCallback(() => {
     gpuBusyRef.current = 'idle'
     setGpuBusyState('idle')
@@ -2487,11 +2491,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setFailedReasoning(null)
       setInterruptedReasoning(null)
     },
+    notice,
+    clearNotice: () => setNotice(null),
     reset,
     beginGpuUse,
     modelLock,
     modelLockLabel: describeModelLock(modelLock),
-    releaseModelLock,
     endGpuUse,
   }
 

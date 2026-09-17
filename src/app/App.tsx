@@ -31,7 +31,7 @@ type Modal = 'connect' | 'skills' | 'settings' | 'plates' | 'extender-settings' 
  */
 export function App() {
   const app = useApp()
-  const { ready, skills, settings, versions, story, error } = app
+  const { ready, skills, settings, versions, story, error, notice } = app
   const [modal, setModal] = useState<Modal>(null)
   const [setupOpen, setSetupOpen] = useState(false)
   const [workspace, setWorkspace] = useState<'studio' | 'agent'>('studio')
@@ -133,6 +133,7 @@ export function App() {
           </div>
         )}
         {error && <div className="alert err composer-error"><span>{error}</span><button className="btn sm ghost" onClick={app.clearError}>dismiss</button></div>}
+        {notice && <div className="alert warn composer-error"><span>{notice}</span><button className="btn sm ghost" onClick={app.clearNotice}>dismiss</button></div>}
       </div>
 
       <div className={`workspace-view ${workspace === 'agent' ? 'is-active' : 'is-hidden'}`} aria-hidden={workspace !== 'agent'}>

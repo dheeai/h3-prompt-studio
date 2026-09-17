@@ -59,7 +59,11 @@ const DEFAULT_SETTINGS: Settings = {
   lockSeed: true,
   seed: 42,
   breakIntoScenes: false,
-  autoAuthorNext: true,
+  // OFF by default (founder, 2026-09-17): "when the prompt is created and
+  // rendered it immediately triggers the next scene's prompt — I dont want that
+  // behaviour." Full Story mode makes each prompt something you ask for, so a
+  // render landing must not write the next one on its own.
+  autoAuthorNext: false,
 }
 
 /** The deterministic name a plate uploads under — shared so a chain build

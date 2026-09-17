@@ -189,7 +189,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
               <label className="tok" style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                 <input
                   type="checkbox"
-                  checked={settings.autoAuthorNext ?? true}
+                  checked={settings.autoAuthorNext ?? false}
                   onChange={(e) => patchSettings({ autoAuthorNext: e.target.checked })}
                 />
                 author the next clip while I watch this one

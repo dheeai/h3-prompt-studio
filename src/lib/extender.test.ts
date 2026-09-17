@@ -11,6 +11,7 @@ import {
   extenderSignatureDiff,
   parseExtenderPreviewInfo,
   pickExtenderVideo,
+  platesFreezeReason,
   readExtenderDefaults,
   readExtenderMasterInputs,
   renumberExtenderNode,
@@ -569,4 +570,112 @@ test('a settings-panel override to a signature field is REFUSED once a clip is v
   assert.ok(caught instanceof ExtenderError)
   assert.match((caught as Error).message, /pass2_denoise/)
   assert.match((caught as Error).message, /4 validated clip\(s\)/)
+})
+
+// ── Full Story mode's plate wiring (issue #31) ─────────────────────────────
+//
+// Full Story mode has no plate route of its own — `renderExtenderPlan` calls
+// this SAME `buildExtenderGraph` with `runMode: 'full_batch'`, so these prove
+// plates reach `refs_json`, in slot order, through the one path that already
+// exists, rather than a second one.
+
+test('Full Story build (full_batch): plates reach refs_json in slot order, position preserved', () => {
+  const built = buildExtenderGraph({
+    graph: fixtureGraph(),
+    nodeId: 'm_story',
+    clips: [
+      { title: 'Clip 1', prompt: '<Picture 1> walks in.', seconds: 5, seed: 1, validated: false },
+      { title: 'Clip 2', prompt: '<Picture 2> answers.', seconds: 5, seed: 2, validated: false },
+    ],
+    plates: [
+      { filename: 'lira.png', subfolder: '' },
+      { filename: 'aarav.png', subfolder: 'input' },
+    ],
+    runMode: 'full_batch',
+    validatedCount: 0,
+  })
+  const parsed = JSON.parse(built.graph.m_story.inputs.refs_json as string) as { images: Array<string | null> }
+  assert.equal(parsed.images[0], 'lira.png')
+  assert.equal(parsed.images[1], 'input/aarav.png')
+  // Reordering the plate array (as `reorderPlate` does before a submit) moves
+  // the same picture to the position its prompt cites it by.
+  const reordered = buildExtenderGraph({
+    graph: fixtureGraph(),
+    nodeId: 'm_story2',
+    clips: [{ title: 'Clip 1', prompt: '<Picture 1> answers.', seconds: 5, seed: 1, validated: false }],
+    plates: [
+      { filename: 'aarav.png', subfolder: 'input' },
+      { filename: 'lira.png', subfolder: '' },
+    ],
+    runMode: 'full_batch',
+    validatedCount: 0,
+  })
+  const parsedReordered = JSON.parse(reordered.graph.m_story2.inputs.refs_json as string) as { images: Array<string | null> }
+  assert.equal(parsedReordered.images[0], 'input/aarav.png')
+  assert.equal(parsedReordered.images[1], 'lira.png')
+})
+
+test('Full Story build (full_batch): the 9-slot cap holds even when handed more plates than that', () => {
+  const plates = Array.from({ length: 11 }, (_, i) => ({ filename: `p${i}.png`, subfolder: '' }))
+  const built = buildExtenderGraph({
+    graph: fixtureGraph(),
+    nodeId: 'm_story3',
+    clips: [{ title: 'Clip 1', prompt: 'a scene.', seconds: 5, seed: 1, validated: false }],
+    plates,
+    runMode: 'full_batch',
+    validatedCount: 0,
+  })
+  const parsed = JSON.parse(built.graph.m_story3.inputs.refs_json as string) as { images: Array<string | null> }
+  assert.equal(parsed.images.length, 9)
+  assert.equal(parsed.images[8], 'p8.png')
+})
+
+// ── plates freeze (issue #31: visible before a plate is picked, not only at submit) ──
+
+test('platesFreezeReason: nothing validated yet — the plate set is free to change', () => {
+  assert.equal(platesFreezeReason(0), null)
+})
+
+test('platesFreezeReason: once a clip is validated, names refs_json and the count as the reason', () => {
+  const reason = platesFreezeReason(3)
+  assert.ok(reason)
+  assert.match(reason as string, /3 clips are already validated/)
+  assert.match(reason as string, /refs_json/)
+})
+
+test('platesFreezeReason: singular phrasing for exactly one validated clip', () => {
+  assert.match(platesFreezeReason(1) as string, /1 clip is already validated/)
+})
+
+test('platesFreezeReason matches what the guard would actually refuse: same validatedCount, same refs_json cause', () => {
+  // The freeze banner and `checkExtenderSignature`'s refusal must never
+  // disagree about WHEN a plate change stops being free — both are driven by
+  // the identical validatedCount a real submit computes
+  // (`extenderPlanPreview.cost.fromCache` in `app/state.tsx`).
+  const priorInputs = { ...fixtureGraph()['6'].inputs, refs_json: buildExtenderRefsJson([{ filename: 'lira.png', subfolder: '' }]) }
+  const validatedCount = 2
+  assert.ok(platesFreezeReason(validatedCount), 'the picker must show a freeze banner for this validatedCount')
+
+  let caught: unknown
+  try {
+    buildExtenderGraph({
+      graph: fixtureGraph(),
+      nodeId: 'm_guard',
+      clips: [
+        { prompt: 'a', seconds: 5, seed: 1, validated: true },
+        { prompt: 'b', seconds: 5, seed: 2, validated: true },
+        { prompt: 'c', seconds: 5, seed: 3, validated: false },
+      ],
+      // A plate swap — a picker action the freeze banner is meant to stop —
+      // moves refs_json and so trips the guard at this SAME validatedCount.
+      plates: [{ filename: 'someone-else.png', subfolder: '' }],
+      runMode: 'full_batch',
+      priorMasterInputs: priorInputs,
+      validatedCount,
+    })
+  } catch (e) {
+    caught = e
+  }
+  assert.ok(caught instanceof ExtenderError, 'submitting with a swapped plate at this validatedCount must still be refused')
+  assert.match((caught as Error).message, /refs_json/)
 })

@@ -176,7 +176,7 @@ export function App() {
           <button className={storyTab === 'film' ? 'active' : ''} aria-current={storyTab === 'film' ? 'page' : undefined} onClick={() => setStoryTab('film')}>Watch &amp; keep</button>
         </nav>
         <div hidden={storyTab !== 'shots'}>
-          <StoryAndShots onOpenClipInHand={() => setStoryTab('hand')} />
+          <StoryAndShots onOpenClipInHand={() => setStoryTab('hand')} onOpenPlates={() => setModal('plates')} />
         </div>
         <div hidden={storyTab !== 'hand'}>
           <ClipInHand onOpenStoryAndShots={() => setStoryTab('shots')} />

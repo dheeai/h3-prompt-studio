@@ -64,7 +64,7 @@ function plateSrc(plate: Plate, endpoint: ComfyEndpoint | null): string | null {
 }
 
 function PlateRow({ plate, n }: { plate: Plate; n: number }) {
-  const { updatePlate, deletePlate, reorderPlate, endpoint, providers, settings, beginGpuUse, endGpuUse } = useApp()
+  const { updatePlate, deletePlate, reorderPlate, endpoint, providers, settings, beginGpuUse, endGpuUse, platesFrozenReason } = useApp()
   const [job, setJob] = useState(plate.job)
   const [name, setName] = useState(plate.name)
   const [overrideText, setOverrideText] = useState(plate.wardrobeOverride ?? '')
@@ -151,10 +151,31 @@ function PlateRow({ plate, n }: { plate: Plate; n: number }) {
           return plate.kind === 'video' ? <video src={src} muted preload="metadata" style={box} /> : <img src={src} alt="" style={box} />
         })()}
         <div style={{ display: 'flex', gap: 5, marginTop: 5 }}>
-          <button className="btn sm ghost" title="Earlier — lower Picture number" onClick={() => void reorderPlate(plate.id, -1)}>↑</button>
-          <button className="btn sm ghost" title="Later" onClick={() => void reorderPlate(plate.id, 1)}>↓</button>
+          <button
+            className="btn sm ghost"
+            title={platesFrozenReason ?? 'Earlier — lower Picture number'}
+            disabled={!!platesFrozenReason}
+            onClick={() => void reorderPlate(plate.id, -1)}
+          >
+            ↑
+          </button>
+          <button
+            className="btn sm ghost"
+            title={platesFrozenReason ?? 'Later'}
+            disabled={!!platesFrozenReason}
+            onClick={() => void reorderPlate(plate.id, 1)}
+          >
+            ↓
+          </button>
           <div style={{ flexGrow: 1 }} />
-          <button className="btn sm ghost" onClick={() => void deletePlate(plate.id)}>remove</button>
+          <button
+            className="btn sm ghost"
+            title={platesFrozenReason ?? undefined}
+            disabled={!!platesFrozenReason}
+            onClick={() => void deletePlate(plate.id)}
+          >
+            remove
+          </button>
         </div>
       </div>
 
@@ -386,13 +407,13 @@ function BoxPicker({ onClose }: { onClose: () => void }) {
 }
 
 export function PlatesPanel({ onClose }: { onClose: () => void }) {
-  const { plates, addPlate, endpoint } = useApp()
+  const { plates, addPlate, endpoint, platesFrozenReason } = useApp()
   const fileRef = useRef<HTMLInputElement>(null)
   const [err, setErr] = useState<string | null>(null)
   const [picking, setPicking] = useState(false)
 
   async function take(files: FileList | null) {
-    if (!files?.length) return
+    if (!files?.length || platesFrozenReason) return
     setErr(null)
     for (const f of Array.from(files).slice(0, MAX_REFS - plates.length)) {
       try {
@@ -421,12 +442,16 @@ export function PlatesPanel({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="modal-body">
+          {platesFrozenReason && (
+            <div className="alert warn" style={{ marginBottom: 12 }}>{platesFrozenReason}</div>
+          )}
+
           {plates.map((p, i) => (
             <PlateRow key={p.id} plate={p} n={i + 1} />
           ))}
 
           <div style={{ display: 'flex', gap: 9, marginTop: 15 }}>
-            <button className="btn" disabled={!endpoint} onClick={() => setPicking(true)}>
+            <button className="btn" disabled={!endpoint || !!platesFrozenReason} title={platesFrozenReason ?? undefined} onClick={() => setPicking(true)}>
               Select from the box
             </button>
             <span className="tok" style={{ alignSelf: 'center' }}>
@@ -434,7 +459,11 @@ export function PlatesPanel({ onClose }: { onClose: () => void }) {
             </span>
           </div>
 
-          {plates.length < MAX_REFS ? (
+          {platesFrozenReason ? (
+            <div className="tok" style={{ marginTop: 15 }}>
+              Adding is frozen for this film — see above.
+            </div>
+          ) : plates.length < MAX_REFS ? (
             <div
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => {
@@ -464,6 +493,7 @@ export function PlatesPanel({ onClose }: { onClose: () => void }) {
             type="file"
             accept="image/*"
             multiple
+            disabled={!!platesFrozenReason}
             style={{ display: 'none' }}
             onChange={(e) => void take(e.target.files)}
           />

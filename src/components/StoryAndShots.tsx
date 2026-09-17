@@ -3,6 +3,7 @@ import { useApp } from '../app/state'
 import { checkRuntimeCeiling, groupsAffectedByCut, parsePartialShotList } from '../lib/shotList'
 import { ceilingAlert, groupBandState } from '../lib/shotScreens'
 import type { GroupBandState } from '../lib/shotScreens'
+import { EXTENDER_REF_SLOTS } from '../lib/extender'
 import { DraftingStatus } from './DraftingStatus'
 
 function bandColor(state: GroupBandState): string {
@@ -25,12 +26,18 @@ function bandLabel(state: GroupBandState): string {
  * Direct/Draft path (`app.approveShotGroups`) — nothing here writes camera,
  * performance or an H3 prompt.
  */
-export function StoryAndShots({ onOpenClipInHand }: { onOpenClipInHand: (groupIndex: number) => void }) {
+export function StoryAndShots({
+  onOpenClipInHand,
+  onOpenPlates,
+}: {
+  onOpenClipInHand: (groupIndex: number) => void
+  onOpenPlates: () => void
+}) {
   const app = useApp()
   const {
     plot, setPlot, maxRuntimeSeconds, setMaxRuntimeSeconds, shotList, shotGroups, shotGroupIssues,
     shotListBusy, shotStreaming, makeShotList, reviseShotsFrom, approveShotGroups, breakdown, extenderPlanPreview,
-    setEditingGroupIndex, streaming,
+    setEditingGroupIndex, streaming, plates, platesFrozenReason,
   } = app
 
   const [selected, setSelected] = useState<Set<number>>(new Set())
@@ -104,6 +111,30 @@ export function StoryAndShots({ onOpenClipInHand }: { onOpenClipInHand: (groupIn
             {shotListBusy ? 'Making the shot list…' : shotList ? 'Remake the shot list' : 'Make the shot list'}
           </button>
         </div>
+      </div>
+
+      <div className="card" style={{ marginTop: 9 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 9 }}>
+          <div className="lbl">Plates</div>
+          <div style={{ flexGrow: 1 }} />
+          <span className="tok">{plates.length} of {EXTENDER_REF_SLOTS}</span>
+          <button className="btn sm" onClick={onOpenPlates}>Manage plates</button>
+        </div>
+        <div style={{ fontSize: 11.5, color: 'var(--ink3)', marginTop: 4 }}>
+          Recurring characters need a plate to stay the same person across clips — a prompt cites one as
+          &lt;Picture N&gt;, so position here is what a prompt means by N.
+        </div>
+        {plates.length > 0 && (
+          <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', marginTop: 9 }}>
+            {plates.map((p, i) => (
+              <span key={p.id} className="chip" title={p.job.trim() || 'No job written yet.'}>
+                &lt;{p.kind === 'video' ? 'Video' : 'Picture'} {i + 1}&gt; {p.name}
+                {!p.job.trim() && <span style={{ color: 'var(--ox)' }}> · no job</span>}
+              </span>
+            ))}
+          </div>
+        )}
+        {platesFrozenReason && <div className="alert warn" style={{ marginTop: 9 }}>{platesFrozenReason}</div>}
       </div>
 
       {shotStreaming && (

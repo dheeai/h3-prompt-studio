@@ -16,7 +16,7 @@ import {
 import type { PollResult } from '../lib/comfy'
 import { framesForSeconds } from '../lib/geometry'
 import { parseWorkflow } from '../lib/workflow'
-import { EXTENDER_REF_SLOTS, ExtenderError, buildExtenderGraph, extenderCostEstimate, extenderGeometryFromInputs, readExtenderMasterInputs } from '../lib/extender'
+import { EXTENDER_REF_SLOTS, ExtenderError, buildExtenderGraph, extenderCostEstimate, extenderGeometryFromInputs, platesFreezeReason, readExtenderMasterInputs } from '../lib/extender'
 import { mergeExtenderInputs } from '../lib/extenderSettings'
 import type { ExtenderNodeSchema } from '../lib/extenderSettings'
 import { readBakedLoraStack } from '../lib/loras'
@@ -449,6 +449,11 @@ export interface Api {
    * will sample versus come from cache), computed off exactly the flags
    * `renderExtenderPlan` will send. Null with no plan yet. */
   extenderPlanPreview: ExtenderPlanPreview | null
+  /** Non-null while any clip in the current plan is validated — the plate
+   * picker's freeze banner reads this directly rather than re-deriving it,
+   * so the freeze message shown before a plate is picked can never drift
+   * from what `renderExtenderPlan`'s own guard would refuse at submit. */
+  platesFrozenReason: string | null
   /** The active Master Extender film's own identity/scenes — see
    * `Clip.extender`'s module comment. Null until some clip in this session
    * rendered through this path. */
@@ -1964,6 +1969,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [session.breakdown, session.versions, clips, plates, extenderGraph])
 
+  /**
+   * Full Story mode's plate freeze — read straight off `extenderPlanPreview`'s
+   * own `fromCache` count, the SAME validated-count `renderExtenderPlan` will
+   * pass `buildExtenderGraph` as `validatedCount` (see `checkExtenderSignature`
+   * in `lib/extender.ts`), so this can never disagree with what a submit would
+   * actually refuse. Null (nothing frozen) until a clip plan exists at all,
+   * since there is nothing yet that a plate change could invalidate.
+   */
+  const platesFrozenReason = useMemo(
+    () => platesFreezeReason(extenderPlanPreview?.cost.fromCache ?? 0),
+    [extenderPlanPreview],
+  )
+
   const savePlate = useCallback(async (p: Plate) => {
     setPlates((prev) => {
       const i = prev.findIndex((x) => x.id === p.id)
@@ -3019,6 +3037,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     extenderNodeSchema,
     extenderDefaultLoraStack,
     extenderPlanPreview,
+    platesFrozenReason,
     extenderFilm,
     extenderProgress,
     renderExtenderPlan,

@@ -250,6 +250,26 @@ export function extenderSignatureDiff(current: Record<string, unknown>, prior: R
 }
 
 /**
+ * The freeze message for the PLATE PICKER, shown at the point of choosing a
+ * plate rather than only when a submit is later refused (issue #31) —
+ * `refs_json` is one of the 28 `EXTENDER_SIGNATURE_FIELDS`, so adding,
+ * removing, or reordering a plate once `validatedCount` clips exist would
+ * move the signature and `checkExtenderSignature` would refuse the very next
+ * submit, discarding every validated clip. Null means the plate SET is free
+ * to change (nothing validated yet to lose) — editing a plate's job text,
+ * name, or wardrobe never touches `refs_json` and is never gated by this,
+ * however this reads.
+ */
+export function platesFreezeReason(validatedCount: number): string | null {
+  if (validatedCount <= 0) return null
+  return (
+    `${validatedCount} clip${validatedCount === 1 ? ' is' : 's are'} already validated in this film. ` +
+    `Adding, removing, or reordering a plate would move the render signature (refs_json) and truncate ` +
+    `the chain — every validated clip re-rendered. Editing a plate's job text or name is still safe.`
+  )
+}
+
+/**
  * Guard the chain against TRAP 2: throws `ExtenderError` naming what moved
  * and how many validated clips it would destroy, UNLESS `acceptReset` is
  * explicitly passed — the same refusal shape as `h3-step-by-step/submit.mjs`'s

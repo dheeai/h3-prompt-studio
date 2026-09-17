@@ -1,3 +1,4 @@
+import { describeFilmLook } from './filmLook'
 import type { Breakdown, BreakdownClip, ClipRole, FilmContext, StageId, Version } from './types'
 
 export const STAGE_ORDER: StageId[] = ['direct', 'draft', 'critique', 'revise']
@@ -718,6 +719,12 @@ that fails at submit time.
 export function filmBlock(f: FilmContext | undefined): string {
   if (!f) return ''
 
+  // The look is a film-wide constant (see `FilmLook`'s module comment in
+  // `types.ts`): it applies whether or not this clip is part of a longer
+  // film, so it is computed once here and folded into both branches below —
+  // the one change this function makes for the 2026-09-17 look selector.
+  const lookBlock = describeFilmLook(f.look)
+
   // A breakdown clip may set `covers` without ever setting a role beyond
   // 'standalone' (a source that turned out to fit in one clip) — that still
   // needs saying, even though the "part of a longer film" machinery below
@@ -726,7 +733,7 @@ export function filmBlock(f: FilmContext | undefined): string {
     ? `THIS CLIP COVERS exactly: ${f.covers}. Direct only this. The rest of the source is context for continuity, not material to shoot.\n`
     : ''
 
-  if (f.role === 'standalone') return coversBlock
+  if (f.role === 'standalone') return `${lookBlock}${coversBlock}`
 
   const roleLine: Record<Exclude<ClipRole, 'standalone'>, string> = {
     opening: 'This clip OPENS the film. It is the only one that may establish — it earns its hook. It must not resolve.',
@@ -736,7 +743,7 @@ export function filmBlock(f: FilmContext | undefined): string {
     closing: 'This clip CLOSES the film. It is the only one that may resolve, and it resolves what the film set up — not something of its own.',
   }
 
-  return `THIS CLIP IS PART OF A LONGER FILM — DIRECT IT AS A PART, NOT A WHOLE
+  return `${lookBlock}THIS CLIP IS PART OF A LONGER FILM — DIRECT IT AS A PART, NOT A WHOLE
 
 ${roleLine[f.role as Exclude<ClipRole, 'standalone'>]}
 

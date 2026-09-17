@@ -146,6 +146,56 @@ export interface FilmContext {
   covers?: string
   /** Which clip of a breakdown this is, so a pass can be attributed to it. */
   clipIndex?: number
+  /**
+   * A film-wide camera/lens/look choice, made once and carried into every
+   * clip's `{{film}}` block (`filmBlock` in `stages.ts` → `describeFilmLook`
+   * in `filmLook.ts`) — see `FilmLook`'s own comment for why this lives here
+   * rather than as a render/graph setting. `state.tsx`'s `setFilm` merges a
+   * partial update onto the existing `film` object, so setting this once,
+   * before any clip is authored, is enough for it to reach every clip
+   * authored afterwards without being re-picked per clip.
+   */
+  look?: FilmLook
+}
+
+/**
+ * A film-wide camera/lens/look choice (2026-09-17 brief: "a camera lens as a
+ * static selection at the beginning"; refined same day to ONE dropdown of
+ * named camera-and-lens COMBINATIONS rather than independent axes — a focal
+ * length, a grain gauge and a palette are not independent choices, and a
+ * multi-axis form invites picking ones that do not describe any real camera
+ * package).
+ *
+ * Deliberately NOT one of `EXTENDER_SIGNATURE_FIELDS` (`extender.ts`) and
+ * never routed through `buildExtenderGraph` — those 28 fields are hashed by
+ * the Master Extender node, and moving one truncates every already-validated
+ * clip in the film. A look is authored PROMPT text instead: changing it
+ * mid-film reaches only clips not yet authored, leaving already-authored or
+ * already-rendered clips exactly as they were (and the film visually
+ * inconsistent until those are redone by hand) — a much cheaper failure mode
+ * than discarding a validated render.
+ *
+ * The presets themselves (see `FILM_LOOK_PRESETS` in `filmLook.ts`) are
+ * built from the `h3-cinematography` skill's own six-element look grammar
+ * (aspect, grain gauge, four-colour palette, optics register), which
+ * records what actually reads as cinema to H3, rather than being invented
+ * here. `preset` is optional, and `freeText` is a standing escape hatch — a
+ * named list cannot cover everything H3 responds to. An entirely unset look
+ * adds nothing to the prompt — see `describeFilmLook`.
+ *
+ * UNMEASURED: whether a stated focal length (part of a preset's optics
+ * register) produces a genuine field-of-view change in the render, or is
+ * only a stylistic nudge H3 obeys the way it obeys grain/palette
+ * vocabulary. A preset's `bestFor` line is a suggestion about the LOOK,
+ * never a claim of optical accuracy.
+ */
+export interface FilmLook {
+  /** The id of a `FilmLookPreset` from `filmLook.ts`'s `FILM_LOOK_PRESETS` —
+   * a complete, coherent camera-and-lens combination, not an isolated axis. */
+  preset?: string
+  /** Anything the preset list doesn't cover, appended verbatim — or a look
+   * written entirely from scratch, alongside or instead of a preset. */
+  freeText?: string
 }
 
 /**

@@ -5,6 +5,8 @@ import { ceilingAlert, groupBandState } from '../lib/shotScreens'
 import type { GroupBandState } from '../lib/shotScreens'
 import { EXTENDER_REF_SLOTS } from '../lib/extender'
 import { DraftingStatus } from './DraftingStatus'
+import { FILM_LOOK_PRESETS, filmLookPreset, isFilmLookSet } from '../lib/filmLook'
+import type { FilmContext, FilmLook } from '../lib/types'
 
 function bandColor(state: GroupBandState): string {
   if (state === 'kept') return 'var(--grn)'
@@ -16,6 +18,70 @@ function bandLabel(state: GroupBandState): string {
   if (state === 'kept') return 'kept · validated'
   if (state === 'waiting') return 'rendered-and-waiting'
   return 'not yet written'
+}
+
+/**
+ * The film-wide camera/lens/look selector (2026-09-17 brief, refined same
+ * day to ONE dropdown of named camera-and-lens COMBINATIONS rather than
+ * independent axes — a focal length, a grain gauge and a palette are not
+ * independent choices, and a multi-axis form invites picking ones that
+ * don't describe any real camera package). Lives here, next to the plot,
+ * rather than in the render settings panel: it is authored PROMPT text
+ * picked once for the whole film — the same kind of decision as the plot
+ * itself — not a ComfyUI graph setting, and it never touches
+ * `EXTENDER_SIGNATURE_FIELDS`. Writes through `setFilm`, which
+ * shallow-merges onto the existing `FilmContext`, so setting this before any
+ * clip is approved is enough for it to reach every clip approved afterwards
+ * (`approveShotGroups`/`generateRest`/`authorNextAfterLanding` all call
+ * `setFilm` with a partial object that leaves `look` untouched).
+ */
+function FilmLookCard({ look, setFilm }: { look: FilmLook | undefined; setFilm: (f: Partial<FilmContext>) => void }) {
+  const set = (patch: Partial<FilmLook>) => setFilm({ look: { ...look, ...patch } })
+  const preset = filmLookPreset(look?.preset)
+  return (
+    <div className="card" style={{ marginTop: 9 }}>
+      <div className="lbl">Film-wide look</div>
+      <div style={{ fontSize: 11.5, color: 'var(--ink3)', marginTop: 4, lineHeight: 1.5 }}>
+        Chosen once, applied to every clip — a described LOOK, not a measured optical change. "Best for" is a
+        suggestion about the look a combination produces, not a claim that H3 renders a true optical equivalent —
+        whether a stated focal length actually shifts field of view, or is only a stylistic nudge, has not been
+        measured.
+        <br />
+        This rides on the film context, not the render graph, on purpose: changing it here reaches only clips not
+        yet authored. An already-authored or already-rendered clip keeps the look it was written under until you
+        redo it by hand — the film reads inconsistently in the meantime.
+      </div>
+      <label className="tok" style={{ display: 'block', marginTop: 10 }}>
+        Camera &amp; lens
+        <select value={look?.preset ?? ''} onChange={(e) => set({ preset: e.target.value || undefined })} style={{ width: '100%', marginTop: 4 }}>
+          <option value="">unset</option>
+          {FILM_LOOK_PRESETS.map((p) => (
+            <option key={p.id} value={p.id}>{p.name} — best for {p.bestFor}</option>
+          ))}
+        </select>
+      </label>
+      {preset && (
+        <div className="tok" style={{ display: 'block', marginTop: 6, color: 'var(--ink2)', lineHeight: 1.5 }}>
+          {preset.description}
+        </div>
+      )}
+      <label className="tok" style={{ display: 'block', marginTop: 10 }}>
+        Free text — anything the list above doesn't cover
+        <textarea
+          className="composer-textarea"
+          style={{ minHeight: 46, marginTop: 4 }}
+          value={look?.freeText ?? ''}
+          onChange={(e) => set({ freeText: e.target.value })}
+          placeholder="a specific stock name, a reference director's look, a look written entirely from scratch…"
+        />
+      </label>
+      {isFilmLookSet(look) && (
+        <div className="tok" style={{ marginTop: 8, color: 'var(--ink2)' }}>
+          Applied to every clip authored from here on — visible in the prompt each Direct/Draft pass produces.
+        </div>
+      )}
+    </div>
+  )
 }
 
 /**
@@ -37,7 +103,7 @@ export function StoryAndShots({
   const {
     plot, setPlot, maxRuntimeSeconds, setMaxRuntimeSeconds, shotList, shotGroups, shotGroupIssues,
     shotListBusy, shotStreaming, makeShotList, reviseShotsFrom, approveShotGroups, breakdown, extenderPlanPreview,
-    setEditingGroupIndex, streaming, plates, platesFrozenReason,
+    setEditingGroupIndex, streaming, plates, platesFrozenReason, film, setFilm,
   } = app
 
   const [selected, setSelected] = useState<Set<number>>(new Set())
@@ -112,6 +178,8 @@ export function StoryAndShots({
           </button>
         </div>
       </div>
+
+      <FilmLookCard look={film.look} setFilm={setFilm} />
 
       <div className="card" style={{ marginTop: 9 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 9 }}>

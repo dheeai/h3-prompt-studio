@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  EXTENDER_SIGNATURE_FIELDS,
   ExtenderError,
   buildExtenderClipsJson,
   buildExtenderGraph,
@@ -678,4 +679,19 @@ test('platesFreezeReason matches what the guard would actually refuse: same vali
   }
   assert.ok(caught instanceof ExtenderError, 'submitting with a swapped plate at this validatedCount must still be refused')
   assert.match((caught as Error).message, /refs_json/)
+})
+
+// ── the film-wide look (2026-09-17 brief) is NOT a signature field ────────
+// It rides on FilmContext, never on the graph the Master Extender node
+// hashes — see FilmLook's module comment in types.ts. A regression here
+// would silently start truncating every validated clip in a film the
+// moment an operator picked a different look.
+
+test('EXTENDER_SIGNATURE_FIELDS never gained the film-wide look, or any of its fields', () => {
+  const fields = EXTENDER_SIGNATURE_FIELDS as readonly string[]
+  assert.ok(!fields.includes('look'))
+  assert.ok(!fields.includes('preset'))
+  assert.ok(!fields.includes('freeText'))
+  assert.ok(!fields.includes('film'))
+  assert.ok(!fields.some((f) => /look/i.test(f)))
 })

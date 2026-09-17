@@ -1,5 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useApp } from '../app/state'
+import { LoraStackEditor } from './LoraStackEditor'
+import { listLoraNames } from '../lib/comfy'
+import { localLoraStackOverride } from '../lib/loras'
 
 /**
  * Screen 2 — "The clip in hand" (2026-09-17 brief). The set currently open,
@@ -15,9 +18,30 @@ export function ClipInHand({ onOpenStoryAndShots }: { onOpenStoryAndShots: () =>
     shotList, shotGroups, editingGroupIndex, setEditingGroupIndex, breakdown,
     rewordShotText, retimeShotSeconds, addShotInGroup, dropShotByIndex, pullShotIntoGroup, pushShotOutOfGroup,
     approveShotGroups, shotListBusy, streaming,
+    setClipLoraStack, filmLoraStack, extenderDefaultLoraStack, endpoint,
   } = app
   const [newCovers, setNewCovers] = useState('')
   const [newSeconds, setNewSeconds] = useState(4)
+  const [loraNames, setLoraNames] = useState<string[]>([])
+  // Same fetch `StoryAndShots`/`ClipPlan`/`Composer` each do independently —
+  // `/object_info` is on ComfyUI's light paths, so listing it never forces a
+  // GPU backend switch.
+  useEffect(() => {
+    if (!endpoint) return
+    let live = true
+    listLoraNames(endpoint).then((n) => { if (live) setLoraNames(n) }).catch(() => {})
+    return () => { live = false }
+  }, [endpoint])
+
+  // What an UNSET clip actually falls back to: the film-wide default (Full
+  // Story mode's "Story & shots" card) if one is set, else the operator's
+  // own machine-local override, else the bound workflow's own baked
+  // default — the same chain `resolveLoraStack` applies at render time.
+  const inheritedDefault = useMemo(() => {
+    if (filmLoraStack !== undefined) return filmLoraStack
+    const local = localLoraStackOverride(import.meta.env.VITE_LOCAL_LORA_STACK)
+    return local.length ? local : extenderDefaultLoraStack
+  }, [filmLoraStack, extenderDefaultLoraStack])
 
   const busy = shotListBusy || !!streaming
   const groupPos = shotGroups.findIndex((g) => g.index === editingGroupIndex)
@@ -111,6 +135,34 @@ export function ClipInHand({ onOpenStoryAndShots }: { onOpenStoryAndShots: () =>
           <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
             <button className="btn sm ghost" onClick={() => pullShotIntoGroup(group.index)}>pull a shot in from the next clip</button>
             <button className="btn sm ghost" disabled={groupShots.length <= 1} onClick={() => pushShotOutOfGroup(group.index)}>push the last shot out to the next clip</button>
+          </div>
+        )}
+
+        {/* A per-clip override writes onto `BreakdownClip.loraStack`
+            (`setClipLoraStack`), which only exists once this set has been
+            approved into the plan — before that there is nowhere to write
+            it, so this offers the note below instead rather than a control
+            that would silently do nothing. */}
+        {approvedClip ? (
+          <div style={{ marginTop: 14 }}>
+            <LoraStackEditor
+              label={`clip ${group.index}`}
+              stack={approvedClip.loraStack}
+              defaultStack={inheritedDefault}
+              available={loraNames}
+              onChange={(stack) => setClipLoraStack(group.index, stack)}
+              customizedLabel="overridden for this clip"
+              defaultLabel={
+                filmLoraStack !== undefined
+                  ? 'inheriting the film-wide stack (Story & shots)'
+                  : "inheriting the workflow's own default — no film-wide stack is set"
+              }
+            />
+          </div>
+        ) : (
+          <div className="tok" style={{ marginTop: 14, lineHeight: 1.55, display: 'block' }}>
+            Approve this clip to give it its own style-LoRA stack — until then it will inherit
+            {filmLoraStack !== undefined ? ' the film-wide stack' : " the workflow's own default"} when it renders.
           </div>
         )}
 

@@ -21,7 +21,7 @@ import { mergeExtenderInputs } from '../lib/extenderSettings'
 import type { ExtenderNodeSchema } from '../lib/extenderSettings'
 import { watchExtenderProgress } from '../lib/extenderLiveProgress'
 import type { ExtenderLiveProgress, ExtenderProgressHandle } from '../lib/extenderLiveProgress'
-import { readBakedLoraStack } from '../lib/loras'
+import { localLoraStackOverride, loraStackToWire, planNeedsPerSceneLoraSplit, readBakedLoraStack, resolveLoraStack } from '../lib/loras'
 import type { ExtenderClipInput, ExtenderCostEstimate, ExtenderPlate, ExtenderPreviewInfo } from '../lib/extender'
 import { clipsAfterStop, countFromIndex, dropFromIndex, dropInvalidatedAutoDraft, redoSeed, validatedClipAt } from '../lib/filmEdit'
 import type { PendingAutoDraft } from '../lib/filmEdit'
@@ -189,6 +189,17 @@ interface Session {
   shotGroupIssues?: string[]
   /** Which shot group "The clip in hand" (Screen 2) is currently open. */
   editingGroupIndex?: number | null
+  /**
+   * Full Story mode's film-wide style-LoRA default — the same kind of
+   * decision as `FilmLook` (chosen once, applies to the whole film), but
+   * this one is NOT baked into prompt text: it is read at RENDER time,
+   * exactly where a `BreakdownClip.loraStack` already is (`resolveLoraStack`
+   * in `lib/loras.ts`). `undefined` means no film-wide choice has been
+   * made — every clip falls through to the bound workflow's own baked
+   * default unless it has its own override. Set explicitly (including `[]`)
+   * the moment "Story & shots" is used to choose one.
+   */
+  filmLoraStack?: LoraStackEntry[]
 }
 
 /** The operator's runtime ceiling before they have set one — see
@@ -290,6 +301,11 @@ interface ExtenderPlanPreviewClip {
   prompt: string
   seconds: number
   validated: boolean
+  /** This clip's RESOLVED style-stack for a fresh submit — its own choice,
+   * else the film-wide default, else the bound workflow's own baked default
+   * (`resolveLoraStack`). An already-validated clip resends whatever it
+   * actually rendered with instead (`Clip.loraStack`), never this. */
+  loraStack: LoraStackEntry[]
 }
 
 interface ExtenderPlanPreview {
@@ -301,6 +317,16 @@ interface ExtenderPlanPreview {
   cost: ExtenderCostEstimate
   /** Every blocking problem — same contract as `sceneBlockers`. */
   issues: string[]
+  /**
+   * Non-null the moment two or more plan clips RESOLVE to different style
+   * stacks (`planNeedsPerSceneLoraSplit`) — a real condition once a
+   * film-wide default and per-clip overrides can disagree, not a
+   * hypothetical. Deliberately NOT folded into `issues`: unlike those, this
+   * never blocks a submit (a `full_batch` job still goes out), it is only
+   * something the operator should know before choosing `full_batch` over
+   * one job per scene.
+   */
+  loraSplitWarning: string | null
 }
 
 export interface Api {
@@ -406,6 +432,12 @@ export interface Api {
   pullShotIntoGroup: (groupIndex: number) => void
   /** Push this group's last shot into the next one. */
   pushShotOutOfGroup: (groupIndex: number) => void
+  /** Full Story mode's film-wide style-LoRA default — see
+   * `Session.filmLoraStack`'s module comment. `undefined` = no film-wide
+   * choice; every clip falls through to the bound workflow's own baked
+   * default unless it has its own override. */
+  filmLoraStack: LoraStackEntry[] | undefined
+  setFilmLoraStack: (stack: LoraStackEntry[] | undefined) => void
 
   // ── the render loop ─────────────────────────────────────────────────
   plates: Plate[]
@@ -1619,6 +1651,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setSession(next)
   }, [])
 
+  /** Set (or clear, with `undefined`) the whole film's default style-LoRA
+   * stack — see `Session.filmLoraStack`'s module comment. */
+  const setFilmLoraStack = useCallback((filmLoraStack: LoraStackEntry[] | undefined) => {
+    const next = { ...sessionRef.current, filmLoraStack }
+    sessionRef.current = next
+    setSession(next)
+  }, [])
+
   /** One shots-stage model call. No skills, no system prompt — the template
    * is the whole ask (see `shotList.ts`'s module comment on why `shots` is
    * kept off the Direct/Draft `StageId` chain), so this never touches
@@ -1963,10 +2003,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!b || !b.clips.length) return null
 
     const nodeId = `m_${b.at.toString(36)}`
+    // Same two-level fallback `ClipPlan`/`Composer` already apply for their
+    // own `defaultStack` — a local machine override, else the bound graph's
+    // own baked default — computed once here rather than per clip.
+    const localOverride = localLoraStackOverride(import.meta.env.VITE_LOCAL_LORA_STACK)
+    const workflowDefault = localOverride.length ? localOverride : readBakedLoraStack(extenderGraph)
     const plan = b.clips.map((c) => {
       const v = [...session.versions].reverse().find((x) => x.clipIndex === c.index && PROMPT_STAGES.has(x.stage))
       const validated = !!validatedClipAt(clips, nodeId, c.index)
-      return { index: c.index, title: c.title || `clip ${c.index}`, seconds: c.seconds, prompt: v?.text ?? '', validated }
+      const loraStack = resolveLoraStack(c.loraStack, session.filmLoraStack, workflowDefault)
+      return { index: c.index, title: c.title || `clip ${c.index}`, seconds: c.seconds, prompt: v?.text ?? '', validated, loraStack }
     })
 
     const issues: string[] = []
@@ -1975,13 +2021,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const imagePlateCount = plates.filter((p) => p.kind === 'image').length
     if (imagePlateCount > EXTENDER_REF_SLOTS) issues.push(`${imagePlateCount} plates exceeds H3's ${EXTENDER_REF_SLOTS}-reference cap.`)
 
+    const loraSplitWarning = planNeedsPerSceneLoraSplit(plan.map((p) => p.loraStack))
+      ? 'Clips in this plan resolve to different style-LoRA stacks. One Master Extender job stamps a single run — submitting one job per scene (rather than the whole plan at once) is the only way each clip renders with the stack it was actually given.'
+      : null
+
     return {
       nodeId,
       clips: plan,
       cost: extenderCostEstimate(plan),
       issues,
+      loraSplitWarning,
     }
-  }, [session.breakdown, session.versions, clips, plates, extenderGraph])
+  }, [session.breakdown, session.versions, session.filmLoraStack, clips, plates, extenderGraph])
 
   /**
    * Full Story mode's plate freeze — read straight off `extenderPlanPreview`'s
@@ -2139,7 +2190,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const vs = sessionRef.current.versions
       const plan = b.clips.map((c) => {
         const v = [...vs].reverse().find((x) => x.clipIndex === c.index && PROMPT_STAGES.has(x.stage))
-        return { index: c.index, title: c.title || `clip ${c.index}`, seconds: c.seconds, prompt: v?.text ?? '' }
+        return { index: c.index, title: c.title || `clip ${c.index}`, seconds: c.seconds, prompt: v?.text ?? '', loraStack: c.loraStack }
       })
 
       // A clip already validated as part of THIS film resends exactly what
@@ -2153,10 +2204,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
           .filter((x) => x.extender?.nodeId === nodeId && x.extender.sceneIndex === index && x.state === 'done')
           .sort((a, x) => x.at - a.at)[0]
 
-      const extClips: ExtenderClipInput[] = plan.map((p) => {
+      // Same two-level fallback `ClipPlan`/`Composer` already apply for
+      // their own `defaultStack` — a local machine override, else the
+      // bound graph's own baked default.
+      const localOverride = localLoraStackOverride(import.meta.env.VITE_LOCAL_LORA_STACK)
+      const workflowDefault = localOverride.length ? localOverride : readBakedLoraStack(extenderGraph)
+
+      // Each entry pairs the `ExtenderClipInput` that goes on the wire with
+      // the plain `LoraStackEntry[]` it resolved to, so `draftClips` below
+      // can record the SAME stack onto `Clip.loraStack` ("the style-stack
+      // this scene actually rendered with") without resolving it twice.
+      const planned = plan.map((p) => {
         const prior = priorFor(p.index)
         if (prior) {
-          return { title: p.title, prompt: prior.prompt, seconds: (prior.frames ?? 0) / 24, seed: prior.seed ?? 42, validated: true }
+          // A validated clip resends exactly what it recorded when it
+          // rendered — never re-resolved against today's film-wide default
+          // or workflow baked default, which may have moved since.
+          const loraStack = prior.loraStack ?? []
+          const input: ExtenderClipInput = {
+            title: p.title,
+            prompt: prior.prompt,
+            seconds: (prior.frames ?? 0) / 24,
+            seed: prior.seed ?? 42,
+            validated: true,
+            loras: loraStackToWire(loraStack),
+          }
+          return { input, loraStack }
         }
         // A REDO (`redoPlanClip`) may have left a one-shot keep-seed request
         // for this exact index — see `redoSeedOverridesRef`'s module comment.
@@ -2166,14 +2239,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const overrideKey = `${nodeId}:${p.index}`
         const keptSeed = redoSeedOverridesRef.current[overrideKey]
         delete redoSeedOverridesRef.current[overrideKey]
-        return {
+        const loraStack = resolveLoraStack(p.loraStack, sessionRef.current.filmLoraStack, workflowDefault)
+        const input: ExtenderClipInput = {
           title: p.title,
           prompt: p.prompt,
           seconds: p.seconds,
           seed: redoSeed(keptSeed, keptSeed !== undefined, () => (settings.lockSeed ? settings.seed : Math.floor(Math.random() * 2 ** 31))),
           validated: false,
+          loras: loraStackToWire(loraStack),
         }
+        return { input, loraStack }
       })
+      const extClips: ExtenderClipInput[] = planned.map((p) => p.input)
 
       const missing = extClips.filter((c) => !c.prompt.trim())
       if (missing.length) {
@@ -2208,6 +2285,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         frames: Math.round(extClips[i].seconds * 24),
         fps: 24,
         extender: { nodeId, sceneIndex: p.index },
+        loraStack: planned[i].loraStack,
         at: Date.now(),
       }))
 
@@ -3054,6 +3132,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     dropShotByIndex,
     pullShotIntoGroup,
     pushShotOutOfGroup,
+    filmLoraStack: session.filmLoraStack,
+    setFilmLoraStack,
     plates,
     endpoints,
     endpoint,

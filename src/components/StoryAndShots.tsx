@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useApp } from '../app/state'
 import { RUNTIME_MAX_SECONDS, RUNTIME_MIN_SECONDS, RUNTIME_STEP_SECONDS, checkRuntimeCeiling, clampRuntimeSeconds, formatRuntime, groupsAffectedByCut, parsePartialShotList } from '../lib/shotList'
 import { ceilingAlert, groupBandState } from '../lib/shotScreens'
@@ -6,7 +6,10 @@ import type { GroupBandState } from '../lib/shotScreens'
 import { EXTENDER_REF_SLOTS } from '../lib/extender'
 import { DraftingStatus } from './DraftingStatus'
 import { FILM_LOOK_PRESETS, filmLookPreset, isFilmLookSet } from '../lib/filmLook'
-import type { FilmContext, FilmLook } from '../lib/types'
+import { LoraStackEditor } from './LoraStackEditor'
+import { listLoraNames } from '../lib/comfy'
+import { localLoraStackOverride } from '../lib/loras'
+import type { FilmContext, FilmLook, LoraStackEntry } from '../lib/types'
 
 function bandColor(state: GroupBandState): string {
   if (state === 'kept') return 'var(--grn)'
@@ -85,6 +88,59 @@ function FilmLookCard({ look, setFilm }: { look: FilmLook | undefined; setFilm: 
 }
 
 /**
+ * The film-wide style-LoRA default (founder: "the story mode doesn't have
+ * the lora selection"). The same KIND of decision as `FilmLookCard` right
+ * above — chosen once, applies to the whole film — but unlike the look,
+ * this is NOT baked into prompt text: `loras` sits in `EXTENDER_FREE_FIELDS`
+ * (`lib/extender.ts`), so it is read at RENDER time, the same moment a
+ * `BreakdownClip`'s own per-clip stack already is (`resolveLoraStack` in
+ * `lib/loras.ts`, wired into `renderExtenderPlan`). Reuses `LoraStackEditor`
+ * — the SAME editor `ClipPlan`/`Composer` already mount — rather than a
+ * second implementation.
+ *
+ * Because a LoRA change never moves the render signature, it never
+ * re-renders anything on its own — safe to change mid-film. But that cuts
+ * both ways: change it partway through and every clip already rendered
+ * keeps whatever it rendered with, so the film reads inconsistently
+ * between clips rendered before and after, with NO warning from the guard
+ * (nothing here moved as far as it's concerned) — said here plainly rather
+ * than left for the operator to discover on watch.
+ */
+function FilmLoraCard({
+  stack,
+  defaultStack,
+  available,
+  onChange,
+}: {
+  stack: LoraStackEntry[] | undefined
+  defaultStack: LoraStackEntry[]
+  available: string[]
+  onChange: (stack: LoraStackEntry[] | undefined) => void
+}) {
+  return (
+    <div className="card" style={{ marginTop: 9 }}>
+      <div className="lbl">Film-wide style LoRAs</div>
+      <div style={{ fontSize: 11.5, color: 'var(--ink3)', marginTop: 4, lineHeight: 1.5 }}>
+        Chosen once, applies to every clip that hasn't set its own on "The clip in hand" — a per-clip
+        override always wins over this. Never part of the render signature, so changing it never
+        re-renders anything already made — but for the same reason, a clip rendered before the change
+        keeps the stack it rendered with, and the film reads inconsistently between clips rendered
+        before and after until those are redone by hand.
+      </div>
+      <LoraStackEditor
+        label="the whole film"
+        stack={stack}
+        defaultStack={defaultStack}
+        available={available}
+        onChange={onChange}
+        customizedLabel="a film-wide stack is set"
+        defaultLabel="no film-wide stack — every clip falls back to the workflow's own default"
+      />
+    </div>
+  )
+}
+
+/**
  * Screen 1 — "Story & shots" (2026-09-17 brief). The plot and the runtime
  * ceiling live HERE; a rendered clip reports its own state back onto the
  * SAME list, so this stays the one map of the film. Approving a set derives
@@ -104,7 +160,27 @@ export function StoryAndShots({
     plot, setPlot, maxRuntimeSeconds, setMaxRuntimeSeconds, shotList, shotGroups, shotGroupIssues,
     shotListBusy, shotStreaming, makeShotList, reviseShotsFrom, approveShotGroups, breakdown, extenderPlanPreview,
     setEditingGroupIndex, streaming, plates, platesFrozenReason, film, setFilm,
+    filmLoraStack, setFilmLoraStack, extenderDefaultLoraStack, endpoint,
   } = app
+
+  const [loraNames, setLoraNames] = useState<string[]>([])
+  // The box's own LoRA folder — `/object_info` is on ComfyUI's light paths, so
+  // listing it never forces a GPU backend switch (same fetch `ClipPlan`/
+  // `Composer` already do — each host lists it independently).
+  useEffect(() => {
+    if (!endpoint) return
+    let live = true
+    listLoraNames(endpoint).then((n) => { if (live) setLoraNames(n) }).catch(() => {})
+    return () => { live = false }
+  }, [endpoint])
+
+  // The operator's own machine-local override wins when present, else the
+  // bound workflow's own baked default — the same fallback `ClipPlan`/
+  // `Composer` already apply for their own `defaultStack`.
+  const workflowLoraDefault = useMemo(() => {
+    const local = localLoraStackOverride(import.meta.env.VITE_LOCAL_LORA_STACK)
+    return local.length ? local : extenderDefaultLoraStack
+  }, [extenderDefaultLoraStack])
 
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [revFrom, setRevFrom] = useState(1)
@@ -188,6 +264,7 @@ export function StoryAndShots({
       </div>
 
       <FilmLookCard look={film.look} setFilm={setFilm} />
+      <FilmLoraCard stack={filmLoraStack} defaultStack={workflowLoraDefault} available={loraNames} onChange={setFilmLoraStack} />
 
       <div className="card" style={{ marginTop: 9 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 9 }}>
@@ -277,6 +354,10 @@ export function StoryAndShots({
             <div className="alert warn" style={{ marginTop: 9 }}>
               {shotGroupIssues.map((i) => <div key={i}>{i}</div>)}
             </div>
+          )}
+
+          {extenderPlanPreview?.loraSplitWarning && (
+            <div className="alert warn" style={{ marginTop: 9 }}>{extenderPlanPreview.loraSplitWarning}</div>
           )}
 
           <div className="card" style={{ marginTop: 9 }}>

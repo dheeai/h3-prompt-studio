@@ -31,6 +31,8 @@ export function LoraStackEditor({
   defaultStack,
   available,
   onChange,
+  customizedLabel = 'customized for this clip',
+  defaultLabel = "using the workflow's own default",
 }: {
   /** What this stack belongs to, for the heading — a scene number or 'next scene'. */
   label: string
@@ -38,6 +40,13 @@ export function LoraStackEditor({
   defaultStack: LoraStackEntry[]
   available: string[]
   onChange: (stack: LoraStackEntry[] | undefined) => void
+  /** The status line's two halves — override so a host can say what
+   * "unset" actually falls back to at ITS level (a per-clip editor
+   * inheriting a film-wide default reads differently from the film-wide
+   * editor itself falling back to the workflow's own baked stack). Default
+   * text matches this editor's original, single-level wording. */
+  customizedLabel?: string
+  defaultLabel?: string
 }) {
   const customized = stack !== undefined
   const effective = stack ?? defaultStack
@@ -56,7 +65,7 @@ export function LoraStackEditor({
     <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--rule)' }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
         <span className="lbl">Style LoRAs</span>
-        <span className="tok">{customized ? 'customized for this clip' : 'using the workflow\'s own default'}</span>
+        <span className="tok">{customized ? customizedLabel : defaultLabel}</span>
         <div style={{ flexGrow: 1 }} />
         {customized && (
           <button className="btn sm ghost" onClick={() => onChange(undefined)}>

@@ -32,11 +32,27 @@ export function selectableStyleLoras(all: string[]): string[] {
   return all.filter((name) => !ACCELERATOR_LORA_RE.test(name))
 }
 
+/** The exact per-entry shape an `LTX_lora_loader` node parses — `str`/`v`/`a`/`t`,
+ * not `strength` — shared by `serializeLoraStack` (the graph's own baked
+ * `stack_data`, stringified) and `loraStackToWire` (one plan clip's resolved
+ * stack, embedded directly as an array inside `clips_json[i].loras` — never a
+ * second stringified layer). A filename with `%20` in it survives either path
+ * untouched. */
+function loraWireEntry(e: LoraStackEntry) {
+  return { on: e.on, lora: e.lora, str: e.strength, v: 1, a: 1, t: 1 }
+}
+
 /** Serialize a style-stack selection into the exact `stack_data` shape an
- * `LTX_lora_loader` node parses — `str`/`v`/`a`/`t`, not `strength` — so a
- * filename with `%20` in it survives round-trip untouched. */
+ * `LTX_lora_loader` node parses. */
 export function serializeLoraStack(stack: LoraStackEntry[]): string {
-  return JSON.stringify(stack.map((e) => ({ on: e.on, lora: e.lora, str: e.strength, v: 1, a: 1, t: 1 })))
+  return JSON.stringify(stack.map(loraWireEntry))
+}
+
+/** The same wire shape as `serializeLoraStack`, but as a plain array rather
+ * than a JSON string — what `ExtenderClipInput.loras` (`extender.ts`) expects
+ * for one clip's entry inside `clips_json`. */
+export function loraStackToWire(stack: LoraStackEntry[]): Array<ReturnType<typeof loraWireEntry>> {
+  return stack.map(loraWireEntry)
 }
 
 /** Parse a `stack_data`-shaped JSON string (`serializeLoraStack`'s own output,
@@ -111,4 +127,27 @@ export function planNeedsPerSceneLoraSplit(stacks: ReadonlyArray<LoraStackEntry[
   if (stacks.length <= 1) return false
   const first = loraStackKey(stacks[0])
   return stacks.some((s) => loraStackKey(s) !== first)
+}
+
+/**
+ * One clip's resolved style-stack, in priority order: its OWN explicit
+ * choice, else the FILM-WIDE default (Full Story mode's "Story & shots"
+ * card — `Session.filmLoraStack`), else the bound workflow's own baked
+ * default. Mirrors the two-level fallback `ClipPlan`/`Composer` already
+ * apply for `defaultStack` (a local machine override, else the graph's own
+ * `stack_data`) one level further out: a per-clip override, else a
+ * film-wide one, else that same workflow default.
+ *
+ * Never a fourth level: an unset film default and a workflow default that
+ * happens to be `[]` are not distinguished, because both mean "nothing more
+ * specific was chosen here."
+ */
+export function resolveLoraStack(
+  clipStack: LoraStackEntry[] | undefined,
+  filmStack: LoraStackEntry[] | undefined,
+  workflowDefault: LoraStackEntry[],
+): LoraStackEntry[] {
+  if (clipStack !== undefined) return clipStack
+  if (filmStack !== undefined) return filmStack
+  return workflowDefault
 }

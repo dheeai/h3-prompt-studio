@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   ACCELERATOR_LORA_RE, selectableStyleLoras, serializeLoraStack, readBakedLoraStack,
-  loraStackKey, planNeedsPerSceneLoraSplit, localLoraStackOverride,
+  loraStackKey, planNeedsPerSceneLoraSplit, localLoraStackOverride, resolveLoraStack, loraStackToWire,
 } from './loras'
 import type { ComfyNode, LoraStackEntry } from './types'
 
@@ -105,4 +105,36 @@ test('planNeedsPerSceneLoraSplit: false when every clip is unset, or every clip 
   assert.equal(planNeedsPerSceneLoraSplit([]), false)
   assert.equal(planNeedsPerSceneLoraSplit([a, b, a]), true, 'one clip differs')
   assert.equal(planNeedsPerSceneLoraSplit([undefined, a]), true, 'unset vs. customized still counts as differing')
+})
+
+// ── resolveLoraStack / loraStackToWire — Full Story mode's film-wide
+// default with a per-clip override (founder brief: "the story mode doesn't
+// have the lora selection") ─────────────────────────────────────────────
+
+test('resolveLoraStack: an unset clip with no film default falls all the way through to the workflow default', () => {
+  const workflowDefault: LoraStackEntry[] = [{ lora: STYLE_A, strength: 0.4, on: true }]
+  assert.deepStrictEqual(resolveLoraStack(undefined, undefined, workflowDefault), workflowDefault)
+})
+
+test('resolveLoraStack: an unset clip inherits the film-wide default over the workflow default', () => {
+  const filmStack: LoraStackEntry[] = [{ lora: STYLE_B_ENCODED, strength: 0.6, on: true }]
+  const workflowDefault: LoraStackEntry[] = [{ lora: STYLE_A, strength: 0.4, on: true }]
+  assert.deepStrictEqual(resolveLoraStack(undefined, filmStack, workflowDefault), filmStack)
+})
+
+test('resolveLoraStack: an explicit per-clip stack wins over both the film-wide and the workflow default', () => {
+  const clipStack: LoraStackEntry[] = [{ lora: 'clip_only.safetensors', strength: 0.9, on: true }]
+  const filmStack: LoraStackEntry[] = [{ lora: STYLE_B_ENCODED, strength: 0.6, on: true }]
+  const workflowDefault: LoraStackEntry[] = [{ lora: STYLE_A, strength: 0.4, on: true }]
+  assert.deepStrictEqual(resolveLoraStack(clipStack, filmStack, workflowDefault), clipStack)
+})
+
+test('resolveLoraStack: an explicit empty stack (no style LoRA at all) is respected, never treated as "unset"', () => {
+  const filmStack: LoraStackEntry[] = [{ lora: STYLE_B_ENCODED, strength: 0.6, on: true }]
+  assert.deepStrictEqual(resolveLoraStack([], filmStack, [{ lora: STYLE_A, strength: 0.4, on: true }]), [])
+})
+
+test('loraStackToWire matches serializeLoraStack\'s own per-entry shape, unstringified', () => {
+  const stack: LoraStackEntry[] = [{ lora: STYLE_A, strength: 0.5, on: true }]
+  assert.deepStrictEqual(loraStackToWire(stack), JSON.parse(serializeLoraStack(stack)))
 })

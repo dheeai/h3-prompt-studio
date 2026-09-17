@@ -17,7 +17,8 @@ import {
   readExtenderMasterInputs,
   renumberExtenderNode,
 } from './extender'
-import type { ComfyNode } from './types'
+import { loraStackToWire, resolveLoraStack } from './loras'
+import type { ComfyNode, LoraStackEntry } from './types'
 import { dropFromIndex, redoSeed, validatedClipAt } from './filmEdit'
 
 /** A minimal stand-in for the shipped graph — one extender node ("6"), one
@@ -382,6 +383,41 @@ test('buildExtenderClipsJson defaults seed_mode to fixed and loras to an empty a
   assert.deepEqual(parsed.loras, [])
 })
 
+// ── Full Story mode's film-wide default + per-clip override, wired all the
+// way into clips_json — the same `resolveLoraStack` -> `loraStackToWire`
+// assembly `renderExtenderPlan` (state.tsx) runs per plan clip at submit
+// time, exercised here as pure functions since state.tsx itself has no
+// React-free seam to unit-test through. ───────────────────────────────────
+
+test('a plan of BreakdownClip-shaped inputs reaches clips_json.loras correctly resolved, PER CLIP', () => {
+  const workflowDefault: LoraStackEntry[] = [{ lora: 'workflow_default.safetensors', strength: 0.3, on: true }]
+  const filmStack: LoraStackEntry[] = [{ lora: 'film_wide.safetensors', strength: 0.6, on: true }]
+  // Clip 1: no override — inherits the film-wide stack.
+  // Clip 2: its own override — wins over the film-wide stack.
+  // Clip 3: no film-wide stack in force for it either — falls through to the workflow default.
+  const plan = [
+    { index: 1, clipStack: undefined, filmStack },
+    { index: 2, clipStack: [{ lora: 'clip2_only.safetensors', strength: 0.9, on: true }], filmStack },
+    { index: 3, clipStack: undefined, filmStack: undefined },
+  ]
+
+  const json = buildExtenderClipsJson(
+    plan.map((p) => ({
+      title: `Clip ${p.index}`,
+      prompt: `clip ${p.index}`,
+      seconds: 5,
+      seed: 1,
+      validated: false,
+      loras: loraStackToWire(resolveLoraStack(p.clipStack, p.filmStack, workflowDefault)),
+    })),
+  )
+  const parsed = JSON.parse(json) as Array<{ title: string; loras: unknown[] }>
+
+  assert.deepEqual(parsed[0].loras, [{ on: true, lora: 'film_wide.safetensors', str: 0.6, v: 1, a: 1, t: 1 }])
+  assert.deepEqual(parsed[1].loras, [{ on: true, lora: 'clip2_only.safetensors', str: 0.9, v: 1, a: 1, t: 1 }])
+  assert.deepEqual(parsed[2].loras, [{ on: true, lora: 'workflow_default.safetensors', str: 0.3, v: 1, a: 1, t: 1 }])
+})
+
 test('buildExtenderRefsJson places each plate at its 0-based index, padding the rest with null out to 9', () => {
   const json = buildExtenderRefsJson([
     { filename: 'lira.png', subfolder: '' },
@@ -694,4 +730,27 @@ test('EXTENDER_SIGNATURE_FIELDS never gained the film-wide look, or any of its f
   assert.ok(!fields.includes('freeText'))
   assert.ok(!fields.includes('film'))
   assert.ok(!fields.some((f) => /look/i.test(f)))
+})
+
+// ── the film-wide LoRA default (this brief) is ALSO not a signature field —
+// `loras` already lived in EXTENDER_FREE_FIELDS before this brief (a plan
+// clip's own stack was never hashed); this guards that a film-wide default
+// or its resolution never grows a NEW hashed field either. A regression here
+// would start truncating every validated clip the moment an operator picked
+// a film-wide style, or a per-clip override, rather than leaving both free
+// to change mid-film as documented.
+
+test('EXTENDER_SIGNATURE_FIELDS never gained the style-stack fields this brief touches', () => {
+  // NOT a blanket "/lora/i" scan — `pass2_lora`/`pass2_lora_strength`/
+  // `pass2_lora_mode` are the node's own pre-existing PASS-2 ACCELERATOR
+  // LoRA fields, legitimately hashed already, and unrelated to the style
+  // stack (`ACCELERATOR_LORA_RE` in `lib/loras.ts` is exactly the guard
+  // that keeps the two apart). This checks only the fields this brief could
+  // plausibly have added.
+  const fields = EXTENDER_SIGNATURE_FIELDS as readonly string[]
+  assert.ok(!fields.includes('loras'))
+  assert.ok(!fields.includes('loraStack'))
+  assert.ok(!fields.includes('filmLoraStack'))
+  assert.ok(!fields.includes('style_lora'))
+  assert.ok(!fields.includes('style_loras'))
 })

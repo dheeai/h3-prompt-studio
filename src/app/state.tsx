@@ -28,9 +28,14 @@ import { authoringModeForContent, authorContinuation, canAutoAuthorNext, clearDr
 import type { AuthoringMode } from '../lib/entry'
 import { clipsNeedingPrompt, isSingleRequestStage, type StudioRunPhase } from '../lib/studio-workflow'
 import { normalizeThinkingBudgets, resolveThinkingBudget } from '../lib/thinking'
+import {
+  SHOT_LIST_TEMPLATE, fillShotListTemplate, groupShotsIntoClips, parseShotList, reviseShotsFromIndex,
+  shotListResponseFormat,
+} from '../lib/shotList'
+import { addShotToGroup, clipsDiscardedByShotRevision, dropShot, pullShotFromNext, pushShotToNext, retimeShot, rewordShot, takeShotGroups } from '../lib/shotScreens'
 import type {
   Breakdown, ChatTurn, Clip, ComfyEndpoint, ComfyNode, FilmContext, Finding, LoraStackEntry, Plate, ProbeResult,
-  Provider, Selection, Settings, Skill, StageId, Version,
+  Provider, Selection, Settings, ShotGroup, ShotList, Skill, StageId, Version,
 } from '../lib/types'
 
 const SETTINGS_SCHEMA = 6
@@ -149,7 +154,37 @@ interface Session {
    * continuation's does.
    */
   pendingAutoDraft?: PendingAutoDraft
+
+  // ── Full Story mode (2026-09-17 brief) ─────────────────────────────────
+  /** "Story & shots"'s own plot text — kept apart from `story` (the
+   * per-clip composer's canonical prompt/source) so the two screens never
+   * share or clobber one another's text; the founder was explicit that the
+   * existing idea-to-prompt path is untouched by this. */
+  plot?: string
+  /** The operator's own hard runtime ceiling for the whole film, in
+   * seconds — see `shotList.ts`'s `checkRuntimeCeiling`. */
+  maxRuntimeSeconds?: number
+  /** Full Story mode's step-2 output — the whole film's shot list, before
+   * any grouping into clip-sized sets. */
+  shotList?: ShotList
+  /** `groupShotsIntoClips(shotList.shots)`'s own output, STORED rather than
+   * re-derived on every render: "The clip in hand" (Screen 2) can move a
+   * shot across a group boundary by hand (`pullShotFromNext`/
+   * `pushShotToNext`), which the automatic packer would otherwise silently
+   * undo the next time it ran. */
+  shotGroups?: ShotGroup[]
+  /** `groupShotsIntoClips`'s own disclosed hazards for the CURRENT
+   * `shotGroups` — a single shot over the ceiling, a trailing stub under
+   * the floor. Recomputed only when the packer itself runs (creation or a
+   * plot revision), not after a manual Screen 2 edit. */
+  shotGroupIssues?: string[]
+  /** Which shot group "The clip in hand" (Screen 2) is currently open. */
+  editingGroupIndex?: number | null
 }
+
+/** The operator's runtime ceiling before they have set one — see
+ * `Session.maxRuntimeSeconds`. */
+const DEFAULT_MAX_RUNTIME_SECONDS = 60
 
 type ContinuationPhase = 'frame' | 'draft' | 'ready'
 
@@ -307,6 +342,57 @@ export interface Api {
   run: (stage: StageId, note?: string, override?: RunContextOverride) => Promise<Version | null>
   /** Bounded generation for Scene/Clip; Prompt Rebuild is one LLM request. */
   rebuild: (mode?: AuthoringMode, opts?: { auto?: boolean }) => Promise<void>
+
+  // ── Full Story mode — "Story & shots" / "The clip in hand" ───────────
+  plot: string
+  setPlot: (s: string) => void
+  maxRuntimeSeconds: number
+  setMaxRuntimeSeconds: (n: number) => void
+  /** Full Story mode's step-2 output, or null before "make the shot list"
+   * has run. */
+  shotList: ShotList | null
+  /** `groupShotsIntoClips`'s stored output — see `Session.shotGroups`'s
+   * module comment for why this is stored rather than re-derived. */
+  shotGroups: ShotGroup[]
+  shotGroupIssues: string[]
+  /** A shots/revision model call is in flight. */
+  shotListBusy: boolean
+  /** One model call using the foundation's `SHOT_LIST_TEMPLATE`/
+   * `shotListResponseFormat`/`parseShotList`, from `plot`/`maxRuntimeSeconds`. */
+  makeShotList: () => Promise<void>
+  /**
+   * Regenerate the shot list from `cutShotIndex` on (`reviseShotsFromIndex`),
+   * and drop exactly the rendered clips `groupsAffectedByCut` says a cut at
+   * that shot invalidates — via `filmEdit.ts`'s existing `dropFromIndex`,
+   * never a second invalidation path. The caller (Screen 1) is responsible
+   * for showing the discard count and confirming BEFORE calling this — by
+   * the time this runs, the discard is happening.
+   */
+  reviseShotsFrom: (cutShotIndex: number) => Promise<void>
+  /**
+   * Approve one or several shot groups at once: derive a `BreakdownClip` for
+   * each (over the WHOLE grouping, so roles are decided correctly), merge
+   * into the existing plan, then author each newly-approved clip's prompt in
+   * turn via the EXISTING per-clip Direct/Draft path — exactly what
+   * `ClipPlan`'s own "Generate prompt" button already does, one clip at a
+   * time (the model is single-flighted).
+   */
+  approveShotGroups: (selectedGroupIndices: number[]) => Promise<void>
+  /** Which shot group "The clip in hand" is currently open; null = none. */
+  editingGroupIndex: number | null
+  setEditingGroupIndex: (i: number | null) => void
+  /** Reword one shot's `covers` — text only. */
+  rewordShotText: (shotIndex: number, covers: string) => void
+  /** Retime one shot; recomputes only its own group's total. */
+  retimeShotSeconds: (shotIndex: number, seconds: number) => void
+  /** Add a shot at the end of one group. */
+  addShotInGroup: (groupIndex: number, covers: string, seconds: number) => void
+  /** Drop one shot. */
+  dropShotByIndex: (shotIndex: number) => void
+  /** Pull the next group's first shot into this one. */
+  pullShotIntoGroup: (groupIndex: number) => void
+  /** Push this group's last shot into the next one. */
+  pushShotOutOfGroup: (groupIndex: number) => void
 
   // ── the render loop ─────────────────────────────────────────────────
   plates: Plate[]
@@ -1431,6 +1517,240 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setSession(next)
   }, [])
 
+  // ── Full Story mode — "Story & shots" / "The clip in hand" ────────────
+
+  const [shotListBusy, setShotListBusy] = useState(false)
+
+  const setPlot = useCallback((plot: string) => {
+    const next = { ...sessionRef.current, plot }
+    sessionRef.current = next
+    setSession(next)
+  }, [])
+
+  const setMaxRuntimeSeconds = useCallback((maxRuntimeSeconds: number) => {
+    const next = { ...sessionRef.current, maxRuntimeSeconds }
+    sessionRef.current = next
+    setSession(next)
+  }, [])
+
+  const setEditingGroupIndex = useCallback((editingGroupIndex: number | null) => {
+    const next = { ...sessionRef.current, editingGroupIndex }
+    sessionRef.current = next
+    setSession(next)
+  }, [])
+
+  /** One shots-stage model call. No skills, no system prompt — the template
+   * is the whole ask (see `shotList.ts`'s module comment on why `shots` is
+   * kept off the Direct/Draft `StageId` chain), so this never touches
+   * `context`/`buildH3SystemPrompt`. */
+  const makeShotList = useCallback(async () => {
+    const provider = providers.find((p) => p.id === settings.providerId)
+    if (!provider) { setError('Pick a provider first.'); return }
+    if (!settings.model) { setError('Pick a model first.'); return }
+    const plot = sessionRef.current.plot ?? ''
+    if (!plot.trim()) { setError('Write the plot first.'); return }
+    const maxRuntimeSeconds = sessionRef.current.maxRuntimeSeconds ?? DEFAULT_MAX_RUNTIME_SECONDS
+    if (!beginGpuUse('llm')) return
+    setShotListBusy(true)
+    setError(null)
+    const ac = new AbortController()
+    abortRef.current = ac
+    try {
+      const user = fillShotListTemplate(SHOT_LIST_TEMPLATE, plot, maxRuntimeSeconds)
+      const result = await streamChatComplete({
+        provider,
+        model: settings.model,
+        temperature: settings.temperature,
+        maxTokens: settings.maxTokens,
+        thinkingBudget: resolveThinkingBudget(provider.id, settings.model, settings.thinkingBudgets),
+        responseFormat: provider.supportsJsonSchema ? shotListResponseFormat() : undefined,
+        signal: ac.signal,
+        messages: [{ role: 'user', content: user }],
+        onDelta: () => {},
+      })
+      if (!result.text.trim()) throw new Error('The model returned nothing.')
+      const parsed = parseShotList(result.text, maxRuntimeSeconds)
+      if (!parsed) throw new Error('Could not parse a shot list from the reply — try again.')
+      const { groups, issues } = groupShotsIntoClips(parsed.shots)
+      const next = { ...sessionRef.current, shotList: parsed, shotGroups: groups, shotGroupIssues: issues, editingGroupIndex: null }
+      sessionRef.current = next
+      setSession(next)
+    } catch (e) {
+      if ((e as Error).name !== 'AbortError') setError(String((e as Error).message || e))
+    } finally {
+      abortRef.current = null
+      setShotListBusy(false)
+      endGpuUse()
+    }
+  }, [providers, settings, beginGpuUse, endGpuUse])
+
+  /**
+   * Regenerate the tail from `cutShotIndex` on, then drop exactly the
+   * rendered clips the cut invalidates — via `clipsDiscardedByShotRevision`,
+   * which is nothing more than `groupsAffectedByCut` feeding
+   * `filmEdit.ts`'s existing `dropFromIndex`. The caller shows the discard
+   * count and confirms BEFORE calling this (see `Api.reviseShotsFrom`'s
+   * module comment) — by the time this runs, the discard already happened.
+   */
+  const reviseShotsFrom = useCallback(
+    async (cutShotIndex: number) => {
+      const snap = sessionRef.current
+      const list = snap.shotList
+      if (!list) return
+      const provider = providers.find((p) => p.id === settings.providerId)
+      if (!provider) { setError('Pick a provider first.'); return }
+      if (!settings.model) { setError('Pick a model first.'); return }
+      const plot = snap.plot ?? ''
+      if (!plot.trim()) { setError('Write the plot first.'); return }
+      const maxRuntimeSeconds = list.maxRuntimeSeconds
+      if (!beginGpuUse('llm')) return
+      setShotListBusy(true)
+      setError(null)
+      const ac = new AbortController()
+      abortRef.current = ac
+      try {
+        const before = list.shots.filter((s) => s.index < cutShotIndex)
+        const already = before.length
+          ? `\n\nSHOTS 1-${cutShotIndex - 1} ARE ALREADY DECIDED — do not repeat them. Continue with fresh shots from index ${cutShotIndex} on:\n${before.map((s) => `${s.index}. ${s.covers} (${s.seconds}s)`).join('\n')}`
+          : ''
+        // The ceiling still applies to the WHOLE film, but this call only
+        // authors the tail — hand it what remains, not the film's total.
+        const remainingCeiling = Math.max(0, maxRuntimeSeconds - before.reduce((sum, s) => sum + s.seconds, 0))
+        const user = fillShotListTemplate(SHOT_LIST_TEMPLATE, plot, remainingCeiling) + already
+        const result = await streamChatComplete({
+          provider,
+          model: settings.model,
+          temperature: settings.temperature,
+          maxTokens: settings.maxTokens,
+          thinkingBudget: resolveThinkingBudget(provider.id, settings.model, settings.thinkingBudgets),
+          responseFormat: provider.supportsJsonSchema ? shotListResponseFormat() : undefined,
+          signal: ac.signal,
+          messages: [{ role: 'user', content: user }],
+          onDelta: () => {},
+        })
+        if (!result.text.trim()) throw new Error('The model returned nothing.')
+        const tail = parseShotList(result.text, maxRuntimeSeconds)
+        if (!tail) throw new Error('Could not parse a revised shot list from the reply — try again.')
+
+        const revisedShots = reviseShotsFromIndex(list.shots, cutShotIndex, tail.shots)
+        const { groups: revisedGroups, issues } = groupShotsIntoClips(revisedShots)
+
+        const priorGroups = snap.shotGroups ?? []
+        const b = snap.breakdown
+        if (b) {
+          const nodeId = `m_${b.at.toString(36)}`
+          const { remainingClips } = clipsDiscardedByShotRevision(clipsRef.current, nodeId, priorGroups, cutShotIndex)
+          setClips(remainingClips)
+          clipsRef.current = remainingClips
+        }
+
+        const nextShotList: ShotList = { ...list, spine: tail.spine || list.spine, shots: revisedShots }
+        const next = {
+          ...sessionRef.current,
+          shotList: nextShotList,
+          shotGroups: revisedGroups,
+          shotGroupIssues: issues,
+          editingGroupIndex: null,
+        }
+        sessionRef.current = next
+        setSession(next)
+      } catch (e) {
+        if ((e as Error).name !== 'AbortError') setError(String((e as Error).message || e))
+      } finally {
+        abortRef.current = null
+        setShotListBusy(false)
+        endGpuUse()
+      }
+    },
+    [providers, settings, beginGpuUse, endGpuUse],
+  )
+
+  /** See `Api.approveShotGroups`'s module comment. */
+  const approveShotGroups = useCallback(
+    async (selectedGroupIndices: number[]) => {
+      const snap = sessionRef.current
+      const list = snap.shotList
+      const groups = snap.shotGroups
+      if (!list || !groups || !selectedGroupIndices.length) return
+      const merged = takeShotGroups(list, groups, selectedGroupIndices, snap.breakdown ?? null)
+      // The existing per-clip Draft path (`run()`) falls back to
+      // `session.story` as its source whenever a clip has no 'direct' pass
+      // of its own yet — exactly what the OLD Break-down flow already
+      // relied on, since pasting the plot into the composer left it sitting
+      // in `story` for as long as the plan was worked. Full Story mode
+      // keeps that same text in `plot` instead (see `Session.plot`'s module
+      // comment), so it has to be mirrored across here, once, before the
+      // first prompt is authored — otherwise `run()`'s "paste something
+      // first" guard trips on an empty `story` that was never meant to
+      // diverge from `plot` in the first place.
+      const plot = snap.plot ?? ''
+      const withBreakdown = { ...snap, breakdown: merged, story: plot.trim() ? plot : snap.story }
+      sessionRef.current = withBreakdown
+      setSession(withBreakdown)
+      for (const idx of [...selectedGroupIndices].sort((a, b) => a - b)) {
+        const c = merged.clips.find((x) => x.index === idx)
+        if (!c) continue
+        setFilm({ role: c.role, spine: merged.spine, precedes: c.precedes, follows: c.follows, covers: c.covers, title: c.title, clipIndex: c.index })
+        await rebuild('story')
+      }
+    },
+    [setFilm, rebuild],
+  )
+
+  const rewordShotText = useCallback((shotIndex: number, covers: string) => {
+    const snap = sessionRef.current
+    if (!snap.shotList) return
+    const nextShots = rewordShot(snap.shotList.shots, shotIndex, covers)
+    const next = { ...snap, shotList: { ...snap.shotList, shots: nextShots } }
+    sessionRef.current = next
+    setSession(next)
+  }, [])
+
+  const retimeShotSeconds = useCallback((shotIndex: number, seconds: number) => {
+    const snap = sessionRef.current
+    if (!snap.shotList || !snap.shotGroups) return
+    const { shots: nextShots, groups: nextGroups } = retimeShot(snap.shotList.shots, snap.shotGroups, shotIndex, seconds)
+    const next = { ...snap, shotList: { ...snap.shotList, shots: nextShots }, shotGroups: nextGroups }
+    sessionRef.current = next
+    setSession(next)
+  }, [])
+
+  const addShotInGroup = useCallback((groupIndex: number, covers: string, seconds: number) => {
+    const snap = sessionRef.current
+    if (!snap.shotList || !snap.shotGroups) return
+    const { shots: nextShots, groups: nextGroups } = addShotToGroup(snap.shotList.shots, snap.shotGroups, groupIndex, covers, seconds)
+    const next = { ...snap, shotList: { ...snap.shotList, shots: nextShots }, shotGroups: nextGroups }
+    sessionRef.current = next
+    setSession(next)
+  }, [])
+
+  const dropShotByIndex = useCallback((shotIndex: number) => {
+    const snap = sessionRef.current
+    if (!snap.shotList || !snap.shotGroups) return
+    const { shots: nextShots, groups: nextGroups } = dropShot(snap.shotList.shots, snap.shotGroups, shotIndex)
+    const next = { ...snap, shotList: { ...snap.shotList, shots: nextShots }, shotGroups: nextGroups }
+    sessionRef.current = next
+    setSession(next)
+  }, [])
+
+  const pullShotIntoGroup = useCallback((groupIndex: number) => {
+    const snap = sessionRef.current
+    if (!snap.shotList || !snap.shotGroups) return
+    const nextGroups = pullShotFromNext(snap.shotList.shots, snap.shotGroups, groupIndex)
+    const next = { ...snap, shotGroups: nextGroups }
+    sessionRef.current = next
+    setSession(next)
+  }, [])
+
+  const pushShotOutOfGroup = useCallback((groupIndex: number) => {
+    const snap = sessionRef.current
+    if (!snap.shotList || !snap.shotGroups) return
+    const nextGroups = pushShotToNext(snap.shotList.shots, snap.shotGroups, groupIndex)
+    const next = { ...snap, shotGroups: nextGroups }
+    sessionRef.current = next
+    setSession(next)
+  }, [])
+
   const endpoint = useMemo(
     () => endpoints.find((e) => e.id === settings.comfyEndpointId) ?? endpoints[0] ?? null,
     [endpoints, settings.comfyEndpointId],
@@ -2449,6 +2769,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
     refreshProbe,
     run,
     rebuild,
+    plot: session.plot ?? '',
+    setPlot,
+    maxRuntimeSeconds: session.maxRuntimeSeconds ?? DEFAULT_MAX_RUNTIME_SECONDS,
+    setMaxRuntimeSeconds,
+    shotList: session.shotList ?? null,
+    shotGroups: session.shotGroups ?? [],
+    shotGroupIssues: session.shotGroupIssues ?? [],
+    shotListBusy,
+    makeShotList,
+    reviseShotsFrom,
+    approveShotGroups,
+    editingGroupIndex: session.editingGroupIndex ?? null,
+    setEditingGroupIndex,
+    rewordShotText,
+    retimeShotSeconds,
+    addShotInGroup,
+    dropShotByIndex,
+    pullShotIntoGroup,
+    pushShotOutOfGroup,
     plates,
     endpoints,
     endpoint,

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useApp } from '../app/state'
 import { inputUrl, listBoxInputs, THUMB_PREVIEW } from '../lib/comfy'
+import type { BoxInputFile } from '../lib/comfy'
 import { REF_CAPS } from '../lib/geometry'
 import { analyzeSubjectImage, composeSubjectJob, defaultJobForSubjectKind } from '../lib/subject'
 import type { SubjectKind } from '../lib/subject'
@@ -59,7 +60,7 @@ function readImage(file: File, maxEdge = 1536): Promise<string> {
 /** Where a plate's picture comes from: this machine, or the box it lives on. */
 function plateSrc(plate: Plate, endpoint: ComfyEndpoint | null): string | null {
   if (plate.dataUrl) return plate.dataUrl
-  if (plate.boxFile && endpoint) return inputUrl(endpoint, plate.boxFile.filename, THUMB_PREVIEW)
+  if (plate.boxFile && endpoint) return inputUrl(endpoint, plate.boxFile.filename, THUMB_PREVIEW, plate.boxFile.subfolder)
   return null
 }
 
@@ -298,7 +299,7 @@ function PlateRow({ plate, n }: { plate: Plate; n: number }) {
 function BoxPicker({ onClose }: { onClose: () => void }) {
   const { endpoint, plates, addPlate } = useApp()
   const [tab, setTab] = useState<'image' | 'video'>('image')
-  const [data, setData] = useState<{ images: string[]; videos: string[] } | null>(null)
+  const [data, setData] = useState<{ images: BoxInputFile[]; videos: BoxInputFile[] } | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [q, setQ] = useState('')
 
@@ -319,21 +320,24 @@ function BoxPicker({ onClose }: { onClose: () => void }) {
   const files = useMemo(() => {
     const all = (tab === 'image' ? data?.images : data?.videos) ?? []
     const needle = q.trim().toLowerCase()
-    return needle ? all.filter((f) => f.toLowerCase().includes(needle)) : all
+    // Matches the subfolder too, so typing "preserve" narrows to that folder.
+    return needle ? all.filter((f) => `${f.subfolder}/${f.filename}`.toLowerCase().includes(needle)) : all
   }, [data, tab, q])
 
   const used = plates.filter((p) => p.kind === tab).length
   const cap = tab === 'image' ? REF_CAPS.image : REF_CAPS.video
   const room = cap - used
 
-  const take = async (filename: string) => {
+  const take = async (file: BoxInputFile) => {
     if (!endpoint || room <= 0) return
     await addPlate({
-      name: filename.replace(/\.[^.]+$/, ''),
+      name: file.filename.replace(/\.[^.]+$/, ''),
       job: '',
       kind: tab,
       mode: 'carried',
-      boxFile: { endpointId: endpoint.id, filename, subfolder: '', type: 'input' },
+      // The subfolder travels with the plate: `buildExtenderRefsJson` joins it
+      // back into `subfolder/filename`, which is what the node loads.
+      boxFile: { endpointId: endpoint.id, filename: file.filename, subfolder: file.subfolder, type: 'input' },
     })
   }
 
@@ -374,23 +378,30 @@ function BoxPicker({ onClose }: { onClose: () => void }) {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(148px, 1fr))', gap: 12 }}>
             {endpoint &&
               files.map((f) => (
-                <div key={f} style={{ cursor: room > 0 ? 'pointer' : 'not-allowed', opacity: room > 0 ? 1 : 0.4 }} onClick={() => void take(f)}>
+                <div
+                  key={`${f.subfolder}/${f.filename}`}
+                  style={{ cursor: room > 0 ? 'pointer' : 'not-allowed', opacity: room > 0 ? 1 : 0.4 }}
+                  onClick={() => void take(f)}
+                >
                   {tab === 'image' ? (
                     <img
-                      src={inputUrl(endpoint, f, THUMB_PREVIEW)}
+                      src={inputUrl(endpoint, f.filename, THUMB_PREVIEW, f.subfolder)}
                       alt=""
                       loading="lazy"
                       style={{ width: '100%', height: 92, objectFit: 'cover', border: '1px solid var(--rule2)', display: 'block', background: 'var(--sunk)' }}
                     />
                   ) : (
                     <video
-                      src={inputUrl(endpoint, f)}
+                      src={inputUrl(endpoint, f.filename, undefined, f.subfolder)}
                       muted
                       preload="metadata"
                       style={{ width: '100%', height: 92, objectFit: 'cover', border: '1px solid var(--rule2)', display: 'block', background: 'var(--sunk)' }}
                     />
                   )}
-                  <div className="tok" style={{ marginTop: 5, wordBreak: 'break-all', lineHeight: 1.35 }}>{f}</div>
+                  <div className="tok" style={{ marginTop: 5, wordBreak: 'break-all', lineHeight: 1.35 }}>
+                    {f.subfolder && <span style={{ opacity: 0.6 }}>{f.subfolder}/</span>}
+                    {f.filename}
+                  </div>
                 </div>
               ))}
           </div>

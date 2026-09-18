@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { clearQueue, interrupt, nextPollStep } from './comfy'
+import { clearQueue, inputUrl, interrupt, listBoxInputs, nextPollStep } from './comfy'
 import type { ComfyEndpoint } from './types'
 import type { PollResult } from './comfy'
 
@@ -94,4 +94,122 @@ test('clearQueue: a dead box (fetch throws) is swallowed, not re-thrown', async 
   } finally {
     globalThis.fetch = originalFetch
   }
+})
+
+// ── the input folder, subfolders included (2026-09-18) ──────────────────
+//
+// The picker showed "Nothing here" against a box whose `input/preserve` held
+// 198 images: `LoadImage`'s combo is files-only and non-recursive, so the
+// only thing it could see was an input root containing nothing but
+// directories. These cover the walk that fixed it.
+
+/** A fetch stub speaking the two shapes `listBoxInputs` reads: VHS's
+ * `/vhs/getpath` directory listing (directories carry a trailing slash) and
+ * an `/object_info/<node>` combo. */
+function boxFetch(tree: Record<string, string[]>, combos: Record<string, string[]> = {}) {
+  const seen: string[] = []
+  const stub = (async (url: string) => {
+    const u = String(url)
+    seen.push(u)
+    const g = u.match(/\/vhs\/getpath\?path=(.*)$/)
+    if (g) {
+      const path = decodeURIComponent(g[1])
+      const listing = tree[path]
+      return listing
+        ? new Response(JSON.stringify(listing), { status: 200 })
+        : new Response('404: Not Found', { status: 404 })
+    }
+    const o = u.match(/\/object_info\/(\w+)$/)
+    if (o) {
+      const node = o[1]
+      const field = node === 'LoadImage' ? 'image' : 'video'
+      return new Response(
+        JSON.stringify({ [node]: { input: { required: { [field]: [combos[node] ?? []] } } } }),
+        { status: 200 },
+      )
+    }
+    return new Response('404: Not Found', { status: 404 })
+  }) as typeof fetch
+  return { stub, seen }
+}
+
+async function withFetch<T>(stub: typeof fetch, fn: () => Promise<T>): Promise<T> {
+  const original = globalThis.fetch
+  globalThis.fetch = stub
+  try {
+    return await fn()
+  } finally {
+    globalThis.fetch = original
+  }
+}
+
+test('listBoxInputs finds files in a subfolder, which the combo alone cannot see', async () => {
+  // The real shape measured on the box: an input root of directories only.
+  const { stub } = boxFetch({
+    'input': ['3d/', 'preserve/'],
+    'input/3d': ['rig.png'],
+    'input/preserve': ['tanvi.jpg', 'well.png', 'notes.txt'],
+  })
+  const out = await withFetch(stub, () => listBoxInputs(EP))
+  assert.deepEqual(
+    out.images.map((f) => `${f.subfolder}/${f.filename}`).sort(),
+    ['3d/rig.png', 'preserve/tanvi.jpg', 'preserve/well.png'],
+  )
+  // A non-image is not offered on the image tab.
+  assert.equal(out.images.some((f) => f.filename === 'notes.txt'), false)
+})
+
+test('listBoxInputs falls back to the portable cwd spelling of the input root', async () => {
+  // `/vhs/getpath` resolves a relative path against ComfyUI's PROCESS cwd,
+  // which on a portable install is the PARENT of the ComfyUI directory — so
+  // plain `input` misses and `ComfyUI/input` hits. This is the live box.
+  const { stub, seen } = boxFetch({
+    'ComfyUI/input': ['preserve/'],
+    'ComfyUI/input/preserve': ['t1.jpg'],
+  })
+  const out = await withFetch(stub, () => listBoxInputs(EP))
+  assert.deepEqual(out.images, [{ filename: 't1.jpg', subfolder: 'preserve' }])
+  assert.ok(seen.some((u) => u.includes('path=input')), 'tries the plain spelling first')
+})
+
+test('listBoxInputs still lists a box with no VideoHelperSuite, from the combos alone', async () => {
+  const { stub } = boxFetch({}, { LoadImage: ['loose.png'], VHS_LoadVideo: ['clip.mp4'] })
+  const out = await withFetch(stub, () => listBoxInputs(EP))
+  assert.deepEqual(out.images, [{ filename: 'loose.png', subfolder: '' }])
+  assert.deepEqual(out.videos, [{ filename: 'clip.mp4', subfolder: '' }])
+})
+
+test('listBoxInputs does not list the same file twice when the walk and the combo agree', async () => {
+  // ComfyUI annotates a subfoldered combo entry as `sub/name.png`; the walk
+  // reports the same file as a {subfolder, filename} pair. They must dedupe.
+  const { stub } = boxFetch(
+    { 'input': ['preserve/'], 'input/preserve': ['dup.png'] },
+    { LoadImage: ['preserve/dup.png'] },
+  )
+  const out = await withFetch(stub, () => listBoxInputs(EP))
+  assert.equal(out.images.length, 1)
+  assert.deepEqual(out.images[0], { filename: 'dup.png', subfolder: 'preserve' })
+})
+
+test('listBoxInputs bounds the walk rather than following an input tree forever', async () => {
+  // Depth 2, so a third level is never requested — one picker open must not
+  // become an unbounded number of requests.
+  const { stub, seen } = boxFetch({
+    'input': ['a/'],
+    'input/a': ['b/'],
+    'input/a/b': ['c/', 'deep.png'],
+    'input/a/b/c': ['deeper.png'],
+  })
+  const out = await withFetch(stub, () => listBoxInputs(EP))
+  assert.equal(out.images.some((f) => f.filename === 'deep.png'), true)
+  assert.equal(out.images.some((f) => f.filename === 'deeper.png'), false)
+  assert.equal(seen.some((u) => u.includes(encodeURIComponent('input/a/b/c'))), false)
+})
+
+test('inputUrl addresses a file in a subfolder, not just the input root', () => {
+  const url = inputUrl(EP, 'tanvi.jpg', undefined, 'preserve')
+  assert.ok(url.includes('subfolder=preserve'), url)
+  assert.ok(url.includes('type=input'), url)
+  // The default stays the root, so every existing call site is unchanged.
+  assert.ok(inputUrl(EP, 'tanvi.jpg').includes('subfolder=&'), inputUrl(EP, 'tanvi.jpg'))
 })

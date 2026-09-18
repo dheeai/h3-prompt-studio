@@ -400,16 +400,110 @@ export class OriginRefused extends Error {
   }
 }
 
+/** One file sitting in ComfyUI's input folder, with the subfolder it lives in
+ * (`''` for the input root). The pair is what `/view` and `refs_json` both
+ * need — `buildExtenderRefsJson` joins them back into `subfolder/filename`. */
+export interface BoxInputFile {
+  filename: string
+  subfolder: string
+}
+
+/** Extensions each tab accepts, applied CLIENT-side.
+ *
+ * `/vhs/getpath` does take an `extensions` query, but its check is
+ * `item.name.split(".")[-1].lower() in valid_extensions` against the raw
+ * query STRING — a substring test, not a set membership test, so `"pn"`
+ * would match `png`. Filtering here instead keeps the rule exact and in one
+ * place. */
+const IMAGE_EXT = /\.(png|jpe?g|webp|gif|bmp|avif)$/i
+const VIDEO_EXT = /\.(mp4|webm|mov|mkv|avi)$/i
+
+/**
+ * Walk ComfyUI's input folder with VideoHelperSuite's `/vhs/getpath`.
+ *
+ * WHY THIS EXISTS. The combo listings below see only the input ROOT, because
+ * `LoadImage.INPUT_TYPES` is `[f for f in os.listdir(input_dir) if
+ * os.path.isfile(...)]` — files only, no recursion. Measured against the box
+ * on 2026-09-18: `input/` holds nothing but the directories `3d`,
+ * `minimax_master` and `preserve`, `preserve` alone holds 198 images, and the
+ * picker showed "Nothing here" while being entirely correct about what it had
+ * been told. `/internal/files/input` returns `[]` for the same reason, and no
+ * installed node's combo enumerates a subfolder's contents (`VHS_LoadImages`
+ * publishes the subfolder NAMES, which is how those three were found).
+ *
+ * `/vhs/getpath` is the only real directory API this box has. Its handler is
+ * `os.path.abspath(strip_path(query["path"]))`, so a relative path resolves
+ * against ComfyUI's PROCESS working directory — which differs between a
+ * portable install (cwd is the parent, so `ComfyUI/input`) and an ordinary
+ * one (cwd is the ComfyUI dir, so `input`). Both are tried; whichever answers
+ * with something wins. A box without VideoHelperSuite 404s and falls through
+ * to the combos, exactly as before.
+ *
+ * Bounded on purpose: depth 2 and at most `MAX_DIRS` directories, so a
+ * pathological input tree cannot turn one picker open into hundreds of
+ * requests.
+ */
+const MAX_DIRS = 16
+
+async function getPath(base: string, path: string): Promise<string[] | null> {
+  try {
+    const r = await fetch(`${base}/vhs/getpath?path=${encodeURIComponent(path)}`)
+    if (!r.ok) return null
+    const j = (await r.json()) as unknown
+    return Array.isArray(j) ? (j as unknown[]).filter((x): x is string => typeof x === 'string') : null
+  } catch {
+    return null
+  }
+}
+
+export async function walkBoxInput(ep: ComfyEndpoint): Promise<{ images: BoxInputFile[]; videos: BoxInputFile[] } | null> {
+  const base = trim(ep.baseUrl)
+  // Find which spelling of the input root this box's cwd makes resolvable.
+  let root: string | null = null
+  for (const candidate of ['input', 'ComfyUI/input']) {
+    const listing = await getPath(base, candidate)
+    if (listing && listing.length) {
+      root = candidate
+      break
+    }
+  }
+  if (!root) return null
+
+  const images: BoxInputFile[] = []
+  const videos: BoxInputFile[] = []
+  // `[path relative to root, depth]`; `''` is the root itself.
+  const queue: Array<[string, number]> = [['', 0]]
+  let dirsVisited = 0
+
+  while (queue.length && dirsVisited < MAX_DIRS) {
+    const [rel, depth] = queue.shift()!
+    dirsVisited++
+    const listing = await getPath(base, rel ? `${root}/${rel}` : root)
+    if (!listing) continue
+    for (const entry of listing) {
+      if (entry.endsWith('/')) {
+        // A directory. `getpath` marks them with a trailing slash.
+        if (depth < 2) queue.push([rel ? `${rel}/${entry.slice(0, -1)}` : entry.slice(0, -1), depth + 1])
+        continue
+      }
+      const file: BoxInputFile = { filename: entry, subfolder: rel }
+      if (IMAGE_EXT.test(entry)) images.push(file)
+      else if (VIDEO_EXT.test(entry)) videos.push(file)
+    }
+  }
+  return { images, videos }
+}
+
 /**
  * What is already sitting in ComfyUI's input folder.
  *
- * Every file-picking node publishes its folder listing as a COMBO in
- * /object_info, which is the only enumeration ComfyUI offers — there is no
- * directory API. LoadImage carries the images; VHS_LoadVideo the videos.
- * Assets a person already built on the box should never have to be uploaded
- * back to it from here.
+ * Prefers `walkBoxInput`, which sees subfolders. Falls back to the COMBO
+ * listings every file-picking node publishes in `/object_info` — LoadImage for
+ * images, VHS_LoadVideo for videos — which is all ComfyUI itself offers and
+ * which sees the input ROOT only. Assets a person already built on the box
+ * should never have to be uploaded back to it from here.
  */
-export async function listBoxInputs(ep: ComfyEndpoint): Promise<{ images: string[]; videos: string[] }> {
+export async function listBoxInputs(ep: ComfyEndpoint): Promise<{ images: BoxInputFile[]; videos: BoxInputFile[] }> {
   const base = trim(ep.baseUrl)
   const combo = async (node: string, field: string): Promise<string[]> => {
     try {
@@ -427,8 +521,35 @@ export async function listBoxInputs(ep: ComfyEndpoint): Promise<{ images: string
       return []
     }
   }
-  const [images, videos] = await Promise.all([combo('LoadImage', 'image'), combo('VHS_LoadVideo', 'video')])
-  return { images, videos }
+  // The combos are still fetched even when the walk succeeded, and merged:
+  // a root-level file appears in both, and a box whose walk found nothing
+  // still lists whatever the combos know about.
+  const [walked, comboImages, comboVideos] = await Promise.all([
+    walkBoxInput(ep),
+    combo('LoadImage', 'image'),
+    combo('VHS_LoadVideo', 'video'),
+  ])
+  const merge = (fromWalk: BoxInputFile[], fromCombo: string[]): BoxInputFile[] => {
+    const out = [...fromWalk]
+    const seen = new Set(fromWalk.map((f) => `${f.subfolder}/${f.filename}`))
+    for (const filename of fromCombo) {
+      // A combo entry is root-relative, but ComfyUI annotates a subfoldered
+      // one as `sub/name.png` — split it so both spellings dedupe against the
+      // walk rather than showing the same file twice.
+      const cut = filename.lastIndexOf('/')
+      const f = cut === -1 ? { filename, subfolder: '' } : { filename: filename.slice(cut + 1), subfolder: filename.slice(0, cut) }
+      const key = `${f.subfolder}/${f.filename}`
+      if (!seen.has(key)) {
+        seen.add(key)
+        out.push(f)
+      }
+    }
+    return out
+  }
+  return {
+    images: merge(walked?.images ?? [], comboImages),
+    videos: merge(walked?.videos ?? [], comboVideos),
+  }
 }
 
 /** A file already on the box, addressed for display. */
@@ -450,8 +571,8 @@ export async function listBoxInputs(ep: ComfyEndpoint): Promise<{ images: string
  * re-encode silently spends that money on nothing. A `boxFile` plate is safe by
  * construction — the graph cites it by filename on the box, not through this URL.
  */
-export function inputUrl(ep: ComfyEndpoint, filename: string, preview?: string): string {
-  const q = new URLSearchParams({ filename, subfolder: '', type: 'input' })
+export function inputUrl(ep: ComfyEndpoint, filename: string, preview?: string, subfolder = ''): string {
+  const q = new URLSearchParams({ filename, subfolder, type: 'input' })
   if (preview) q.set('preview', preview)
   return `${trim(ep.baseUrl)}/view?${q}`
 }

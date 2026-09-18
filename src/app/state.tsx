@@ -2096,6 +2096,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     sessionRef.current = next
     setCurrentClipId(null)
     setContinuation(null)
+    // The rendered film goes too. A new draft that kept the old clips showed
+    // them on the new film's timeline, which is the visible half of the
+    // founder's "all the old clips etc still stick on". Safe against the
+    // node's own cache: `nodeId` is derived from the BREAKDOWN's timestamp
+    // (`m_${b.at.toString(36)}`), and the breakdown is cleared above, so the
+    // next film addresses a different node and cannot inherit these clips
+    // from the box's disk cache either.
+    setClips([])
+    setExtenderLiveProgress(null)
     setPlates((prev) => prev.filter((p) => p.mode !== 'replaced'))
     setInterruptedReasoning(null)
     setFailedReasoning(null)

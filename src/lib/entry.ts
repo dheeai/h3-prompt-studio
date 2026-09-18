@@ -158,6 +158,30 @@ export interface DraftContextState {
   /** A pending pipeline-authored draft — see `dropInvalidatedAutoDraft` in
    * `filmEdit.ts`. Scoped to the draft it came from, same as the frame. */
   pendingAutoDraft?: unknown
+
+  // ── Full Story's own state ────────────────────────────────────────────
+  //
+  // These were added long after this function was written, and it never
+  // learned about them — so "New draft" cleared the single-clip Studio
+  // context and left the whole FILM standing: the plot, the shot list, the
+  // clip groups, the direction and acting documents, the film's name. The
+  // founder's report: "new draft + discard doesnt discard anything afiak -
+  // all the old clips etc still stick on."
+  //
+  // It became visible rather than merely latent when sessions started
+  // persisting: before that, a reload wiped everything anyway, so nobody
+  // noticed that Discard did not. Persistence removed the accidental reset
+  // this was quietly relying on.
+  plot?: string
+  shotList?: unknown
+  shotGroups?: unknown[]
+  shotGroupIssues?: string[]
+  editingGroupIndex?: number | null
+  filmName?: string
+  filmLoraStack?: unknown[]
+  directionByClip?: Record<number, unknown>
+  actingByClip?: Record<number, unknown>
+  thinBriefCheck?: unknown
 }
 
 /**
@@ -178,6 +202,20 @@ export function clearDraftContext<T extends DraftContextState>(session: T): T {
     breakdown: undefined,
     continuationFrame: undefined,
     pendingAutoDraft: undefined,
+    // The film itself. `maxRuntimeSeconds` is deliberately NOT cleared: it is
+    // a standing preference like the render geometry, not something this
+    // film invented, and re-picking a runtime on every new film is friction
+    // for no gain. Everything else here IS this film and goes.
+    plot: '',
+    shotList: undefined,
+    shotGroups: undefined,
+    shotGroupIssues: undefined,
+    editingGroupIndex: null,
+    filmName: undefined,
+    filmLoraStack: undefined,
+    directionByClip: undefined,
+    actingByClip: undefined,
+    thinBriefCheck: null,
   }
 }
 

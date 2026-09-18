@@ -225,3 +225,68 @@ test('nextPlanClipToAuthor: nothing past the end of the plan', () => {
   const breakdown: Breakdown = { spine: 'a film', at: 0, clips: [planClip(1), planClip(2)] }
   assert.equal(nextPlanClipToAuthor(breakdown, [draftVersion(1), draftVersion(2)], 2), undefined)
 })
+
+// ── "New draft" must actually discard the film (2026-09-18) ─────────────
+//
+// Founder: "new draft + discard doesnt discard anything afiak - all the old
+// clips etc still stick on." `clearDraftContext` predated Full Story and
+// cleared only the single-clip Studio context.
+
+test('clearDraftContext discards the whole film, not just the Studio draft', () => {
+  const full = {
+    story: 'old story', versions: [{ id: 'v1' }], currentId: 'v1', chat: [{}],
+    film: { look: { preset: 'x' } } as never, parentClipId: 'c1', parentPrompt: 'p',
+    breakdown: { spine: 's', clips: [{ index: 1 }] }, continuationFrame: 'data:...',
+    pendingAutoDraft: { clipIndex: 2 },
+    plot: 'a courier crosses a flooded city',
+    shotList: { spine: 's', shots: [{ index: 1, covers: 'x', seconds: 4 }] },
+    shotGroups: [{ index: 1, shotIndices: [1], seconds: 4 }],
+    shotGroupIssues: ['something was wrong'],
+    editingGroupIndex: 3,
+    filmName: 'The Old Film',
+    filmLoraStack: [{ lora: 'x', strength: 0.5, on: true }],
+    directionByClip: { 1: { clipIndex: 1 } },
+    actingByClip: { 1: { clipIndex: 1 } },
+    thinBriefCheck: { isThin: true },
+    maxRuntimeSeconds: 300,
+  }
+  const out = clearDraftContext(full as never) as Record<string, unknown>
+
+  // The film is gone.
+  assert.equal(out.plot, '')
+  assert.equal(out.shotList, undefined)
+  assert.equal(out.shotGroups, undefined)
+  assert.equal(out.shotGroupIssues, undefined)
+  assert.equal(out.filmName, undefined)
+  assert.equal(out.filmLoraStack, undefined)
+  assert.equal(out.directionByClip, undefined)
+  assert.equal(out.actingByClip, undefined)
+  assert.equal(out.editingGroupIndex, null)
+  assert.equal(out.thinBriefCheck, null)
+  // And what it already cleared still goes.
+  assert.equal(out.story, '')
+  assert.deepEqual(out.versions, [])
+  assert.equal(out.breakdown, undefined)
+  assert.equal(out.film, undefined)
+
+  // The runtime ceiling is a standing preference, not this film's invention.
+  assert.equal(out.maxRuntimeSeconds, 300)
+})
+
+test('clearDraftContext leaves no Full Story field behind — a new field must be added here too', () => {
+  // A cheap guard against the next field to be added and forgotten: every key
+  // this function is given comes back either cleared or deliberately kept.
+  const KEPT = new Set(['maxRuntimeSeconds'])
+  const seeded: Record<string, unknown> = {
+    story: 'x', versions: [{}], currentId: 'v', plot: 'p',
+    shotList: {}, shotGroups: [{}], filmName: 'n', directionByClip: { 1: {} },
+    actingByClip: { 1: {} }, filmLoraStack: [{}], maxRuntimeSeconds: 120,
+  }
+  const out = clearDraftContext(seeded as never) as Record<string, unknown>
+  for (const k of Object.keys(seeded)) {
+    if (KEPT.has(k)) continue
+    const v = out[k]
+    const cleared = v === undefined || v === null || v === '' || (Array.isArray(v) && v.length === 0)
+    assert.ok(cleared, `${k} survived a New draft as ${JSON.stringify(v)}`)
+  }
+})

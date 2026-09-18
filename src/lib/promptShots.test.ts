@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   hasPromptShotIssues, joinPromptShots, pairShotsWithPrompt, promptShotIssues,
-  replacePromptShotText, splitPromptShots,
+  replacePromptShotText, splitClipLevelSections, splitPromptShots,
 } from './promptShots'
 
 /** A real-shaped Ref2VA body: style sentences before [Shot 1] (the film's
@@ -170,4 +170,53 @@ test('a prompt with more shots than the plan reports the extras as orphans', () 
   assert.equal(pairs.length, 2)
   assert.equal(orphans.length, 2)
   assert.equal(orphans[0].n, 3)
+})
+
+// ── splitClipLevelSections — the shot-bearing section vs. the rest ───────
+
+const REF2VA_PROMPT = `subject_definitions:
+<Subject 1> is Rupa, a tailor in a faded green kurta.
+<Subject 2> is Iqbal, her brother-in-law, unshaven.
+
+summary:
+[reference generation] A cloth market stall at closing time.
+
+retention_analysis:
+<Subject 1> fully_preserved
+<Subject 2> partially_preserved
+
+detailed_description:
+Late afternoon, shutters half down, dust in the light.
+[Shot 1] Static Shot on the cutting table as <Subject 1> unrolls a bolt of raw silk.
+[Shot 2] At 00:04.500, Push In to her hands as she stops mid-pull.
+
+overall_soundscape:
+Distant market chatter, a shutter rattling somewhere off to the side.
+
+non_diegetic_music:
+N/A`
+
+test('splitClipLevelSections: finds the shot-bearing section by its markers, not by name', () => {
+  const { shotSectionBody, otherSections } = splitClipLevelSections(REF2VA_PROMPT)
+  assert.match(shotSectionBody, /\[Shot 1\]/)
+  assert.match(shotSectionBody, /\[Shot 2\]/)
+  assert.deepEqual(
+    otherSections.map((s) => s.name),
+    ['subject_definitions', 'summary', 'retention_analysis', 'overall_soundscape', 'non_diegetic_music'],
+  )
+})
+
+test('splitClipLevelSections: the other sections keep their own real text, once each', () => {
+  const { otherSections } = splitClipLevelSections(REF2VA_PROMPT)
+  const music = otherSections.find((s) => s.name === 'non_diegetic_music')
+  assert.equal(music?.body.trim(), 'N/A')
+  const subjects = otherSections.find((s) => s.name === 'subject_definitions')
+  assert.match(subjects!.body, /Rupa/)
+})
+
+test('splitClipLevelSections: unstructured text with no named sections falls back to the whole prompt as the shot body', () => {
+  const plain = '[Shot 1] a bare marker with nothing else around it'
+  const { shotSectionBody, otherSections } = splitClipLevelSections(plain)
+  assert.equal(shotSectionBody, plain)
+  assert.deepEqual(otherSections, [])
 })

@@ -28,6 +28,9 @@
  * belong to the clip and are shown once, not repeated under every shot.
  */
 
+import type { Section } from './highlight'
+import { splitSections } from './highlight'
+
 /** One shot's slice of the body. */
 export interface PromptShot {
   /** The number as WRITTEN in the marker — not a position. A prompt that
@@ -211,5 +214,42 @@ export function pairShotsWithPrompt<T>(
   return {
     pairs: plannedShots.map((shot, i) => ({ shot, fragment: split.shots[i] ?? null })),
     orphans: split.shots.slice(plannedShots.length),
+  }
+}
+
+// ── which sections are per-shot vs. once-per-clip ────────────────────────
+
+/**
+ * Split a whole prompt into the ONE section that actually carries the
+ * `[Shot N]` markup (`splitPromptShots`'s own business) and every OTHER
+ * named section — `subject_definitions`, `summary`, `retention_analysis`,
+ * `overall_soundscape`, `non_diegetic_music` for Ref2VA, or whatever a base
+ * mode's own `BASE_SECTIONS` names besides its one shot-bearing field
+ * (`schema.ts`'s `sectionsFor`) — which a clip's own presentation shows
+ * ONCE, never repeated under every shot (2026-09-18 brief).
+ *
+ * Found STRUCTURALLY (whichever section's body actually contains a `[Shot`
+ * marker), not by hardcoding `detailed_description` or
+ * `integrated_multimodal_description` by name, so this works for every H3
+ * mode without a mode parameter and keeps working if a future mode names
+ * its shot-bearing field something else again.
+ */
+export interface PromptDisplaySections {
+  /** The shot-bearing section's own body — what `splitPromptShots` should
+   * actually run on. Falls back to the WHOLE prompt when no named section
+   * contains a marker (an unstructured or pre-schema reply), so per-shot
+   * splitting still has something to work with. */
+  shotSectionBody: string
+  /** Every other named section, in the order the prompt wrote them. Empty
+   * when no section was recognised at all. */
+  otherSections: Section[]
+}
+
+export function splitClipLevelSections(promptText: string): PromptDisplaySections {
+  const sections = splitSections(promptText)
+  const shotSection = sections.find((s) => s.name !== null && /\[Shot\s+\d+\]/.test(s.body))
+  return {
+    shotSectionBody: shotSection ? shotSection.body : promptText,
+    otherSections: sections.filter((s) => s !== shotSection && s.name !== null),
   }
 }

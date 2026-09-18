@@ -60,6 +60,9 @@ import {
   addShotToGroup, clipsDiscardedByShotRevision, discardBreakdownFromIndex, dropShot, planForTickedSubmission,
   pullShotFromNext, pushShotToNext, retimeShot, rewordShot, takeShotGroups,
 } from '../lib/shotScreens'
+import { replacePromptShotText } from '../lib/promptShots'
+import { buildTimeline } from '../lib/timeline'
+import type { Timeline } from '../lib/timeline'
 import type {
   AllocatedBeat, Breakdown, ChatTurn, Clip, ComfyEndpoint, ComfyNode, FilmContext, Finding, LoraStackEntry, Plate,
   ProbeResult, Provider, Selection, Settings, Shot, ShotGroup, ShotList, Skill, StageId, Version,
@@ -545,6 +548,15 @@ export interface Api {
   pullShotIntoGroup: (groupIndex: number) => void
   /** Push this group's last shot into the next one. */
   pushShotOutOfGroup: (groupIndex: number) => void
+  /** The whole film, start to finish — `FilmTimeline`'s one source of truth
+   * (`lib/timeline.ts`'s `buildTimeline`). Recomputed off the same session
+   * state every other Full Story screen reads; never a second timeline. */
+  timeline: Timeline
+  /** Hand-edit one shot's own fragment of an already-authored prompt, byte-
+   * exact everywhere else (`replacePromptShotText`) — no model call. A
+   * no-op when the clip has no authored prompt yet, or the shot number
+   * isn't in it. */
+  editPromptShotText: (clipIndex: number, shotN: number, text: string) => void
   /** Full Story mode's film-wide style-LoRA default — see
    * `Session.filmLoraStack`'s module comment. `undefined` = no film-wide
    * choice; every clip falls through to the bound workflow's own baked
@@ -2598,6 +2610,47 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setSession(next)
   }, [])
 
+  /**
+   * The timeline's own escape hatch — "editing a shot's fragment must go
+   * through `replacePromptShotText` so the rest of the prompt is untouched"
+   * (2026-09-18 brief). No model call: this is a hand edit, applied locally
+   * to the clip's own already-authored prompt, exactly the way
+   * `rewordShotText` above hand-edits a shot's `covers` with no LLM turn.
+   * Tagged `'freeform'` rather than a new `StageId` — the same category
+   * `run('freeform', ...)` already uses for "an ad hoc edit to the prompt,
+   * outside the Draft/Critique/Revise chain" (`STAGE_LABEL.freeform` =
+   * "Note"), and already a member of `PROMPT_STAGES`, so
+   * `latestPromptForClip` picks this edit up for free with no new Record
+   * to fill in on `STAGE_INFO`/`STAGE_LABEL`/`DEFAULT_TEMPLATES` (the last
+   * of which this task must not touch a single entry of). Every branch
+   * inside `run()` that keys off `stage === 'freeform'` only ever runs
+   * during `run()`'s OWN execution — appending a version directly here
+   * never re-triggers any of it.
+   */
+  const editPromptShotText = useCallback((clipIndex: number, shotN: number, text: string) => {
+    const snap = sessionRef.current
+    const current = latestPromptForClip(snap.versions, clipIndex)
+    if (!current) return
+    const nextText = replacePromptShotText(current.text, shotN, text)
+    if (nextText === current.text) return
+    const version: Version = {
+      id: `v${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+      stage: 'freeform',
+      label: STAGE_LABEL.freeform,
+      text: nextText,
+      model: 'operator edit',
+      providerId: 'local',
+      at: Date.now(),
+      ms: 0,
+      fromText: current.text,
+      note: `Hand-edited shot ${shotN}'s own words.`,
+      clipIndex,
+    }
+    const next = { ...snap, versions: [...snap.versions, version] }
+    sessionRef.current = next
+    setSession(next)
+  }, [])
+
   const endpoint = useMemo(
     () => endpoints.find((e) => e.id === settings.comfyEndpointId) ?? endpoints[0] ?? null,
     [endpoints, settings.comfyEndpointId],
@@ -2737,6 +2790,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
       loraSplitWarning,
     }
   }, [session.breakdown, session.versions, session.filmLoraStack, clips, plates, extenderGraph])
+
+  /**
+   * The whole film's timeline (`lib/timeline.ts`) — `FilmTimeline`'s one
+   * data source. `nodeId` comes straight off `extenderPlanPreview`, the
+   * SAME id `renderExtenderPlan` will actually submit under, so a clip's
+   * timeline state can never disagree with what a submit would treat as
+   * already validated.
+   */
+  const timeline = useMemo<Timeline>(
+    () =>
+      buildTimeline({
+        shotList: session.shotList ?? null,
+        shotGroups: session.shotGroups ?? [],
+        breakdown: session.breakdown ?? null,
+        clips,
+        versions: session.versions,
+        nodeId: extenderPlanPreview?.nodeId,
+        directionByClip: session.directionByClip,
+      }),
+    [session.shotList, session.shotGroups, session.breakdown, clips, session.versions, extenderPlanPreview?.nodeId, session.directionByClip],
+  )
 
   /**
    * Full Story mode's plate freeze — read straight off `extenderPlanPreview`'s
@@ -3881,6 +3955,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     dropShotByIndex,
     pullShotIntoGroup,
     pushShotOutOfGroup,
+    timeline,
+    editPromptShotText,
     filmLoraStack: session.filmLoraStack,
     filmName: session.filmName ?? '',
     filmNameEffective: session.filmName?.trim() || deriveFilmName(session.shotList?.spine),

@@ -15,11 +15,10 @@ import { Composer } from '../components/Composer'
 import { AgentPanel } from '../components/AgentPanel'
 import { StoryAndShots } from '../components/StoryAndShots'
 import { ClipInHand } from '../components/ClipInHand'
-import { PromptReview } from '../components/PromptReview'
-import { WatchAndKeep } from '../components/WatchAndKeep'
+import { FilmTimeline } from '../components/FilmTimeline'
 
 type Modal = 'connect' | 'skills' | 'settings' | 'plates' | 'extender-settings' | 'endpoint' | 'check' | null
-type StoryTab = 'shots' | 'hand' | 'prompts' | 'film'
+type StoryTab = 'timeline' | 'shots' | 'hand'
 
 /**
  * ONE COMPOSER. There are no entry-mode doors — see the module comment on
@@ -42,7 +41,7 @@ export function App() {
   // Full Story is the default (founder, 2026-09-17): it is the way a film gets
   // made now, and Studio is the single-clip surface you drop into for one shot.
   const [workspace, setWorkspace] = useState<'studio' | 'story' | 'agent'>('story')
-  const [storyTab, setStoryTab] = useState<StoryTab>('shots')
+  const [storyTab, setStoryTab] = useState<StoryTab>('timeline')
   const [confirmClear, setConfirmClear] = useState(false)
   const [confirmStop, setConfirmStop] = useState(false)
 
@@ -172,22 +171,18 @@ export function App() {
 
       <div className={`workspace-view ${workspace === 'story' ? 'is-active' : 'is-hidden'}`} aria-hidden={workspace !== 'story'}>
         <nav className="workspace-tabs" aria-label="Full Story" style={{ margin: '10px 26px 0', borderLeft: 0, paddingLeft: 0 }}>
+          <button className={storyTab === 'timeline' ? 'active' : ''} aria-current={storyTab === 'timeline' ? 'page' : undefined} onClick={() => setStoryTab('timeline')}>Timeline</button>
           <button className={storyTab === 'shots' ? 'active' : ''} aria-current={storyTab === 'shots' ? 'page' : undefined} onClick={() => setStoryTab('shots')}>Story &amp; shots</button>
           <button className={storyTab === 'hand' ? 'active' : ''} aria-current={storyTab === 'hand' ? 'page' : undefined} onClick={() => setStoryTab('hand')}>The clip in hand</button>
-          <button className={storyTab === 'prompts' ? 'active' : ''} aria-current={storyTab === 'prompts' ? 'page' : undefined} onClick={() => setStoryTab('prompts')}>Approve prompts</button>
-          <button className={storyTab === 'film' ? 'active' : ''} aria-current={storyTab === 'film' ? 'page' : undefined} onClick={() => setStoryTab('film')}>Watch &amp; keep</button>
         </nav>
+        <div hidden={storyTab !== 'timeline'}>
+          <FilmTimeline onOpenClipInHand={() => setStoryTab('hand')} onOpenStoryAndShots={() => setStoryTab('shots')} />
+        </div>
         <div hidden={storyTab !== 'shots'}>
           <StoryAndShots onOpenClipInHand={() => setStoryTab('hand')} onOpenPlates={() => setModal('plates')} />
         </div>
         <div hidden={storyTab !== 'hand'}>
           <ClipInHand onOpenStoryAndShots={() => setStoryTab('shots')} />
-        </div>
-        <div hidden={storyTab !== 'prompts'}>
-          <PromptReview onOpenClipInHand={() => setStoryTab('hand')} />
-        </div>
-        <div hidden={storyTab !== 'film'}>
-          <WatchAndKeep onOpenStoryAndShots={() => setStoryTab('shots')} onOpenClipInHand={() => setStoryTab('hand')} />
         </div>
         {error && <div className="alert err composer-error"><span>{error}</span><button className="btn sm ghost" onClick={app.clearError}>dismiss</button></div>}
       </div>

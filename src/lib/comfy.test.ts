@@ -143,9 +143,9 @@ async function withFetch<T>(stub: typeof fetch, fn: () => Promise<T>): Promise<T
   }
 }
 
-test('listBoxInputs finds files in a subfolder, which the combo alone cannot see', async () => {
+test('listBoxInputs lists the locked plate folder, which the combo alone cannot see', async () => {
   // The real shape measured on the box: an input root of directories only.
-  const { stub } = boxFetch({
+  const { stub, seen } = boxFetch({
     'input': ['3d/', 'preserve/'],
     'input/3d': ['rig.png'],
     'input/preserve': ['tanvi.jpg', 'well.png', 'notes.txt'],
@@ -153,10 +153,13 @@ test('listBoxInputs finds files in a subfolder, which the combo alone cannot see
   const out = await withFetch(stub, () => listBoxInputs(EP))
   assert.deepEqual(
     out.images.map((f) => `${f.subfolder}/${f.filename}`).sort(),
-    ['3d/rig.png', 'preserve/tanvi.jpg', 'preserve/well.png'],
+    ['preserve/tanvi.jpg', 'preserve/well.png'],
   )
   // A non-image is not offered on the image tab.
   assert.equal(out.images.some((f) => f.filename === 'notes.txt'), false)
+  // THE LOCK: a sibling input folder is neither listed nor even requested.
+  assert.equal(out.images.some((f) => f.subfolder === '3d'), false)
+  assert.equal(seen.some((u) => u.includes(encodeURIComponent('input/3d'))), false)
 })
 
 test('listBoxInputs falls back to the portable cwd spelling of the input root', async () => {
@@ -164,26 +167,31 @@ test('listBoxInputs falls back to the portable cwd spelling of the input root', 
   // which on a portable install is the PARENT of the ComfyUI directory — so
   // plain `input` misses and `ComfyUI/input` hits. This is the live box.
   const { stub, seen } = boxFetch({
-    'ComfyUI/input': ['preserve/'],
     'ComfyUI/input/preserve': ['t1.jpg'],
   })
   const out = await withFetch(stub, () => listBoxInputs(EP))
   assert.deepEqual(out.images, [{ filename: 't1.jpg', subfolder: 'preserve' }])
-  assert.ok(seen.some((u) => u.includes('path=input')), 'tries the plain spelling first')
+  assert.ok(seen.some((u) => u.includes(encodeURIComponent('input/preserve'))), 'tries the plain spelling first')
 })
 
 test('listBoxInputs still lists a box with no VideoHelperSuite, from the combos alone', async () => {
-  const { stub } = boxFetch({}, { LoadImage: ['loose.png'], VHS_LoadVideo: ['clip.mp4'] })
+  const { stub } = boxFetch({}, { LoadImage: ['preserve/loose.png'], VHS_LoadVideo: ['preserve/clip.mp4'] })
   const out = await withFetch(stub, () => listBoxInputs(EP))
-  assert.deepEqual(out.images, [{ filename: 'loose.png', subfolder: '' }])
-  assert.deepEqual(out.videos, [{ filename: 'clip.mp4', subfolder: '' }])
+  assert.deepEqual(out.images, [{ filename: 'loose.png', subfolder: 'preserve' }])
+  assert.deepEqual(out.videos, [{ filename: 'clip.mp4', subfolder: 'preserve' }])
+})
+
+test('the lock holds on the combo path too — a root-level file is not smuggled in', async () => {
+  const { stub } = boxFetch({}, { LoadImage: ['at_the_root.png', 'preserve/kept.png', 'minimax_master/other.png'] })
+  const out = await withFetch(stub, () => listBoxInputs(EP))
+  assert.deepEqual(out.images, [{ filename: 'kept.png', subfolder: 'preserve' }])
 })
 
 test('listBoxInputs does not list the same file twice when the walk and the combo agree', async () => {
   // ComfyUI annotates a subfoldered combo entry as `sub/name.png`; the walk
   // reports the same file as a {subfolder, filename} pair. They must dedupe.
   const { stub } = boxFetch(
-    { 'input': ['preserve/'], 'input/preserve': ['dup.png'] },
+    { 'input/preserve': ['dup.png'] },
     { LoadImage: ['preserve/dup.png'] },
   )
   const out = await withFetch(stub, () => listBoxInputs(EP))
@@ -191,19 +199,19 @@ test('listBoxInputs does not list the same file twice when the walk and the comb
   assert.deepEqual(out.images[0], { filename: 'dup.png', subfolder: 'preserve' })
 })
 
-test('listBoxInputs bounds the walk rather than following an input tree forever', async () => {
-  // Depth 2, so a third level is never requested — one picker open must not
-  // become an unbounded number of requests.
+test('listBoxInputs bounds the walk rather than following the folder down forever', async () => {
+  // Depth 2 below the locked folder, so a third level is never requested —
+  // one picker open must not become an unbounded number of requests.
   const { stub, seen } = boxFetch({
-    'input': ['a/'],
-    'input/a': ['b/'],
-    'input/a/b': ['c/', 'deep.png'],
-    'input/a/b/c': ['deeper.png'],
+    'input/preserve': ['a/'],
+    'input/preserve/a': ['b/'],
+    'input/preserve/a/b': ['c/', 'deep.png'],
+    'input/preserve/a/b/c': ['deeper.png'],
   })
   const out = await withFetch(stub, () => listBoxInputs(EP))
   assert.equal(out.images.some((f) => f.filename === 'deep.png'), true)
   assert.equal(out.images.some((f) => f.filename === 'deeper.png'), false)
-  assert.equal(seen.some((u) => u.includes(encodeURIComponent('input/a/b/c'))), false)
+  assert.equal(seen.some((u) => u.includes(encodeURIComponent('preserve/a/b/c'))), false)
 })
 
 test('inputUrl addresses a file in a subfolder, not just the input root', () => {

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useApp } from '../app/state'
-import { inputUrl, listBoxInputs, THUMB_PREVIEW } from '../lib/comfy'
+import { BOX_PLATE_SUBDIR, inputUrl, listBoxInputs, THUMB_PREVIEW } from '../lib/comfy'
 import type { BoxInputFile } from '../lib/comfy'
 import { REF_CAPS } from '../lib/geometry'
 import { analyzeSubjectImage, composeSubjectJob, defaultJobForSubjectKind } from '../lib/subject'
@@ -348,8 +348,8 @@ function BoxPicker({ onClose }: { onClose: () => void }) {
           <div>
             <div className="serif" style={{ fontSize: 19 }}>On the box</div>
             <div style={{ fontSize: 11.5, color: 'var(--ink3)', marginTop: 3 }}>
-              Files already in {endpoint?.label ?? 'ComfyUI'}’s input folder. Picking one cites it where it is — nothing
-              is uploaded.
+              Files already in <code>input/{BOX_PLATE_SUBDIR}</code> on {endpoint?.label ?? 'ComfyUI'}. Picking one cites
+              it where it is — nothing is uploaded.
             </div>
           </div>
           <div style={{ flexGrow: 1 }} />
@@ -373,7 +373,11 @@ function BoxPicker({ onClose }: { onClose: () => void }) {
 
           {err && <div className="card err">{err}</div>}
           {!data && !err && <div className="tok">reading the input folder…</div>}
-          {data && !files.length && <div className="tok">Nothing here{q ? ' matches that' : ''}.</div>}
+          {data && !files.length && (
+            <div className="tok">
+              {q ? 'Nothing here matches that.' : `Nothing in input/${BOX_PLATE_SUBDIR} on this box.`}
+            </div>
+          )}
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(148px, 1fr))', gap: 12 }}>
             {endpoint &&
@@ -398,8 +402,14 @@ function BoxPicker({ onClose }: { onClose: () => void }) {
                       style={{ width: '100%', height: 92, objectFit: 'cover', border: '1px solid var(--rule2)', display: 'block', background: 'var(--sunk)' }}
                     />
                   )}
+                  {/* Every file is in the same locked folder now, so showing
+                      it on each tile would repeat one fact 481 times — the
+                      heading says it once. A file in a subfolder BELOW it
+                      still shows that part. */}
                   <div className="tok" style={{ marginTop: 5, wordBreak: 'break-all', lineHeight: 1.35 }}>
-                    {f.subfolder && <span style={{ opacity: 0.6 }}>{f.subfolder}/</span>}
+                    {f.subfolder !== BOX_PLATE_SUBDIR && (
+                      <span style={{ opacity: 0.6 }}>{f.subfolder.replace(`${BOX_PLATE_SUBDIR}/`, '')}/</span>
+                    )}
                     {f.filename}
                   </div>
                 </div>

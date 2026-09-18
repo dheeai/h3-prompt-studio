@@ -445,6 +445,18 @@ const VIDEO_EXT = /\.(mp4|webm|mov|mkv|avi)$/i
  */
 const MAX_DIRS = 16
 
+/**
+ * The ONE input subfolder the picker offers (founder, 2026-09-18: "lock it to
+ * preserve only").
+ *
+ * The box's input root also holds `3d` and `minimax_master`, which are working
+ * directories for other things — offering them made the picker a file browser
+ * rather than a plate chooser. Everything outside this folder is excluded from
+ * BOTH sources: the walk starts here, and a combo entry is kept only when it
+ * is annotated into this folder.
+ */
+export const BOX_PLATE_SUBDIR = 'preserve'
+
 async function getPath(base: string, path: string): Promise<string[] | null> {
   try {
     const r = await fetch(`${base}/vhs/getpath?path=${encodeURIComponent(path)}`)
@@ -458,10 +470,11 @@ async function getPath(base: string, path: string): Promise<string[] | null> {
 
 export async function walkBoxInput(ep: ComfyEndpoint): Promise<{ images: BoxInputFile[]; videos: BoxInputFile[] } | null> {
   const base = trim(ep.baseUrl)
-  // Find which spelling of the input root this box's cwd makes resolvable.
+  // Find which spelling of the input root this box's cwd makes resolvable —
+  // probed at the locked subfolder, since that is the only one to be walked.
   let root: string | null = null
   for (const candidate of ['input', 'ComfyUI/input']) {
-    const listing = await getPath(base, candidate)
+    const listing = await getPath(base, `${candidate}/${BOX_PLATE_SUBDIR}`)
     if (listing && listing.length) {
       root = candidate
       break
@@ -471,14 +484,16 @@ export async function walkBoxInput(ep: ComfyEndpoint): Promise<{ images: BoxInpu
 
   const images: BoxInputFile[] = []
   const videos: BoxInputFile[] = []
-  // `[path relative to root, depth]`; `''` is the root itself.
-  const queue: Array<[string, number]> = [['', 0]]
+  // `[path relative to the input root, depth]` — seeded at the locked
+  // subfolder, so nothing above or beside it is ever requested. `rel` is
+  // exactly what a plate's `boxFile.subfolder` must carry.
+  const queue: Array<[string, number]> = [[BOX_PLATE_SUBDIR, 0]]
   let dirsVisited = 0
 
   while (queue.length && dirsVisited < MAX_DIRS) {
     const [rel, depth] = queue.shift()!
     dirsVisited++
-    const listing = await getPath(base, rel ? `${root}/${rel}` : root)
+    const listing = await getPath(base, `${root}/${rel}`)
     if (!listing) continue
     for (const entry of listing) {
       if (entry.endsWith('/')) {
@@ -538,6 +553,9 @@ export async function listBoxInputs(ep: ComfyEndpoint): Promise<{ images: BoxInp
       // walk rather than showing the same file twice.
       const cut = filename.lastIndexOf('/')
       const f = cut === -1 ? { filename, subfolder: '' } : { filename: filename.slice(cut + 1), subfolder: filename.slice(0, cut) }
+      // The lock applies to this source too: a combo on a box with no
+      // VideoHelperSuite must not smuggle the input root back in.
+      if (f.subfolder !== BOX_PLATE_SUBDIR && !f.subfolder.startsWith(`${BOX_PLATE_SUBDIR}/`)) continue
       const key = `${f.subfolder}/${f.filename}`
       if (!seen.has(key)) {
         seen.add(key)

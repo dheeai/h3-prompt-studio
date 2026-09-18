@@ -178,9 +178,29 @@ export function App() {
             clip in hand" is a drill-in reached by clicking a clip, never a
             tab — see the overlay below, driven by `editingGroupIndex`. */}
         <StoryAndShots onOpenPlates={() => setModal('plates')} />
+        {/* THE ERROR GOES ABOVE THE FOLD, next to the next step — not at the
+            foot of the page. It used to sit after `FilmTimeline`, so on any
+            film with clips the one message explaining why a run stopped was
+            below every clip band and off-screen. The founder hit exactly
+            that: preset B refused after spending its Direction and Acting
+            calls, `setError` fired correctly, and the report was "it just
+            stops" and "its not telling me what happened either" — because
+            nothing he could see said anything. A failure has to appear where
+            the action that failed was pressed. */}
+        {error && (
+          <div className="alert err" style={{ position: 'sticky', top: 0, zIndex: 20, margin: '0 26px 9px', display: 'flex', alignItems: 'baseline', gap: 10 }}>
+            <span style={{ flexGrow: 1 }}>{error}</span>
+            <button className="btn sm ghost" onClick={app.clearError}>dismiss</button>
+          </div>
+        )}
+        {notice && (
+          <div className="alert warn" style={{ margin: '0 26px 9px', display: 'flex', alignItems: 'baseline', gap: 10 }}>
+            <span style={{ flexGrow: 1 }}>{notice}</span>
+            <button className="btn sm ghost" onClick={app.clearNotice}>dismiss</button>
+          </div>
+        )}
         <NextStepBar />
         <FilmTimeline />
-        {error && <div className="alert err composer-error"><span>{error}</span><button className="btn sm ghost" onClick={app.clearError}>dismiss</button></div>}
         {app.editingGroupIndex !== null && (
           <div className="backdrop" onClick={() => app.setEditingGroupIndex(null)}>
             <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 760, width: '94vw', maxHeight: '88vh' }}>

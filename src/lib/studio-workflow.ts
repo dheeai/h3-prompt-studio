@@ -46,9 +46,14 @@ export function isSingleRequestStage(stage: StageId): boolean {
   return stage === 'revise' || stage === 'rebuild'
 }
 
-/** Prompt-producing passes whose output is the canonical render payload. */
+/** Prompt-producing passes whose output is the canonical render payload.
+ *
+ * `draftDirected` is one of them — it is preset B's writer, and its output is
+ * the clip's prompt in exactly the way `draft`'s is. It was missing here, so
+ * even a successful directed write would not have been recognised as the
+ * clip's prompt. Keep this in step with `PROMPT_STAGES` in `stages.ts`. */
 export function isCanonicalPromptStage(stage: StageId): boolean {
-  return stage === 'draft' || stage === 'revise' || stage === 'rebuild' || stage === 'freeform'
+  return stage === 'draft' || stage === 'draftDirected' || stage === 'revise' || stage === 'rebuild' || stage === 'freeform'
 }
 
 interface DisplayedStudioPass {

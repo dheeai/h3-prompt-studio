@@ -97,7 +97,7 @@ test('filmBlock: the look reaches a STANDALONE clip', () => {
   const f: FilmContext = { role: 'standalone', spine: '', precedes: '', follows: '', look: { preset: preset.id } }
   const block = filmBlock(f)
   assert.match(block, /FILM-WIDE LOOK/)
-  assert.ok(block.includes(preset.name))
+  assert.ok(block.includes(preset.description))
   assert.ok(block.includes(preset.description))
 })
 
@@ -114,7 +114,7 @@ test('filmBlock: the look reaches a clip authored LATER in the film (a non-stand
   const block = filmBlock(f)
   // the look block precedes the per-clip film-role text, but both must be present
   assert.match(block, /FILM-WIDE LOOK/)
-  assert.ok(block.includes(preset.name))
+  assert.ok(block.includes(preset.description))
   assert.match(block, /grainy, handheld, like a home video/)
   assert.match(block, /THIS CLIP IS PART OF A LONGER FILM/)
   assert.ok(block.indexOf('FILM-WIDE LOOK') < block.indexOf('THIS CLIP IS PART OF A LONGER FILM'))
@@ -130,6 +130,6 @@ test('filmBlock: free text survives alongside a preset choice, in the same clip'
     look: { preset: preset.id, freeText: 'match the reference film we discussed' },
   }
   const block = filmBlock(f)
-  assert.ok(block.includes(preset.name))
+  assert.ok(block.includes(preset.description))
   assert.match(block, /match the reference film we discussed/)
 })

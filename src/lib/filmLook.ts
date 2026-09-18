@@ -171,18 +171,51 @@ export function isFilmLookSet(look: FilmLook | undefined): boolean {
  * raw id rather than silently vanishing. Free text always appends alongside
  * a preset, never replacing it.
  */
-export function describeFilmLook(look: FilmLook | undefined): string {
+/**
+ * The look as PROMPT BODY — the text that is written into the prompt itself,
+ * with no instruction wrapped around it. Split out of `describeFilmLook` so
+ * the paragraph the model is shown and the paragraph that is actually injected
+ * (`injectFilmLook`, `filmLookInject.ts`) can never drift into two different
+ * strings; one of them would then be the lie.
+ */
+export function describeFilmLookText(look: FilmLook | undefined): string {
   if (!look || !isFilmLookSet(look)) return ''
-  const lines: string[] = []
+  const parts: string[] = []
   if (look.preset?.trim()) {
     const preset = filmLookPreset(look.preset)
-    lines.push(preset ? `- ${preset.name}: ${preset.description}` : `- ${look.preset.trim()}`)
+    parts.push(preset ? preset.description : look.preset.trim())
   }
-  if (look.freeText?.trim()) lines.push(`- ${look.freeText.trim()}`)
+  if (look.freeText?.trim()) parts.push(look.freeText.trim())
+  return parts.join(' ')
+}
+
+/**
+ * The look as it is shown TO THE AUTHORING MODEL.
+ *
+ * It no longer asks the model to write the look. `injectFilmLook` puts that
+ * paragraph into the prompt mechanically, so a model that also wrote it would
+ * produce it twice — and a prompt that names a thing twice weights it, the
+ * same mechanism behind this codebase's `N/A` music sentinel.
+ *
+ * The look is still SHOWN, and that is not redundant: a film whose look is
+ * "locked off on a tripod" needs its director to know that before choosing
+ * camera behaviour, or it writes `Push In` moves against its own film. Seeing
+ * the look governs the direction; writing it is now someone else's job.
+ */
+export function describeFilmLook(look: FilmLook | undefined): string {
+  const text = describeFilmLookText(look)
+  if (!text) return ''
   return `FILM-WIDE LOOK — chosen once for the whole film, and applies to this clip too.
-This is a described look, not a measured optical guarantee: write it into the
-prompt as texture and feel, the same way the rest of this look reads, never
-as a promise that the lens, glass or camera support physically changed.
-${lines.join('\n')}
+
+THIS PARAGRAPH IS ALREADY IN THE PROMPT, written there for you. Do NOT restate
+it, paraphrase it, or write your own version of it — it would then appear
+twice, and a prompt that says a thing twice weights it. Direct CONSISTENTLY
+with it instead: it is what the film is shot on, so let it govern the camera
+behaviour, the framing and the texture you choose.
+
+It is a described look, not a measured optical guarantee — never treat it as a
+promise that the lens, glass or camera support physically changed.
+
+${text}
 `
 }

@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useApp } from '../app/state'
 import { LoraStackEditor } from './LoraStackEditor'
-import { listLoraNames } from '../lib/comfy'
 import { localLoraStackOverride } from '../lib/loras'
 
 /**
@@ -18,20 +17,10 @@ export function ClipInHand({ onOpenStoryAndShots }: { onOpenStoryAndShots: () =>
     shotList, shotGroups, editingGroupIndex, setEditingGroupIndex, breakdown,
     rewordShotText, retimeShotSeconds, addShotInGroup, dropShotByIndex, pullShotIntoGroup, pushShotOutOfGroup,
     approveShotGroups, shotListBusy, streaming,
-    setClipLoraStack, filmLoraStack, extenderDefaultLoraStack, endpoint,
+    setClipLoraStack, filmLoraStack, extenderDefaultLoraStack, endpoint, loraNames, loraNamesState, refreshLoraNames,
   } = app
   const [newCovers, setNewCovers] = useState('')
   const [newSeconds, setNewSeconds] = useState(4)
-  const [loraNames, setLoraNames] = useState<string[]>([])
-  // Same fetch `StoryAndShots`/`ClipPlan`/`Composer` each do independently —
-  // `/object_info` is on ComfyUI's light paths, so listing it never forces a
-  // GPU backend switch.
-  useEffect(() => {
-    if (!endpoint) return
-    let live = true
-    listLoraNames(endpoint).then((n) => { if (live) setLoraNames(n) }).catch(() => {})
-    return () => { live = false }
-  }, [endpoint])
 
   // What an UNSET clip actually falls back to: the film-wide default (Full
   // Story mode's "Story & shots" card) if one is set, else the operator's
@@ -150,6 +139,8 @@ export function ClipInHand({ onOpenStoryAndShots }: { onOpenStoryAndShots: () =>
               stack={approvedClip.loraStack}
               defaultStack={inheritedDefault}
               available={loraNames}
+            listState={loraNamesState}
+            onRefresh={refreshLoraNames}
               onChange={(stack) => setClipLoraStack(group.index, stack)}
               customizedLabel="overridden for this clip"
               defaultLabel={

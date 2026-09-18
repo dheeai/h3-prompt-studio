@@ -10,8 +10,8 @@ import { DEFAULT_PROVIDERS, loadProviders, probe, saveProviders, LOCAL_LLM_URL, 
 import { PROMPT_STAGES, SCHEMA_STAGES, STAGE_LABEL, continuationFrameBlock, durationBlock, fillTemplateWithDuration, filmBlock, platesBlock, hasPromptBlock, latestPromptForClip, nextRole, parseBreakdown, splitPromptReplacement, splitReply, templateFor } from '../lib/stages'
 import { h3ResponseFormat, joinH3Sections } from '../lib/schema'
 import {
-  DEFAULT_ENDPOINTS, RenderStopped, clearQueue, fetchExtenderNodeSchema, interrupt, lastFrameOf, nextPollStep, poll,
-  pollExtender, probeComfy, submit, uploadImage, viewUrl,
+  DEFAULT_ENDPOINTS, RenderStopped, clearQueue, fetchExtenderNodeSchema, interrupt, lastFrameOf, listLoraNames,
+  nextPollStep, poll, pollExtender, probeComfy, submit, uploadImage, viewUrl,
 } from '../lib/comfy'
 import type { PollResult } from '../lib/comfy'
 import { framesForSeconds } from '../lib/geometry'
@@ -498,6 +498,22 @@ export interface Api {
    * (`LTX_lora_loader.stack_data` on the shipped graph) — what
    * `LoraStackEditor` seeds an edit from before the operator customizes it. */
   extenderDefaultLoraStack: LoraStackEntry[]
+  /**
+   * Every LoRA the bound box offers, fetched ONCE here and shared by all four
+   * pickers (Story & shots, The clip in hand, the clip plan, the composer),
+   * each of which used to issue its own identical `/object_info` request.
+   *
+   * `loraNamesState` exists because an empty list has two very different
+   * meanings — the box genuinely has no LoRAs, or we could not ask. The old
+   * per-component fetch swallowed its error with `.catch(() => {})` and never
+   * retried, so one transient failure left the picker permanently offering
+   * nothing, with no way for the operator to tell which had happened. That is
+   * exactly the "where is the option to select a LoRA?" report.
+   */
+  loraNames: string[]
+  loraNamesState: 'idle' | 'loading' | 'ok' | 'error'
+  /** Ask the box again — the retry the swallowed `.catch` never offered. */
+  refreshLoraNames: () => void
   /** The clip plan's Master Extender accounting and gate — the cost-before-
    * spend disclosure the brief asks for (clip count, total seconds, how many
    * will sample versus come from cache), computed off exactly the flags
@@ -3118,6 +3134,43 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const extenderDefaults = useMemo(() => extenderGeometryFromInputs(extenderEffectiveInputs), [extenderEffectiveInputs])
   const extenderDefaultLoraStack = useMemo(() => readBakedLoraStack(extenderGraph), [extenderGraph])
 
+  // The box's LoRA folder, fetched once per endpoint for the whole app — see
+  // `Api.loraNames`. `/object_info` is prefix-matched onto ComfyUI's
+  // light_paths by the gateway (`_is_light`: `path === p || path.startsWith(p
+  // + '/')`), so this never forces a GPU backend switch and is safe to issue
+  // alongside a render in flight.
+  const [loraNames, setLoraNames] = useState<string[]>([])
+  const [loraNamesState, setLoraNamesState] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle')
+  const [loraNamesNonce, setLoraNamesNonce] = useState(0)
+  const refreshLoraNames = useCallback(() => setLoraNamesNonce((n) => n + 1), [])
+  const endpointId = endpoint?.id
+  const endpointBase = endpoint?.baseUrl
+  useEffect(() => {
+    if (!endpoint) {
+      setLoraNames([])
+      setLoraNamesState('idle')
+      return
+    }
+    let live = true
+    setLoraNamesState('loading')
+    listLoraNames(endpoint)
+      .then((names) => {
+        if (!live) return
+        setLoraNames(names)
+        setLoraNamesState('ok')
+      })
+      .catch(() => {
+        if (!live) return
+        // Keep whatever was already listed rather than blanking the picker on
+        // a blip — but say so, and leave the retry reachable.
+        setLoraNamesState('error')
+      })
+    return () => { live = false }
+    // Keyed on the endpoint's IDENTITY, not the object, so a re-render that
+    // rebuilds an equal endpoint does not re-fetch on every pass.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [endpointId, endpointBase, loraNamesNonce])
+
   const api: Api = {
     ready,
     skills,
@@ -3189,6 +3242,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     extenderMasterDefaults,
     extenderNodeSchema,
     extenderDefaultLoraStack,
+    loraNames,
+    loraNamesState,
+    refreshLoraNames,
     extenderPlanPreview,
     platesFrozenReason,
     extenderFilm,

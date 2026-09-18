@@ -7,7 +7,6 @@ import { EXTENDER_REF_SLOTS, filmOutputPrefix } from '../lib/extender'
 import { DraftingStatus } from './DraftingStatus'
 import { FILM_LOOK_PRESETS, filmLookPreset, isFilmLookSet } from '../lib/filmLook'
 import { LoraStackEditor } from './LoraStackEditor'
-import { listLoraNames } from '../lib/comfy'
 import { localLoraStackOverride } from '../lib/loras'
 import type { FilmContext, FilmLook, LoraStackEntry } from '../lib/types'
 
@@ -110,11 +109,15 @@ function FilmLoraCard({
   stack,
   defaultStack,
   available,
+  listState,
+  onRefresh,
   onChange,
 }: {
   stack: LoraStackEntry[] | undefined
   defaultStack: LoraStackEntry[]
   available: string[]
+  listState: 'idle' | 'loading' | 'ok' | 'error'
+  onRefresh: () => void
   onChange: (stack: LoraStackEntry[] | undefined) => void
 }) {
   return (
@@ -132,6 +135,8 @@ function FilmLoraCard({
         stack={stack}
         defaultStack={defaultStack}
         available={available}
+        listState={listState}
+        onRefresh={onRefresh}
         onChange={onChange}
         customizedLabel="a film-wide stack is set"
         defaultLabel="no film-wide stack — every clip falls back to the workflow's own default"
@@ -160,7 +165,7 @@ export function StoryAndShots({
     plot, setPlot, maxRuntimeSeconds, setMaxRuntimeSeconds, shotList, shotGroups, shotGroupIssues,
     shotListBusy, shotStreaming, makeShotList, reviseShotsFrom, approveShotGroups, breakdown, extenderPlanPreview,
     setEditingGroupIndex, streaming, plates, platesFrozenReason, film, setFilm,
-    filmLoraStack, setFilmLoraStack, extenderDefaultLoraStack, endpoint,
+    filmLoraStack, setFilmLoraStack, extenderDefaultLoraStack, endpoint, loraNames, loraNamesState, refreshLoraNames,
     filmName, filmNameEffective, setFilmName,
   } = app
 
@@ -171,16 +176,6 @@ export function StoryAndShots({
   // can name the film themselves. The derived name is the placeholder.
   const derivedName = deriveFilmName(shotList?.spine)
 
-  const [loraNames, setLoraNames] = useState<string[]>([])
-  // The box's own LoRA folder — `/object_info` is on ComfyUI's light paths, so
-  // listing it never forces a GPU backend switch (same fetch `ClipPlan`/
-  // `Composer` already do — each host lists it independently).
-  useEffect(() => {
-    if (!endpoint) return
-    let live = true
-    listLoraNames(endpoint).then((n) => { if (live) setLoraNames(n) }).catch(() => {})
-    return () => { live = false }
-  }, [endpoint])
 
   // The operator's own machine-local override wins when present, else the
   // bound workflow's own baked default — the same fallback `ClipPlan`/
@@ -286,7 +281,9 @@ export function StoryAndShots({
       </div>
 
       <FilmLookCard look={film.look} setFilm={setFilm} />
-      <FilmLoraCard stack={filmLoraStack} defaultStack={workflowLoraDefault} available={loraNames} onChange={setFilmLoraStack} />
+      <FilmLoraCard stack={filmLoraStack} defaultStack={workflowLoraDefault} available={loraNames}
+            listState={loraNamesState}
+            onRefresh={refreshLoraNames} onChange={setFilmLoraStack} />
 
       <div className="card" style={{ marginTop: 9 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 9 }}>

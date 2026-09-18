@@ -30,6 +30,8 @@ export function LoraStackEditor({
   stack,
   defaultStack,
   available,
+  listState = 'ok',
+  onRefresh,
   onChange,
   customizedLabel = 'customized for this clip',
   defaultLabel = "using the workflow's own default",
@@ -39,6 +41,16 @@ export function LoraStackEditor({
   stack: LoraStackEntry[] | undefined
   defaultStack: LoraStackEntry[]
   available: string[]
+  /**
+   * How the box's LoRA list came back. An empty `available` has two very
+   * different meanings and the picker used to render both identically — as
+   * no dropdown at all, with nothing said. That is the whole of the "where is
+   * the option to select a LoRA?" report: the list had failed to arrive, and
+   * the UI's only expression of it was silence.
+   */
+  listState?: 'idle' | 'loading' | 'ok' | 'error'
+  /** Ask the box again. Omit to hide the retry. */
+  onRefresh?: () => void
   onChange: (stack: LoraStackEntry[] | undefined) => void
   /** The status line's two halves — override so a host can say what
    * "unset" actually falls back to at ITS level (a per-clip editor
@@ -103,6 +115,20 @@ export function LoraStackEditor({
         ))}
       </div>
 
+      {/* An empty picker always explains itself now — which of the three
+          reasons it is, and what to do about it. */}
+      {offered.length === 0 && (
+        <div className="tok" style={{ display: 'block', marginTop: 7, color: listState === 'error' ? 'var(--ox)' : undefined }}>
+          {listState === 'loading' && 'asking the box which LoRAs it has…'}
+          {listState === 'idle' && 'no ComfyUI endpoint connected, so the box has not been asked which LoRAs it has.'}
+          {listState === 'error' && 'could not read the box\u2019s LoRA folder. '}
+          {listState === 'ok' && available.length === 0 && 'this box reports no LoRAs at all.'}
+          {listState === 'ok' && available.length > 0 && 'every LoRA this box offers is already in the stack above.'}
+          {listState === 'error' && onRefresh && (
+            <button className="btn sm ghost" onClick={onRefresh}>try again</button>
+          )}
+        </div>
+      )}
       {offered.length > 0 && (
         <select
           value=""

@@ -4,7 +4,6 @@ import { classifyInput } from '../lib/lint'
 import { SCENE_LENGTH_CHIPS, secondsLabel } from '../lib/filmDisplay'
 import { LoraStackEditor } from './LoraStackEditor'
 import { DraftingStatus } from './DraftingStatus'
-import { listLoraNames } from '../lib/comfy'
 import { localLoraStackOverride } from '../lib/loras'
 import { framesForSeconds } from '../lib/geometry'
 
@@ -50,19 +49,10 @@ export function Composer({
   onOpenCheck: () => void
 }) {
   const app = useApp()
-  const { story, setStory, settings, patchSettings, breakIntoScenes, setBreakIntoScenes, streaming, providers, probes, clip, plates, sceneBlockers, rendering, gpuBusy, findings, scenesFrom, setLoraStack, extenderDefaultLoraStack, endpoint, loraStack, pendingAutoDraft } = app
+  const { story, setStory, settings, patchSettings, breakIntoScenes, setBreakIntoScenes, streaming, providers, probes, clip, plates, sceneBlockers, rendering, gpuBusy, findings, scenesFrom, setLoraStack, extenderDefaultLoraStack, endpoint, loraStack, pendingAutoDraft, loraNames, loraNamesState, refreshLoraNames } = app
   const ref = useRef<HTMLTextAreaElement>(null)
-  // The box's own LoRA folder — `/object_info` is on ComfyUI's light paths, so
-  // listing it never forces a GPU backend switch.
-  useEffect(() => {
-    if (!endpoint) return
-    let live = true
-    listLoraNames(endpoint).then((n) => { if (live) setLoraNames(n) }).catch(() => {})
-    return () => { live = false }
-  }, [endpoint])
   const [authoring, setAuthoring] = useState(false)
   const [confirmingRender, setConfirmingRender] = useState(false)
-  const [loraNames, setLoraNames] = useState<string[]>([])
 
   useEffect(() => autosize(ref.current), [story])
   useEffect(() => setConfirmingRender(false), [clip?.id])
@@ -175,6 +165,8 @@ export function Composer({
               ? localLoraStackOverride(import.meta.env?.VITE_LOCAL_LORA_STACK)
               : extenderDefaultLoraStack}
             available={loraNames}
+            listState={loraNamesState}
+            onRefresh={refreshLoraNames}
             onChange={setLoraStack}
           />
         </div>

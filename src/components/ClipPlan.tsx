@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useApp } from '../app/state'
 import { LoraStackEditor } from './LoraStackEditor'
-import { listLoraNames } from '../lib/comfy'
 import { localLoraStackOverride } from '../lib/loras'
 import { clipsNeedingPrompt } from '../lib/studio-workflow'
 import { latestPromptForClip } from '../lib/stages'
@@ -17,23 +16,7 @@ import { RenderProgress } from './DraftingStatus'
 /** The clip plan a Break down pass produced, and one way in per clip. */
 export function ClipPlan() {
   const app = useApp()
-  const { breakdown, versions, streaming, clips, rendering, extenderDefaultLoraStack, endpoint } = app
-  const [loraNames, setLoraNames] = useState<string[]>([])
-  const [loraErr, setLoraErr] = useState<string | null>(null)
-
-  // Fetched once per endpoint, shared by every clip's editor — an
-  // /object_info lookup, on the light_paths list, so it never forces a GPU
-  // backend switch and is safe alongside a render in flight.
-  useEffect(() => {
-    if (!endpoint) return
-    let live = true
-    listLoraNames(endpoint)
-      .then((names) => live && setLoraNames(names))
-      .catch((e) => live && setLoraErr(String((e as Error).message || e)))
-    return () => {
-      live = false
-    }
-  }, [endpoint])
+  const { breakdown, versions, streaming, clips, rendering, extenderDefaultLoraStack, endpoint, loraNames, loraNamesState, refreshLoraNames } = app
 
   // The operator's own machine-local override (VITE_LOCAL_LORA_STACK, from a
   // gitignored .env.local) wins when present; the public build has none, so
@@ -53,7 +36,6 @@ export function ClipPlan() {
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 7 }}>
         <span className="lbl">Clip plan{breakdown.spine ? ` — ${breakdown.spine}` : ''}</span>
       </div>
-      {loraErr && <div className="tok" style={{ display: 'block', marginBottom: 7, color: 'var(--ox)' }}>{loraErr}</div>}
       {breakdown.clips.map((c) => {
         const ready = latestFor(c.index)
         return (
@@ -114,6 +96,8 @@ export function ClipPlan() {
               stack={c.loraStack}
               defaultStack={defaultStack}
               available={loraNames}
+            listState={loraNamesState}
+            onRefresh={refreshLoraNames}
             />
           </div>
         )

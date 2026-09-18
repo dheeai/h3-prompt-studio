@@ -147,7 +147,7 @@ function baseExportInput(over: Partial<BuildExportPlanInput> = {}): BuildExportP
     plot: 'A courier crosses a city in the rain to deliver one letter.',
     maxRuntimeSeconds: 30,
     filmLook: { freeText: 'shot on a vintage anamorphic zoom' },
-    filmLoraStack: [{ lora: 'style_5090.tail3cca41.ts.net.safetensors', strength: 0.6, on: true }],
+    filmLoraStack: [{ lora: 'style_box.example.ts.net.safetensors', strength: 0.6, on: true }],
     shotList,
     shotGroups,
     shotGroupIssues: [],
@@ -173,7 +173,7 @@ test('planMarkdown includes the plot, beats with seconds, shots with seconds, cl
 test('planMarkdown never writes the LoRA filename, only a redacted count/strength summary', () => {
   const md = planMarkdown(baseExportInput())
   assert.equal(md.includes('.safetensors'), false)
-  assert.equal(md.includes('tail3cca41'), false)
+  assert.equal(md.includes('example.ts.net'), false)
   assert.ok(md.includes('1 style LoRA configured: #1 strength 0.60 (on)'))
 })
 
@@ -203,7 +203,7 @@ test('buildProjectJson does NOT round-trip a LoRA stack filename — it is redac
   const input = baseExportInput()
   const json = buildProjectJson(input)
   assert.deepEqual(json.filmLoraStack, redactLoraStack(input.filmLoraStack))
-  assert.equal(JSON.stringify(json).includes('tail3cca41'), false)
+  assert.equal(JSON.stringify(json).includes('example.ts.net'), false)
   assert.equal(JSON.stringify(json).includes('.safetensors'), false)
 })
 
@@ -261,20 +261,20 @@ test('buildExportPlan zero-pads clip numbering and matches the clip index for a 
 test('a full export plan of a session carrying a tailnet-looking LoRA filename contains no ts.net and no http anywhere', () => {
   const files = buildExportPlan(
     baseExportInput({
-      filmLoraStack: [{ lora: 'style_5090.tail3cca41.ts.net_endpoint_http.safetensors', strength: 0.5, on: true }],
-      breakdown: { spine: 'x', clips: [makeClip({ loraStack: [{ lora: 'per_clip_5090.tail3cca41.ts.net.safetensors', strength: 0.9, on: true }] })] },
+      filmLoraStack: [{ lora: 'style_box.example.ts.net_endpoint_http.safetensors', strength: 0.5, on: true }],
+      breakdown: { spine: 'x', clips: [makeClip({ loraStack: [{ lora: 'per_clip_box.example.ts.net.safetensors', strength: 0.9, on: true }] })] },
     }),
   )
   const all = files.map((f) => f.content).join('\n')
   assert.equal(all.includes('ts.net'), false)
   assert.equal(all.includes('http'), false)
-  assert.equal(all.includes('tail3cca41'), false)
+  assert.equal(all.includes('example.ts.net'), false)
   assert.equal(all.includes('.safetensors'), false)
 })
 
 test('the fallback bundle (no showDirectoryPicker) also carries no LoRA filename, ts.net or http', () => {
   const files = buildExportPlan(
-    baseExportInput({ filmLoraStack: [{ lora: 'x_5090.tail3cca41.ts.net.safetensors', strength: 0.5, on: true }] }),
+    baseExportInput({ filmLoraStack: [{ lora: 'x_box.example.ts.net.safetensors', strength: 0.5, on: true }] }),
   )
   const bundle = buildFallbackBundle(files, 'Lira in the Rain')
   assert.equal(bundle.markdown.includes('ts.net'), false)

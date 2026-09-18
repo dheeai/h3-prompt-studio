@@ -118,8 +118,26 @@ test('clipsDiscardedByShotRevision: a cut after every group discards nothing', (
 
 // ── the ceiling check surfaces without blocking ──────────────────────────
 
-test('ceilingAlert: within the ceiling says nothing', () => {
-  const check = checkRuntimeCeiling(shots([5, 5, 5]), 60)
+test('ceilingAlert: close to the ceiling, neither over nor significantly under, says nothing', () => {
+  // 57 of 60 -- 5% short, comfortably inside the noise the significant-underrun
+  // check is meant to ignore (see shotList.ts's SIGNIFICANT_UNDERRUN_FRACTION).
+  const check = checkRuntimeCeiling(shots([19, 19, 19]), 60)
+  assert.equal(ceilingAlert(check), null)
+})
+
+test('ceilingAlert: a significant under-run (the "5 minutes asked for, 7 clips delivered" bug) states the fact', () => {
+  // 105s of a 300s ceiling -- the exact numbers from the measured bug.
+  const check = checkRuntimeCeiling(shots(Array(21).fill(5)), 300)
+  assert.equal(check.totalSeconds, 105)
+  assert.equal(check.withinCeiling, true) // 0 overshoot -- this is what stayed silent before
+  assert.equal(check.significantlyUnder, true)
+  const alert = ceilingAlert(check)
+  assert.ok(alert && /105\.0s.*under the 300\.0s ceiling/.test(alert))
+})
+
+test('ceilingAlert: 298 of 300 (noise) stays quiet', () => {
+  const check = checkRuntimeCeiling(shots([298]), 300)
+  assert.equal(check.significantlyUnder, false)
   assert.equal(ceilingAlert(check), null)
 })
 

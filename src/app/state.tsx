@@ -35,16 +35,18 @@ import { clipsNeedingPrompt, isSingleRequestStage, type DraftingProgress, type S
 import { streamingCallbacks } from '../lib/streamingProgress'
 import { normalizeThinkingBudgets, resolveThinkingBudget } from '../lib/thinking'
 import {
-  SHOT_LIST_TEMPLATE, deriveFilmName, fillShotListTemplate, groupShotsIntoClips, parseShotList,
-  reviseShotsFromIndex, shotListResponseFormat,
+  BEAT_LIST_TEMPLATE, allocateBeatSeconds, beatListResponseFormat, checkThinBrief, deriveFilmName,
+  fillBeatListTemplate, groupShotsIntoClips, parseBeatList, planShotRevision, reviseShotsFromIndex,
+  shotSubdivideResponseFormat, subdivideAllBeats,
 } from '../lib/shotList'
+import type { ShotSubdivideCall, ThinBriefCheck } from '../lib/shotList'
 import {
   addShotToGroup, clipsDiscardedByShotRevision, discardBreakdownFromIndex, dropShot, planForTickedSubmission,
   pullShotFromNext, pushShotToNext, retimeShot, rewordShot, takeShotGroups,
 } from '../lib/shotScreens'
 import type {
-  Breakdown, ChatTurn, Clip, ComfyEndpoint, ComfyNode, FilmContext, Finding, LoraStackEntry, Plate, ProbeResult,
-  Provider, Selection, Settings, ShotGroup, ShotList, Skill, StageId, Version,
+  AllocatedBeat, Breakdown, ChatTurn, Clip, ComfyEndpoint, ComfyNode, FilmContext, Finding, LoraStackEntry, Plate,
+  ProbeResult, Provider, Selection, Settings, Shot, ShotGroup, ShotList, Skill, StageId, Version,
 } from '../lib/types'
 
 const SETTINGS_SCHEMA = 6
@@ -173,9 +175,24 @@ interface Session {
   /** The operator's own hard runtime ceiling for the whole film, in
    * seconds — see `shotList.ts`'s `checkRuntimeCeiling`. */
   maxRuntimeSeconds?: number
-  /** Full Story mode's step-2 output — the whole film's shot list, before
-   * any grouping into clip-sized sets. */
+  /**
+   * Full Story mode's step-2 output — the whole film's shot list, before
+   * any grouping into clip-sized sets. Pass 1 (beats) alone lands here with
+   * `shots: []` and `beats` populated the moment it returns — see
+   * `thinBriefCheck` below for why pass 2 does not always follow it
+   * automatically.
+   */
   shotList?: ShotList
+  /**
+   * Set the moment pass 1's beats land, non-null only while `checkThinBrief`
+   * says this runtime would pad a thin plot — the fact `makeShotList` PAUSES
+   * on rather than spending pass 2's GPU time to confirm. `continueSubdivision`
+   * clears it (to `null`, not `undefined`, so "checked and fine" stays
+   * distinguishable from "not checked yet") once the operator says to carry
+   * on anyway, or once a fresh `makeShotList`/`reviseShotsFrom` run replaces
+   * it with a new check.
+   */
+  thinBriefCheck?: ThinBriefCheck | null
   /** `groupShotsIntoClips(shotList.shots)`'s own output, STORED rather than
    * re-derived on every render: "The clip in hand" (Screen 2) can move a
    * shot across a group boundary by hand (`pullShotFromNext`/
@@ -394,24 +411,58 @@ export interface Api {
   maxRuntimeSeconds: number
   setMaxRuntimeSeconds: (n: number) => void
   /** Full Story mode's step-2 output, or null before "make the shot list"
-   * has run. */
+   * has run. `shots` is empty (with `beats` populated) the moment pass 1
+   * lands but pass 2 hasn't run yet — see `thinBriefCheck`. */
   shotList: ShotList | null
+  /** Non-null only while pass 1's beats are checked and this runtime would
+   * pad a thin plot — see `Session.thinBriefCheck`'s module comment. Drives
+   * the "Continue and subdivide anyway" gate in "Story & shots". */
+  thinBriefCheck: ThinBriefCheck | null
+  /**
+   * Shots landed so far during an in-flight pass-2 run, one beat at a time
+   * (`subdivideAllBeats`'s `onBeatDone`) — the concrete fix for "shows no
+   * progress state, after sometime the whole thing loads" (the founder's own
+   * complaint about the single-call version): the operator sees each beat's
+   * shots the moment that beat's call returns, not just the finished film.
+   * Reset to `[]` at the start of every `makeShotList`/`reviseShotsFrom`/
+   * `continueSubdivision` call; stale once `shotListBusy` goes false again
+   * (the finished result is `shotList.shots` by then, not this).
+   */
+  shotsAuthoredSoFar: Shot[]
   /** `groupShotsIntoClips`'s stored output — see `Session.shotGroups`'s
    * module comment for why this is stored rather than re-derived. */
   shotGroups: ShotGroup[]
   shotGroupIssues: string[]
   /** A shots/revision model call is in flight. */
   shotListBusy: boolean
-  /** `makeShotList`/`reviseShotsFrom`'s own progress, for `DraftingStatus` —
-   * see `shotStreaming`'s module comment (by its `useState`) for why this is
-   * a slot of its own rather than a reuse of `streaming`. */
+  /** `makeShotList`/`reviseShotsFrom`/`continueSubdivision`'s own progress,
+   * for `DraftingStatus` — see `shotStreaming`'s module comment (by its
+   * `useState`) for why this is a slot of its own rather than a reuse of
+   * `streaming`. */
   shotStreaming: DraftingProgress | null
-  /** One model call using the foundation's `SHOT_LIST_TEMPLATE`/
-   * `shotListResponseFormat`/`parseShotList`, from `plot`/`maxRuntimeSeconds`. */
-  makeShotList: () => Promise<void>
   /**
-   * Regenerate the shot list from `cutShotIndex` on (`reviseShotsFromIndex`),
-   * and drop exactly the rendered clips `groupsAffectedByCut` says a cut at
+   * Pass 1 (`BEAT_LIST_TEMPLATE`/`beatListResponseFormat`/`parseBeatList`),
+   * from `plot` alone — then `allocateBeatSeconds` against
+   * `maxRuntimeSeconds`, then `checkThinBrief`. If the plot is thin for this
+   * runtime, this STOPS here (`Session.thinBriefCheck` set, `shotList.shots`
+   * left empty) rather than spending pass 2's GPU time on what would likely
+   * come back as padding — see `continueSubdivision`. Otherwise it runs pass
+   * 2 (`subdivideAllBeats`) immediately, exactly as before this rework.
+   */
+  makeShotList: () => Promise<void>
+  /** Run pass 2 anyway, after `makeShotList` paused on `thinBriefCheck` — the
+   * operator's own call once they've seen the warning; the operator stays in
+   * control of whether a thin plot gets padded out, this file only refuses
+   * to spend the GPU time silently. */
+  continueSubdivision: () => Promise<void>
+  /**
+   * Regenerate the shot list from `cutShotIndex` on. At the BEAT level this
+   * now means `planShotRevision`: the beats before the cut are untouched,
+   * the beat straddling the cut is resumed from its kept fragment, and every
+   * beat after it is redone in full via `subdivideAllBeats` — pass 1 itself
+   * never re-runs (see `shotList.ts`'s `planShotRevision` module comment for
+   * why the CUT stays shot-granular even though the re-run is beat-granular).
+   * Also drops exactly the rendered clips `groupsAffectedByCut` says a cut at
    * that shot invalidates — via `filmEdit.ts`'s existing `dropFromIndex`,
    * never a second invalidation path. The caller (Screen 1) is responsible
    * for showing the discard count and confirming BEFORE calling this — by
@@ -1668,6 +1719,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // ── Full Story mode — "Story & shots" / "The clip in hand" ────────────
 
   const [shotListBusy, setShotListBusy] = useState(false)
+  /** See `Api.shotsAuthoredSoFar`'s module comment. */
+  const [shotsAuthoredSoFar, setShotsAuthoredSoFar] = useState<Shot[]>([])
 
   const setPlot = useCallback((plot: string) => {
     const next = { ...sessionRef.current, plot }
@@ -1711,10 +1764,84 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setSession(next)
   }, [])
 
-  /** One shots-stage model call. No skills, no system prompt — the template
-   * is the whole ask (see `shotList.ts`'s module comment on why `shots` is
-   * kept off the Direct/Draft `StageId` chain), so this never touches
-   * `context`/`buildH3SystemPrompt`. */
+  /**
+   * Pass 2's model call, wrapped once so `makeShotList`, `continueSubdivision`
+   * and `reviseShotsFrom` share EXACTLY one implementation rather than three
+   * copies that could drift. Wires `subdivideAllBeats`'s injected `call`
+   * to `streamChatComplete`, resetting `shotStreaming` per WINDOW (so
+   * `DraftingStatus` always shows the call actually in flight, never a stale
+   * one) and growing `shotsAuthoredSoFar` per BEAT — see its own module
+   * comment for why that granularity is the point.
+   *
+   * No skills, no system prompt — the template is the whole ask (same reason
+   * the old single-call `shots` stage stayed off the Direct/Draft `StageId`
+   * chain, see `shotList.ts`'s module comment), so this never touches
+   * `context`/`buildH3SystemPrompt`.
+   */
+  const runSubdivision = useCallback(
+    async (
+      spine: string,
+      beats: AllocatedBeat[],
+      ac: AbortController,
+      opts: { startIndex?: number; priorShotsForFirstBeat?: Shot[] } = {},
+    ): Promise<Shot[]> => {
+      const provider = providers.find((p) => p.id === settings.providerId)
+      if (!provider) throw new Error('Pick a provider first.')
+      if (!settings.model) throw new Error('Pick a model first.')
+      const call: ShotSubdivideCall = async (user, ctx) => {
+        setShotStreaming({
+          stage: `shots · beat ${ctx.beatOrdinal}/${ctx.beatCount} · window ${ctx.windowIndex + 1}/${ctx.windowCount}`,
+          text: '',
+          reasoning: '',
+          startedAt: Date.now(),
+          continuations: 0,
+          phase: 'thinking',
+        })
+        const result = await streamChatComplete({
+          provider,
+          model: settings.model,
+          temperature: settings.temperature,
+          maxTokens: settings.maxTokens,
+          thinkingBudget: resolveThinkingBudget(provider.id, settings.model, settings.thinkingBudgets),
+          responseFormat: provider.supportsJsonSchema ? shotSubdivideResponseFormat() : undefined,
+          signal: ac.signal,
+          messages: [{ role: 'user', content: user }],
+          ...streamingCallbacks(setShotStreaming),
+        })
+        if (!result.text.trim()) throw new Error('The model returned nothing.')
+        return result.text
+      }
+      return subdivideAllBeats(beats, spine, call, {
+        startIndex: opts.startIndex,
+        priorShotsForFirstBeat: opts.priorShotsForFirstBeat,
+        onBeatDone: (_beat, _beatShots, allShotsSoFar) => setShotsAuthoredSoFar([...allShotsSoFar]),
+      })
+    },
+    [providers, settings],
+  )
+
+  /** Fold freshly-subdivided shots into the session as the finished shot
+   * list — the tail end shared by `makeShotList` (when the plot is not
+   * thin) and `continueSubdivision` (the operator's "carry on anyway"). */
+  const finalizeShotList = useCallback((spine: string, maxRuntimeSeconds: number, beats: AllocatedBeat[], shots: Shot[]) => {
+    const { groups, issues } = groupShotsIntoClips(shots)
+    const nextShotList: ShotList = { spine, maxRuntimeSeconds, shots, beats, at: Date.now() }
+    const next = {
+      ...sessionRef.current,
+      shotList: nextShotList,
+      shotGroups: groups,
+      shotGroupIssues: issues,
+      editingGroupIndex: null,
+      thinBriefCheck: null,
+    }
+    sessionRef.current = next
+    setSession(next)
+  }, [])
+
+  /**
+   * Pass 1, then — unless the plot is thin for this runtime — pass 2. See
+   * `Api.makeShotList`'s module comment for the thin-brief pause.
+   */
   const makeShotList = useCallback(async () => {
     const provider = providers.find((p) => p.id === settings.providerId)
     if (!provider) { setError('Pick a provider first.'); return }
@@ -1725,29 +1852,47 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!beginGpuUse('llm')) return
     setShotListBusy(true)
     setError(null)
+    setShotsAuthoredSoFar([])
     const ac = new AbortController()
     abortRef.current = ac
-    setShotStreaming({ stage: 'shots', text: '', reasoning: '', startedAt: Date.now(), continuations: 0, phase: 'thinking' })
+    setShotStreaming({ stage: 'beats', text: '', reasoning: '', startedAt: Date.now(), continuations: 0, phase: 'thinking' })
     try {
-      const user = fillShotListTemplate(SHOT_LIST_TEMPLATE, plot, maxRuntimeSeconds)
+      const user = fillBeatListTemplate(BEAT_LIST_TEMPLATE, plot)
       const result = await streamChatComplete({
         provider,
         model: settings.model,
         temperature: settings.temperature,
         maxTokens: settings.maxTokens,
         thinkingBudget: resolveThinkingBudget(provider.id, settings.model, settings.thinkingBudgets),
-        responseFormat: provider.supportsJsonSchema ? shotListResponseFormat() : undefined,
+        responseFormat: provider.supportsJsonSchema ? beatListResponseFormat() : undefined,
         signal: ac.signal,
         messages: [{ role: 'user', content: user }],
         ...streamingCallbacks(setShotStreaming),
       })
       if (!result.text.trim()) throw new Error('The model returned nothing.')
-      const parsed = parseShotList(result.text, maxRuntimeSeconds)
-      if (!parsed) throw new Error('Could not parse a shot list from the reply — try again.')
-      const { groups, issues } = groupShotsIntoClips(parsed.shots)
-      const next = { ...sessionRef.current, shotList: parsed, shotGroups: groups, shotGroupIssues: issues, editingGroupIndex: null }
-      sessionRef.current = next
-      setSession(next)
+      const beatList = parseBeatList(result.text)
+      if (!beatList) throw new Error('Could not parse beats from the reply — try again.')
+
+      const beats = allocateBeatSeconds(beatList.beats, maxRuntimeSeconds)
+      const thin = checkThinBrief(beatList.beats, maxRuntimeSeconds)
+      const pausedShotList: ShotList = { spine: beatList.spine, maxRuntimeSeconds, shots: [], beats, at: Date.now() }
+      const paused = {
+        ...sessionRef.current,
+        shotList: pausedShotList,
+        shotGroups: [],
+        shotGroupIssues: [],
+        editingGroupIndex: null,
+        thinBriefCheck: thin.isThin ? thin : null,
+      }
+      sessionRef.current = paused
+      setSession(paused)
+      // Say so BEFORE pass 2 spends any GPU time — see `checkThinBrief`'s
+      // own module comment. The operator's `continueSubdivision` picks up
+      // exactly here.
+      if (thin.isThin) return
+
+      const shots = await runSubdivision(beatList.spine, beats, ac)
+      finalizeShotList(beatList.spine, maxRuntimeSeconds, beats, shots)
     } catch (e) {
       if ((e as Error).name !== 'AbortError') setError(String((e as Error).message || e))
     } finally {
@@ -1756,15 +1901,44 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setShotStreaming(null)
       endGpuUse()
     }
-  }, [providers, settings, beginGpuUse, endGpuUse])
+  }, [providers, settings, beginGpuUse, endGpuUse, runSubdivision, finalizeShotList])
+
+  /** See `Api.continueSubdivision`'s module comment. */
+  const continueSubdivision = useCallback(async () => {
+    const snap = sessionRef.current
+    const list = snap.shotList
+    if (!list || list.shots.length || !list.beats?.length) return
+    const provider = providers.find((p) => p.id === settings.providerId)
+    if (!provider) { setError('Pick a provider first.'); return }
+    if (!settings.model) { setError('Pick a model first.'); return }
+    if (!beginGpuUse('llm')) return
+    setShotListBusy(true)
+    setError(null)
+    setShotsAuthoredSoFar([])
+    const ac = new AbortController()
+    abortRef.current = ac
+    try {
+      const shots = await runSubdivision(list.spine, list.beats, ac)
+      finalizeShotList(list.spine, list.maxRuntimeSeconds, list.beats, shots)
+    } catch (e) {
+      if ((e as Error).name !== 'AbortError') setError(String((e as Error).message || e))
+    } finally {
+      abortRef.current = null
+      setShotListBusy(false)
+      setShotStreaming(null)
+      endGpuUse()
+    }
+  }, [providers, settings, beginGpuUse, endGpuUse, runSubdivision, finalizeShotList])
 
   /**
-   * Regenerate the tail from `cutShotIndex` on, then drop exactly the
-   * rendered clips the cut invalidates — via `clipsDiscardedByShotRevision`,
-   * which is nothing more than `groupsAffectedByCut` feeding
-   * `filmEdit.ts`'s existing `dropFromIndex`. The caller shows the discard
-   * count and confirms BEFORE calling this (see `Api.reviseShotsFrom`'s
-   * module comment) — by the time this runs, the discard already happened.
+   * Regenerate from `cutShotIndex` on, at BEAT granularity — see
+   * `Api.reviseShotsFrom`'s module comment and `shotList.ts`'s
+   * `planShotRevision`. Then drop exactly the rendered clips the cut
+   * invalidates — via `clipsDiscardedByShotRevision`, which is nothing more
+   * than `groupsAffectedByCut` feeding `filmEdit.ts`'s existing
+   * `dropFromIndex`. The caller shows the discard count and confirms BEFORE
+   * calling this (see `Api.reviseShotsFrom`'s module comment) — by the time
+   * this runs, the discard already happened.
    */
   const reviseShotsFrom = useCallback(
     async (cutShotIndex: number) => {
@@ -1776,38 +1950,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (!settings.model) { setError('Pick a model first.'); return }
       const plot = snap.plot ?? ''
       if (!plot.trim()) { setError('Write the plot first.'); return }
-      const maxRuntimeSeconds = list.maxRuntimeSeconds
       if (!beginGpuUse('llm')) return
       setShotListBusy(true)
       setError(null)
+      setShotsAuthoredSoFar([])
       const ac = new AbortController()
       abortRef.current = ac
-      setShotStreaming({ stage: 'shots', text: '', reasoning: '', startedAt: Date.now(), continuations: 0, phase: 'thinking' })
       try {
-        const before = list.shots.filter((s) => s.index < cutShotIndex)
-        const already = before.length
-          ? `\n\nSHOTS 1-${cutShotIndex - 1} ARE ALREADY DECIDED — do not repeat them. Continue with fresh shots from index ${cutShotIndex} on:\n${before.map((s) => `${s.index}. ${s.covers} (${s.seconds}s)`).join('\n')}`
-          : ''
-        // The ceiling still applies to the WHOLE film, but this call only
-        // authors the tail — hand it what remains, not the film's total.
-        const remainingCeiling = Math.max(0, maxRuntimeSeconds - before.reduce((sum, s) => sum + s.seconds, 0))
-        const user = fillShotListTemplate(SHOT_LIST_TEMPLATE, plot, remainingCeiling) + already
-        const result = await streamChatComplete({
-          provider,
-          model: settings.model,
-          temperature: settings.temperature,
-          maxTokens: settings.maxTokens,
-          thinkingBudget: resolveThinkingBudget(provider.id, settings.model, settings.thinkingBudgets),
-          responseFormat: provider.supportsJsonSchema ? shotListResponseFormat() : undefined,
-          signal: ac.signal,
-          messages: [{ role: 'user', content: user }],
-          ...streamingCallbacks(setShotStreaming),
-        })
-        if (!result.text.trim()) throw new Error('The model returned nothing.')
-        const tail = parseShotList(result.text, maxRuntimeSeconds)
-        if (!tail) throw new Error('Could not parse a revised shot list from the reply — try again.')
+        const plan = planShotRevision(list.shots, list.beats ?? [], cutShotIndex)
+        let freshShots: Shot[] = []
+        if (plan.beatsToResubdivide.length) {
+          const [cutBeat, ...restBeats] = plan.beatsToResubdivide
+          const alreadySeconds = plan.alreadyForCutBeat.reduce((sum, s) => sum + s.seconds, 0)
+          // The cut beat's OWN budget shrinks by whatever of it survives the
+          // cut — every beat after it keeps its full original allocation.
+          const resumedCutBeat: AllocatedBeat = { ...cutBeat, seconds: Math.max(0, +(cutBeat.seconds - alreadySeconds).toFixed(3)) }
+          freshShots = await runSubdivision(list.spine, [resumedCutBeat, ...restBeats], ac, {
+            startIndex: cutShotIndex,
+            priorShotsForFirstBeat: plan.alreadyForCutBeat,
+          })
+        }
 
-        const revisedShots = reviseShotsFromIndex(list.shots, cutShotIndex, tail.shots)
+        const revisedShots = reviseShotsFromIndex(list.shots, cutShotIndex, freshShots)
         const { groups: revisedGroups, issues } = groupShotsIntoClips(revisedShots)
 
         const priorGroups = snap.shotGroups ?? []
@@ -1836,7 +2000,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }
         }
 
-        const nextShotList: ShotList = { ...list, spine: tail.spine || list.spine, shots: revisedShots }
+        // Pass 1 never re-runs here, so the film's own beats (and their
+        // allocated seconds) are carried through unchanged — only WHICH
+        // shots exist under them changed.
+        const nextShotList: ShotList = { ...list, shots: revisedShots }
         const next = {
           ...sessionRef.current,
           shotList: nextShotList,
@@ -1857,7 +2024,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         endGpuUse()
       }
     },
-    [providers, settings, beginGpuUse, endGpuUse],
+    [providers, settings, beginGpuUse, endGpuUse, runSubdivision],
   )
 
   /** See `Api.approveShotGroups`'s module comment. */
@@ -3208,11 +3375,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     maxRuntimeSeconds: session.maxRuntimeSeconds ?? DEFAULT_MAX_RUNTIME_SECONDS,
     setMaxRuntimeSeconds,
     shotList: session.shotList ?? null,
+    thinBriefCheck: session.thinBriefCheck ?? null,
+    shotsAuthoredSoFar,
     shotGroups: session.shotGroups ?? [],
     shotGroupIssues: session.shotGroupIssues ?? [],
     shotListBusy,
     shotStreaming,
     makeShotList,
+    continueSubdivision,
     reviseShotsFrom,
     approveShotGroups,
     editingGroupIndex: session.editingGroupIndex ?? null,

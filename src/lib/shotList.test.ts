@@ -1,30 +1,41 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import type { Shot, ShotGroup } from './types'
+import type { AllocatedBeat, Beat, Shot, ShotGroup } from './types'
 import { dropFromIndex } from './filmEdit'
 import {
+  BEAT_LIST_TEMPLATE,
   MAX_CLIP_SECONDS,
   MIN_CLIP_SECONDS,
   RUNTIME_MAX_SECONDS,
   RUNTIME_MIN_SECONDS,
   RUNTIME_STEP_SECONDS,
-  SHOT_LIST_TEMPLATE,
+  SHOT_SUBDIVIDE_TEMPLATE,
   TARGET_CLIP_SECONDS,
+  allocateBeatSeconds,
+  beatListResponseFormat,
   breakdownClipsFromShotGroups,
   breakdownFromShotList,
   checkRuntimeCeiling,
+  checkThinBrief,
   clampRuntimeSeconds,
   clipTiming,
-  fillShotListTemplate,
+  fillBeatListTemplate,
+  fillShotSubdivideTemplate,
   formatRuntime,
   groupShotsIntoClips,
   groupsAffectedByCut,
+  parseBeatList,
   parsePartialShotList,
-  parseShotList,
+  parseSubdividedShots,
+  planShotRevision,
+  planSubdivisionWindows,
   reviseShotsFromIndex,
   rolesForGroupCount,
-  shotListResponseFormat,
+  shotSubdivideResponseFormat,
+  subdivideAllBeats,
+  subdivideBeat,
 } from './shotList'
+import type { ShotSubdivideCall, SubdivideCallContext } from './shotList'
 
 function shots(seconds: number[]): Shot[] {
   return seconds.map((s, i) => ({ index: i + 1, covers: `shot ${i + 1}`, seconds: s }))
@@ -259,58 +270,412 @@ test('clipTiming: a group whose seconds already sit exactly on the grid delivers
   assert.ok(Math.abs(t.askedSeconds - t.deliveredSeconds) < 0.001)
 })
 
-// ── the shots authoring stage: template + schema + parser ──────────────
+// ── PASS 1 — the beats stage: template + schema + parser ───────────────
 
-test('fillShotListTemplate: fills the plot and the ceiling, and the ceiling is stated as a hard constraint', () => {
-  const filled = fillShotListTemplate(SHOT_LIST_TEMPLATE, 'a woman finds a key', 45)
+test('fillBeatListTemplate: fills the plot, and never asks for a target runtime figure', () => {
+  const filled = fillBeatListTemplate(BEAT_LIST_TEMPLATE, 'a woman finds a key')
   assert.ok(filled.includes('a woman finds a key'))
-  assert.ok(filled.includes('45'))
-  assert.ok(/hard constraint/i.test(filled))
+  // "30 seconds or 30 minutes" is deliberately IN the template, as an
+  // illustration that beat count doesn't depend on runtime -- what must
+  // never appear is an actual runtime figure to hit, i.e. no unfilled
+  // template placeholder and no "MAXIMUM RUNTIME" instruction (the old
+  // SHOT_LIST_TEMPLATE's hard-constraint line this rework removes).
+  assert.ok(!filled.includes('{{'))
+  assert.ok(!/maximum runtime/i.test(filled))
 })
 
-test('SHOT_LIST_TEMPLATE forbids camera, performance and sound language', () => {
-  assert.ok(/camera/i.test(SHOT_LIST_TEMPLATE))
-  assert.ok(/performance/i.test(SHOT_LIST_TEMPLATE))
-  assert.ok(/sound/i.test(SHOT_LIST_TEMPLATE))
+test('BEAT_LIST_TEMPLATE forbids camera, performance and sound language, and says beat count follows the story', () => {
+  assert.ok(/camera/i.test(BEAT_LIST_TEMPLATE))
+  assert.ok(/performance/i.test(BEAT_LIST_TEMPLATE))
+  assert.ok(/sound/i.test(BEAT_LIST_TEMPLATE))
+  assert.ok(/follows the\s+story/i.test(BEAT_LIST_TEMPLATE))
 })
 
-test('shotListResponseFormat: flat, strict schema requiring spine and a shots array', () => {
-  const rf = shotListResponseFormat() as any
+test('beatListResponseFormat: flat, strict schema requiring spine and a beats array', () => {
+  const rf = beatListResponseFormat() as any
   assert.equal(rf.type, 'json_schema')
   assert.equal(rf.json_schema.strict, true)
-  assert.deepEqual(rf.json_schema.schema.required, ['spine', 'shots'])
+  assert.deepEqual(rf.json_schema.schema.required, ['spine', 'beats'])
   assert.equal(rf.json_schema.schema.additionalProperties, false)
-  const itemSchema = rf.json_schema.schema.properties.shots.items
-  assert.deepEqual(itemSchema.required, ['index', 'covers', 'seconds'])
+  const itemSchema = rf.json_schema.schema.properties.beats.items
+  assert.deepEqual(itemSchema.required, ['index', 'covers', 'weight'])
 })
 
-test('parseShotList: a clean reply parses into a ShotList carrying the operator\'s ceiling', () => {
+test('parseBeatList: a clean reply parses into a BeatList', () => {
   const raw = JSON.stringify({
     spine: 'a woman finds a key',
-    shots: [
-      { index: 1, covers: 'she enters the room', seconds: 4 },
-      { index: 2, covers: 'she sees the key', seconds: 3 },
+    beats: [
+      { index: 1, covers: 'she searches the house', weight: 2 },
+      { index: 2, covers: 'she finds the key', weight: 1 },
     ],
   })
-  const parsed = parseShotList(raw, 60)
+  const parsed = parseBeatList(raw)
   assert.ok(parsed)
   assert.equal(parsed!.spine, 'a woman finds a key')
-  assert.equal(parsed!.maxRuntimeSeconds, 60)
-  assert.equal(parsed!.shots.length, 2)
-  assert.equal(parsed!.shots[1].covers, 'she sees the key')
+  assert.equal(parsed!.beats.length, 2)
+  assert.equal(parsed!.beats[1].covers, 'she finds the key')
+  assert.equal(parsed!.beats[0].weight, 2)
 })
 
-test('parseShotList: strips a fenced reply', () => {
-  const raw = '```json\n' + JSON.stringify({ spine: 's', shots: [{ index: 1, covers: 'x', seconds: 2 }] }) + '\n```'
-  const parsed = parseShotList(raw, 30)
+test('parseBeatList: strips a fenced reply', () => {
+  const raw = '```json\n' + JSON.stringify({ spine: 's', beats: [{ index: 1, covers: 'x', weight: 1 }] }) + '\n```'
+  const parsed = parseBeatList(raw)
   assert.ok(parsed)
-  assert.equal(parsed!.shots.length, 1)
+  assert.equal(parsed!.beats.length, 1)
 })
 
-test('parseShotList: malformed replies return null rather than a half-built plan', () => {
-  assert.equal(parseShotList('not json at all', 30), null)
-  assert.equal(parseShotList(JSON.stringify({ spine: 's' }), 30), null) // no shots
-  assert.equal(parseShotList(JSON.stringify({ shots: [] }), 30), null) // no spine, empty shots
+test('parseBeatList: malformed replies return null rather than a half-built plan', () => {
+  assert.equal(parseBeatList('not json at all'), null)
+  assert.equal(parseBeatList(JSON.stringify({ spine: 's' })), null) // no beats
+  assert.equal(parseBeatList(JSON.stringify({ beats: [] })), null) // no spine, empty beats
+})
+
+// ── allocation: distributing the runtime across beats ───────────────────
+
+function beats(weights: number[]): Beat[] {
+  return weights.map((w, i) => ({ index: i + 1, covers: `beat ${i + 1}`, weight: w }))
+}
+
+for (const runtime of [15, 60, 300, 600]) {
+  test(`allocateBeatSeconds: sums EXACTLY to ${runtime}s with 1 beat`, () => {
+    const allocated = allocateBeatSeconds(beats([1]), runtime)
+    assert.equal(allocated.length, 1)
+    assert.equal(allocated[0].seconds, runtime)
+  })
+
+  test(`allocateBeatSeconds: sums EXACTLY to ${runtime}s with 12 beats of uneven weight`, () => {
+    const w = [3, 1, 2, 1, 1, 4, 1, 2, 1, 1, 2, 1]
+    const allocated = allocateBeatSeconds(beats(w), runtime)
+    assert.equal(allocated.length, 12)
+    const total = allocated.reduce((sum, b) => sum + b.seconds, 0)
+    assert.ok(Math.abs(total - runtime) < 1e-9, `${total} !== ${runtime}`)
+  })
+}
+
+test('allocateBeatSeconds: deterministic — same input, same output, across repeated calls', () => {
+  const b = beats([3, 1, 2, 5, 1, 1, 2])
+  const a = allocateBeatSeconds(b, 187) // an off-grid runtime on purpose
+  const c = allocateBeatSeconds(b, 187)
+  assert.deepEqual(a, c)
+})
+
+test('allocateBeatSeconds: every beat clears BEAT_FLOOR_SECONDS across the slider\'s own range (1-12 beats, 15-600s)', () => {
+  for (const runtime of [15, 60, 300, 600]) {
+    for (const n of [1, 4, 8, 12]) {
+      const allocated = allocateBeatSeconds(beats(Array(n).fill(1)), runtime)
+      for (const b of allocated) {
+        assert.ok(b.seconds >= 1 - 1e-9, `beat ${b.index} at ${b.seconds}s under the floor (n=${n}, runtime=${runtime})`)
+      }
+    }
+  }
+})
+
+test('allocateBeatSeconds: a zero-weight beat still clears the floor, just gets none of the proportional remainder', () => {
+  const allocated = allocateBeatSeconds(beats([10, 0]), 60)
+  assert.ok(allocated[1].seconds >= 1)
+  assert.ok(allocated[0].seconds > allocated[1].seconds)
+})
+
+test('allocateBeatSeconds: proportional to weight — a beat twice the weight gets roughly twice the seconds', () => {
+  const allocated = allocateBeatSeconds(beats([1, 2]), 90)
+  // Both clear the 1s floor with room to spare, so the 2:1 weight ratio
+  // should show up almost exactly in the split (30 / 60).
+  assert.ok(Math.abs(allocated[1].seconds / allocated[0].seconds - 2) < 0.05)
+})
+
+test('allocateBeatSeconds: degenerate case (floors alone exceed the ceiling) still sums exactly, never negative', () => {
+  // 20 beats * BEAT_FLOOR_SECONDS(1) = 20s > a 15s ceiling.
+  const allocated = allocateBeatSeconds(beats(Array(20).fill(1)), 15)
+  const total = allocated.reduce((sum, b) => sum + b.seconds, 0)
+  assert.ok(Math.abs(total - 15) < 1e-9)
+  for (const b of allocated) assert.ok(b.seconds >= 0)
+})
+
+test('allocateBeatSeconds: empty beats list allocates nothing', () => {
+  assert.deepEqual(allocateBeatSeconds([], 60), [])
+})
+
+test('the beat count does not scale with runtime — only the allocated SECONDS per beat do', () => {
+  const b = beats([1, 1, 1, 1, 1, 1, 1, 1])
+  const short = allocateBeatSeconds(b, 60)
+  const long = allocateBeatSeconds(b, 600)
+  assert.equal(short.length, 8)
+  assert.equal(long.length, 8) // same 8 beats -- the story didn't get more movements
+  // But each beat's own seconds scaled up 10x along with the runtime.
+  for (let i = 0; i < 8; i++) {
+    assert.ok(Math.abs(long[i].seconds / short[i].seconds - 10) < 0.01)
+  }
+})
+
+// ── the honest limit: a thin brief padded out to a long runtime ─────────
+
+test('checkThinBrief: a full runtime for the beat count is not thin', () => {
+  const check = checkThinBrief(beats([1, 1, 1, 1, 1, 1]), 60)
+  assert.equal(check.isThin, false)
+})
+
+test('checkThinBrief: a few beats asked to fill a much longer runtime IS thin', () => {
+  // 3 beats naturally fill ~60s (NATURAL_SECONDS_PER_BEAT * 3); asking for
+  // 600s is 10x that -- comfortably past PADDING_FACTOR.
+  const check = checkThinBrief(beats([1, 1, 1]), 600)
+  assert.equal(check.isThin, true)
+})
+
+// ── PASS 2 — the subdivide stage: template + schema + parser ───────────
+
+test('fillShotSubdivideTemplate: fills every field, and the target is stated in both directions', () => {
+  const filled = fillShotSubdivideTemplate(SHOT_SUBDIVIDE_TEMPLATE, {
+    spine: 'a woman finds a key',
+    beatCovers: 'she searches the house',
+    targetSeconds: 12,
+    minShotSeconds: 2,
+    maxShotSeconds: 20,
+    startIndex: 5,
+    already: '',
+  })
+  assert.ok(filled.includes('a woman finds a key'))
+  assert.ok(filled.includes('she searches the house'))
+  assert.ok(filled.includes('12 SECONDS'))
+  assert.ok(/between 2 and\s+20/.test(filled))
+  assert.ok(filled.includes('starting at 5'))
+  assert.ok(/in either direction/i.test(filled))
+})
+
+test('SHOT_SUBDIVIDE_TEMPLATE forbids camera, performance and sound language, and bans inventing new events', () => {
+  assert.ok(/camera/i.test(SHOT_SUBDIVIDE_TEMPLATE))
+  assert.ok(/performance/i.test(SHOT_SUBDIVIDE_TEMPLATE))
+  assert.ok(/sound/i.test(SHOT_SUBDIVIDE_TEMPLATE))
+  assert.ok(/never by\s*\n?inventing events/i.test(SHOT_SUBDIVIDE_TEMPLATE.replace(/\s+/g, ' ')))
+})
+
+test('shotSubdivideResponseFormat: flat, strict schema requiring only a shots array (no spine)', () => {
+  const rf = shotSubdivideResponseFormat() as any
+  assert.equal(rf.type, 'json_schema')
+  assert.equal(rf.json_schema.strict, true)
+  assert.deepEqual(rf.json_schema.schema.required, ['shots'])
+  assert.ok(!('spine' in rf.json_schema.schema.properties))
+})
+
+test('parseSubdividedShots: a clean reply parses into a bare shots array', () => {
+  const raw = JSON.stringify({ shots: [{ index: 5, covers: 'she opens the drawer', seconds: 3 }] })
+  const parsed = parseSubdividedShots(raw)
+  assert.ok(parsed)
+  assert.equal(parsed!.length, 1)
+  assert.equal(parsed![0].covers, 'she opens the drawer')
+})
+
+test('parseSubdividedShots: malformed replies return null', () => {
+  assert.equal(parseSubdividedShots('not json'), null)
+  assert.equal(parseSubdividedShots(JSON.stringify({ shots: [] })), null)
+})
+
+// ── windowing: keeping any one subdivide call bounded ───────────────────
+
+test('planSubdivisionWindows: a small budget needs only one window', () => {
+  const windows = planSubdivisionWindows(20, { minShotSeconds: 2, capShots: 14 })
+  assert.equal(windows.length, 1)
+  assert.equal(windows[0], 20)
+})
+
+test('planSubdivisionWindows: a beat with a large budget splits into multiple bounded windows, never one oversized ask', () => {
+  // Worst case (every shot at the 2s floor) a 400s budget would need 200
+  // shots -- way past the 14-shot cap, so this must split.
+  const windows = planSubdivisionWindows(400, { minShotSeconds: 2, capShots: 14 })
+  assert.ok(windows.length > 1, 'a 400s budget must not be asked for in one window')
+  for (const w of windows) assert.ok(w <= 14 * 2 + 1e-9, `window of ${w}s could need more than 14 shots at the floor`)
+})
+
+test('planSubdivisionWindows: sums EXACTLY to the total, and windows are balanced rather than "N-1 full plus a stub"', () => {
+  const windows = planSubdivisionWindows(100, { minShotSeconds: 2, capShots: 14 }) // needs 4 windows (100/28 -> ceil 4)
+  const total = windows.reduce((a, b) => a + b, 0)
+  assert.ok(Math.abs(total - 100) < 1e-9)
+  assert.ok(Math.max(...windows) - Math.min(...windows) <= 0.1, 'windows should be nearly equal, not lopsided')
+})
+
+test('planSubdivisionWindows: a zero or negative budget produces no windows', () => {
+  assert.deepEqual(planSubdivisionWindows(0), [])
+  assert.deepEqual(planSubdivisionWindows(-5), [])
+})
+
+// ── subdivideBeat / subdivideAllBeats: the windowed, injected-call orchestration ─
+
+/** A fake `ShotSubdivideCall` that authors shots at a fixed length, filling
+ * whatever `targetSeconds` the template asked for — deterministic, and lets
+ * a test compute the exact expected shot count without a real model. */
+function fakeCallAtFixedShotLength(shotSeconds: number): { call: ShotSubdivideCall; calls: SubdivideCallContext[] } {
+  const calls: SubdivideCallContext[] = []
+  const call: ShotSubdivideCall = async (user, ctx) => {
+    calls.push(ctx)
+    const m = user.match(/MUST SUM TO ([\d.]+) SECONDS/)
+    const target = m ? Number(m[1]) : 0
+    const startMatch = user.match(/starting at (\d+)/)
+    const startIndex = startMatch ? Number(startMatch[1]) : 1
+    const n = Math.max(1, Math.round(target / shotSeconds))
+    const shots = Array.from({ length: n }, (_, i) => ({ index: startIndex + i, covers: `shot ${startIndex + i}`, seconds: target / n }))
+    return JSON.stringify({ shots })
+  }
+  return { call, calls }
+}
+
+test('subdivideBeat: a beat with a large budget makes multiple bounded calls, never one oversized ask', () => {
+  return (async () => {
+    const { call, calls } = fakeCallAtFixedShotLength(3)
+    const beat: AllocatedBeat = { index: 1, covers: 'a long chase', weight: 1, seconds: 400 }
+    const shots = await subdivideBeat(beat, 1, 'the spine', call, { minShotSeconds: 2, capShots: 14 })
+    assert.ok(calls.length > 1, 'a 400s beat must not be authored in a single call')
+    const total = shots.reduce((sum, s) => sum + s.seconds, 0)
+    assert.ok(Math.abs(total - 400) < 1e-6)
+  })()
+})
+
+test('subdivideBeat: renumbers contiguously from startIndex regardless of what the model echoed', () => {
+  return (async () => {
+    const call: ShotSubdivideCall = async () =>
+      JSON.stringify({ shots: [{ index: 999, covers: 'a', seconds: 5 }, { index: 2, covers: 'b', seconds: 5 }] })
+    const beat: AllocatedBeat = { index: 3, covers: 'x', weight: 1, seconds: 10 }
+    const shots = await subdivideBeat(beat, 41, 'spine', call)
+    assert.deepEqual(shots.map((s) => s.index), [41, 42])
+    assert.ok(shots.every((s) => s.beatIndex === 3))
+  })()
+})
+
+test('subdivideBeat: stamps every shot with the beat\'s own index', () => {
+  return (async () => {
+    const { call } = fakeCallAtFixedShotLength(4)
+    const beat: AllocatedBeat = { index: 7, covers: 'x', weight: 1, seconds: 12 }
+    const shots = await subdivideBeat(beat, 1, 'spine', call)
+    assert.ok(shots.length > 0)
+    assert.ok(shots.every((s) => s.beatIndex === 7))
+  })()
+})
+
+test('subdivideAllBeats: the same beats at 60s vs 600s yield roughly 10x the shots (SHOT count scales with runtime, beat count does not)', () => {
+  return (async () => {
+    const b = beats([1, 1, 1, 1, 1, 1, 1, 1])
+    const allocatedShort = allocateBeatSeconds(b, 60)
+    const allocatedLong = allocateBeatSeconds(b, 600)
+
+    const { call: callShort } = fakeCallAtFixedShotLength(3)
+    const { call: callLong } = fakeCallAtFixedShotLength(3)
+    const shotsShort = await subdivideAllBeats(allocatedShort, 'spine', callShort)
+    const shotsLong = await subdivideAllBeats(allocatedLong, 'spine', callLong)
+
+    assert.equal(allocatedShort.length, allocatedLong.length) // beat count unchanged
+    const ratio = shotsLong.length / shotsShort.length
+    // "Roughly" 10x, not exactly: at 600s each beat's budget crosses
+    // planSubdivisionWindows' per-window cap and gets split into several
+    // windows, and the fake call rounds a shot count separately PER window,
+    // so some quantization error versus the ideal linear 10x is expected
+    // (and would be with a real model too) -- the property under test is
+    // "scales substantially with runtime", not "scales with zero rounding
+    // error", so the band is wide (6x-14x) rather than tight around 10.
+    assert.ok(ratio > 6 && ratio < 14, `expected roughly 10x the shots, got ${ratio}x (${shotsShort.length} -> ${shotsLong.length})`)
+  })()
+})
+
+test('subdivideAllBeats: assembly renumbers contiguously from 1 across every beat, regardless of what the model echoed', () => {
+  return (async () => {
+    const call: ShotSubdivideCall = async (_user, ctx) =>
+      JSON.stringify({ shots: [{ index: 1, covers: `beat ${ctx.beat.index} shot`, seconds: ctx.beat.seconds }] })
+    const b: AllocatedBeat[] = [
+      { index: 1, covers: 'a', weight: 1, seconds: 5 },
+      { index: 2, covers: 'b', weight: 1, seconds: 5 },
+      { index: 3, covers: 'c', weight: 1, seconds: 5 },
+    ]
+    const shots = await subdivideAllBeats(b, 'spine', call)
+    assert.deepEqual(shots.map((s) => s.index), [1, 2, 3])
+    assert.deepEqual(shots.map((s) => s.beatIndex), [1, 2, 3])
+  })()
+})
+
+test('subdivideAllBeats: onBeatDone fires once per beat, with a running total', () => {
+  return (async () => {
+    const { call } = fakeCallAtFixedShotLength(5)
+    const b: AllocatedBeat[] = [
+      { index: 1, covers: 'a', weight: 1, seconds: 10 },
+      { index: 2, covers: 'b', weight: 1, seconds: 10 },
+    ]
+    const seen: number[] = []
+    await subdivideAllBeats(b, 'spine', call, { onBeatDone: (_beat, _beatShots, allSoFar) => seen.push(allSoFar.length) })
+    assert.equal(seen.length, 2)
+    assert.ok(seen[0] < seen[1], 'the running total should grow, not reset, between beats')
+  })()
+})
+
+// ── revision from a cut: re-subdivides only forward, at the BEAT level ──
+
+test('planShotRevision: a cut inside a beat keeps every shot from EARLIER beats untouched', () => {
+  const allBeats: AllocatedBeat[] = [
+    { index: 1, covers: 'beat 1', weight: 1, seconds: 10 },
+    { index: 2, covers: 'beat 2', weight: 1, seconds: 10 },
+  ]
+  const allShots: Shot[] = [
+    { index: 1, covers: 's1', seconds: 5, beatIndex: 1 },
+    { index: 2, covers: 's2', seconds: 5, beatIndex: 1 },
+    { index: 3, covers: 's3', seconds: 5, beatIndex: 2 },
+    { index: 4, covers: 's4', seconds: 5, beatIndex: 2 },
+  ]
+  const plan = planShotRevision(allShots, allBeats, 4) // cut lands on the last shot, inside beat 2
+  assert.deepEqual(plan.keptShots.map((s) => s.index), [1, 2, 3])
+  assert.deepEqual(plan.beatsToResubdivide.map((b) => b.index), [2]) // beat 1 never touched
+  assert.deepEqual(plan.alreadyForCutBeat.map((s) => s.index), [3]) // the surviving fragment of beat 2
+})
+
+test('planShotRevision: a cut exactly at a beat boundary resubdivides that beat and everything after, keeps everything before', () => {
+  const allBeats: AllocatedBeat[] = [
+    { index: 1, covers: 'beat 1', weight: 1, seconds: 10 },
+    { index: 2, covers: 'beat 2', weight: 1, seconds: 10 },
+    { index: 3, covers: 'beat 3', weight: 1, seconds: 10 },
+  ]
+  const allShots: Shot[] = [
+    { index: 1, covers: 's1', seconds: 5, beatIndex: 1 },
+    { index: 2, covers: 's2', seconds: 5, beatIndex: 1 },
+    { index: 3, covers: 's3', seconds: 5, beatIndex: 2 },
+    { index: 4, covers: 's4', seconds: 5, beatIndex: 3 },
+  ]
+  const plan = planShotRevision(allShots, allBeats, 3) // cut at shot 3, the first shot of beat 2
+  assert.deepEqual(plan.keptShots.map((s) => s.index), [1, 2])
+  assert.deepEqual(plan.beatsToResubdivide.map((b) => b.index), [2, 3])
+  assert.deepEqual(plan.alreadyForCutBeat, []) // nothing of beat 2 survives the cut
+})
+
+test('planShotRevision: a cut past every existing shot resubdivides nothing', () => {
+  const allBeats: AllocatedBeat[] = [{ index: 1, covers: 'beat 1', weight: 1, seconds: 10 }]
+  const allShots: Shot[] = [{ index: 1, covers: 's1', seconds: 5, beatIndex: 1 }]
+  const plan = planShotRevision(allShots, allBeats, 5)
+  assert.deepEqual(plan.keptShots, allShots)
+  assert.deepEqual(plan.beatsToResubdivide, [])
+})
+
+test('reviseShotsFromIndex + planShotRevision together: a revised beat\'s fresh shots replace only the cut forward', () => {
+  return (async () => {
+    const allBeats: AllocatedBeat[] = [
+      { index: 1, covers: 'beat 1', weight: 1, seconds: 10 },
+      { index: 2, covers: 'beat 2', weight: 1, seconds: 10 },
+    ]
+    const allShots: Shot[] = [
+      { index: 1, covers: 's1', seconds: 5, beatIndex: 1 },
+      { index: 2, covers: 's2', seconds: 5, beatIndex: 1 },
+      { index: 3, covers: 's3', seconds: 5, beatIndex: 2 },
+      { index: 4, covers: 's4', seconds: 5, beatIndex: 2 },
+    ]
+    const plan = planShotRevision(allShots, allBeats, 3) // cut at the start of beat 2 -- nothing of it survives
+    assert.equal(plan.beatsToResubdivide.length, 1)
+
+    const call: ShotSubdivideCall = async (_user, ctx) =>
+      JSON.stringify({ shots: [{ index: 1, covers: `revised beat ${ctx.beat.index}`, seconds: 10 }] })
+    const fresh = await subdivideAllBeats(plan.beatsToResubdivide, 'spine', call, {
+      startIndex: 3,
+      priorShotsForFirstBeat: plan.alreadyForCutBeat,
+    })
+    const revised = reviseShotsFromIndex(allShots, 3, fresh)
+    // Beat 1's shots (1, 2) are byte-identical to the originals -- never touched.
+    assert.deepEqual(revised.slice(0, 2), allShots.slice(0, 2))
+    // Beat 2 is wholly replaced by the fresh call's output, renumbered from 3.
+    assert.equal(revised.length, 3)
+    assert.equal(revised[2].covers, 'revised beat 2')
+    assert.equal(revised[2].index, 3)
+  })()
 })
 
 // ── parsePartialShotList: reading a shot list still arriving ────────────
@@ -324,21 +689,21 @@ const COMPLETE_DOC = JSON.stringify({
   ],
 })
 
-test('parsePartialShotList: agrees with parseShotList on a complete document', () => {
-  const complete = parseShotList(COMPLETE_DOC, 60)
+test('parsePartialShotList: agrees with parseSubdividedShots on a complete document\'s shots, and reads the spine directly', () => {
+  const complete = parseSubdividedShots(COMPLETE_DOC)
   const partial = parsePartialShotList(COMPLETE_DOC)
   assert.ok(complete)
-  assert.equal(partial.spine, complete!.spine)
-  assert.deepEqual(partial.shots, complete!.shots)
+  assert.equal(partial.spine, 'a woman finds a key')
+  assert.deepEqual(partial.shots, complete!)
 })
 
-test('parsePartialShotList: agrees with parseShotList on a complete, fenced document', () => {
+test('parsePartialShotList: agrees with parseSubdividedShots on a complete, fenced document', () => {
   const fenced = '```json\n' + COMPLETE_DOC + '\n```'
-  const complete = parseShotList(fenced, 60)
+  const complete = parseSubdividedShots(fenced)
   const partial = parsePartialShotList(fenced)
   assert.ok(complete)
-  assert.deepEqual(partial.shots, complete!.shots)
-  assert.equal(partial.spine, complete!.spine)
+  assert.deepEqual(partial.shots, complete!)
+  assert.equal(partial.spine, 'a woman finds a key')
 })
 
 test('parsePartialShotList: truncated mid-object shows only the shots that fully closed', () => {

@@ -255,6 +255,40 @@ export interface Breakdown {
 // coexists with `Breakdown` (derives one) rather than replacing or
 // duplicating it.
 
+/**
+ * One BEAT — the two-pass planner's coarse first pass (`shotList.ts`'s
+ * module comment, 2026-09-18 rework). A beat is a distinct movement of the
+ * story, never a shot: a complete plot is ~6-12 of these whether the film
+ * runs 30 seconds or 30 minutes, because the beat count follows the STORY,
+ * never the operator's runtime slider — only the SECOND pass (subdividing a
+ * beat into shots) is sized to the runtime. `weight` is relative screen time
+ * only (not seconds, not a percentage) — `shotList.ts`'s `allocateBeatSeconds`
+ * is what turns it into real seconds.
+ */
+export interface Beat {
+  /** 1-based position in the whole film's arc. */
+  index: number
+  /** What happens — fixed elements only, same discipline as `Shot.covers`. */
+  covers: string
+  /** How much relative screen time this beat deserves next to the others. */
+  weight: number
+}
+
+/** The whole film's beats, before any runtime has been allocated across
+ * them — pass 1's own output. */
+export interface BeatList {
+  spine: string
+  beats: Beat[]
+  at: number
+}
+
+/** A `Beat` once `allocateBeatSeconds` has given it its share of the
+ * operator's runtime ceiling — what pass 2 (`subdivideBeat`) actually
+ * decomposes into shots. */
+export interface AllocatedBeat extends Beat {
+  seconds: number
+}
+
 /** One shot — the whole film's finest grain. Bare content only: camera,
  * performance and sound are decided later, in the per-clip expansion step
  * (`STAGE_INFO.direct`/`draft` in `stages.ts`) — never here. */
@@ -267,6 +301,13 @@ export interface Shot {
   covers: string
   /** This shot's own authored length, in seconds. */
   seconds: number
+  /** Which beat (`Beat.index`) this shot was subdivided from — unset for a
+   * shot with no beat of its own (there is none once every shot comes from
+   * `subdivideBeat`, but the field is optional so a hand-authored `Shot`
+   * literal, e.g. in a test, never has to carry one). Lets a plot revision
+   * (`planShotRevision`) find which beat a cut shot came from without a
+   * second lookup structure. */
+  beatIndex?: number
 }
 
 /** The whole film's shot list — Full Story mode's step 2 output, before any
@@ -278,6 +319,15 @@ export interface ShotList {
    * total was asked to fit inside — see `shotList.ts`'s `checkRuntimeCeiling`. */
   maxRuntimeSeconds: number
   shots: Shot[]
+  /**
+   * Pass 1's beats, each with its allocated share of `maxRuntimeSeconds` —
+   * kept here (not just used transiently in `state.tsx`) so a later
+   * revision (`planShotRevision`) can re-subdivide only the beats at or
+   * after a cut without re-authoring the whole arc. Optional so a
+   * hand-built `ShotList` literal (e.g. `shotScreens.test.ts`'s fixtures,
+   * written before beats existed) still type-checks with none.
+   */
+  beats?: AllocatedBeat[]
   at: number
 }
 

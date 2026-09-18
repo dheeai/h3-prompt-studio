@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useApp } from '../app/state'
 import { RUNTIME_MAX_SECONDS, RUNTIME_MIN_SECONDS, RUNTIME_STEP_SECONDS, checkRuntimeCeiling, clampRuntimeSeconds, deriveFilmName, formatRuntime, groupsAffectedByCut, parsePartialShotList } from '../lib/shotList'
-import { ceilingAlert, groupBandState } from '../lib/shotScreens'
+import { ceilingAlert, groupBandState, thinBriefAlert } from '../lib/shotScreens'
 import type { GroupBandState } from '../lib/shotScreens'
 import { EXTENDER_REF_SLOTS, filmOutputPrefix } from '../lib/extender'
 import { DraftingStatus } from './DraftingStatus'
@@ -162,12 +162,18 @@ export function StoryAndShots({
 }) {
   const app = useApp()
   const {
-    plot, setPlot, maxRuntimeSeconds, setMaxRuntimeSeconds, shotList, shotGroups, shotGroupIssues,
-    shotListBusy, shotStreaming, makeShotList, reviseShotsFrom, approveShotGroups, breakdown, extenderPlanPreview,
+    plot, setPlot, maxRuntimeSeconds, setMaxRuntimeSeconds, shotList, thinBriefCheck, shotsAuthoredSoFar,
+    shotGroups, shotGroupIssues, shotListBusy, shotStreaming, makeShotList, continueSubdivision, reviseShotsFrom,
+    approveShotGroups, breakdown, extenderPlanPreview,
     setEditingGroupIndex, streaming, plates, platesFrozenReason, film, setFilm,
     filmLoraStack, setFilmLoraStack, extenderDefaultLoraStack, endpoint, loraNames, loraNamesState, refreshLoraNames,
     filmName, filmNameEffective, setFilmName,
   } = app
+
+  // Pass 1 landed but pass 2 hasn't run yet — either it's paused on
+  // `thinBriefCheck`, or the very next tick after `makeShotList` sets it
+  // (both cases render the same "beats decided, no shots yet" state briefly).
+  const beatsOnly = !!shotList && shotList.shots.length === 0
 
   // `app.filmName` is the EFFECTIVE name (the operator's own, else one
   // derived from the spine), which is what the readout below should show —
@@ -326,7 +332,7 @@ export function StoryAndShots({
             return (
               <div style={{ marginTop: 9 }}>
                 <div className="tok">
-                  {partial.shots.length} shot{partial.shots.length === 1 ? '' : 's'} so far · {total.toFixed(1)}s of {maxRuntimeSeconds.toFixed(1)}s
+                  this window: {partial.shots.length} shot{partial.shots.length === 1 ? '' : 's'} so far · {total.toFixed(1)}s
                 </div>
                 {partial.shots.map((s) => (
                   <div key={s.index} className="tok" style={{ display: 'flex', gap: 9, padding: '2px 0', color: 'var(--ink2)' }}>
@@ -338,10 +344,34 @@ export function StoryAndShots({
               </div>
             )
           })()}
+          {shotsAuthoredSoFar.length > 0 && (
+            // The WHOLE film's progress so far, across every beat that has
+            // already landed — distinct from the block above, which is only
+            // ever the ONE window currently in flight. This is the concrete
+            // answer to "shows no progress state, after sometime the whole
+            // thing loads": every beat that finishes is visible here the
+            // moment it lands, long before the last beat's call returns.
+            <div className="tok" style={{ marginTop: 9, paddingTop: 9, borderTop: '1px solid var(--rule)' }}>
+              whole film so far: {shotsAuthoredSoFar.length} shot{shotsAuthoredSoFar.length === 1 ? '' : 's'} ·{' '}
+              {shotsAuthoredSoFar.reduce((sum, s) => sum + s.seconds, 0).toFixed(1)}s of {maxRuntimeSeconds.toFixed(1)}s
+            </div>
+          )}
         </div>
       )}
 
-      {shotList && (
+      {beatsOnly && thinBriefCheck && (
+        <div className="card" style={{ marginTop: 9 }}>
+          <div className="lbl">Beats decided — before subdividing into shots</div>
+          <div className="alert warn" style={{ marginTop: 9 }}>{thinBriefAlert(thinBriefCheck)}</div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 9 }}>
+            <button className="btn pri sm" disabled={busy} onClick={() => void continueSubdivision()}>
+              Continue and subdivide anyway
+            </button>
+          </div>
+        </div>
+      )}
+
+      {shotList && !beatsOnly && (
         <>
           <div className="card" style={{ marginTop: 9 }}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 9 }}>

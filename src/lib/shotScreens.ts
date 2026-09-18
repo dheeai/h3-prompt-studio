@@ -1,5 +1,5 @@
 import type { Breakdown, BreakdownClip, Shot, ShotGroup, ShotList } from './types'
-import { breakdownClipsFromShotGroups, groupsAffectedByCut, type RuntimeCeilingCheck } from './shotList'
+import { breakdownClipsFromShotGroups, groupsAffectedByCut, type RuntimeCeilingCheck, type ThinBriefCheck } from './shotList'
 import { dropFromIndex } from './filmEdit'
 
 /**
@@ -70,16 +70,41 @@ export function takeShotGroups(
 // ── the runtime ceiling: a fact, never a block ───────────────────────────
 
 /**
- * The one-line amber-`.alert.warn` fact for an over-ceiling shot list —
- * `null` when there is nothing to say. Deliberately returns a message, never
- * a boolean gate: `checkRuntimeCeiling` "reports rather than refuses, by
- * design" (its own module comment), and nothing in this file adds a
- * "blocked" flag on top of that report — approving or rendering a
- * shot-list-in-progress is never conditioned on this.
+ * The one-line amber-`.alert.warn` fact for a shot list that missed the
+ * ceiling, in EITHER direction — `null` when there is nothing to say.
+ * Deliberately returns a message, never a boolean gate: `checkRuntimeCeiling`
+ * "reports rather than refuses, by design" (its own module comment), and
+ * nothing in this file adds a "blocked" flag on top of that report —
+ * approving or rendering a shot-list-in-progress is never conditioned on
+ * this, over OR under.
+ *
+ * Over-ceiling is checked first: a shot list that is BOTH over on the
+ * numbers it has (impossible in practice, `overBySeconds` and
+ * `underBySeconds` are complements) would still only ever say one thing, and
+ * "over" is the one that has always meant "the operator may need to trim
+ * something" — the more actionable of the two to lead with.
  */
 export function ceilingAlert(check: RuntimeCeilingCheck): string | null {
-  if (check.withinCeiling) return null
-  return `${check.totalSeconds.toFixed(1)}s authored — ${check.overBySeconds.toFixed(1)}s over the ${check.maxRuntimeSeconds.toFixed(1)}s ceiling. Trim a shot, or carry on; nothing here blocks it.`
+  if (!check.withinCeiling) {
+    return `${check.totalSeconds.toFixed(1)}s authored — ${check.overBySeconds.toFixed(1)}s over the ${check.maxRuntimeSeconds.toFixed(1)}s ceiling. Trim a shot, or carry on; nothing here blocks it.`
+  }
+  if (check.significantlyUnder) {
+    return `${check.totalSeconds.toFixed(1)}s authored — ${check.underBySeconds.toFixed(1)}s under the ${check.maxRuntimeSeconds.toFixed(1)}s ceiling. The plot may not need this much runtime — lower the ceiling, or add more to the plot and remake the shot list.`
+  }
+  return null
+}
+
+/**
+ * The one-line amber fact for `checkThinBrief`'s own hazard — `null` unless
+ * `isThin`. Surfaced the moment pass 1's beats land, before pass 2 has spent
+ * any GPU time (`state.tsx`'s `makeShotList` pauses there) — same REPORTED,
+ * never-refused contract as `ceilingAlert`: the operator can still choose to
+ * carry on (`continueSubdivision`), this only makes sure they are choosing
+ * that with the fact in front of them.
+ */
+export function thinBriefAlert(check: ThinBriefCheck): string | null {
+  if (!check.isThin) return null
+  return `This plot naturally fills about ${check.naturalSeconds.toFixed(0)}s; ${check.maxRuntimeSeconds.toFixed(0)}s asks for more than that — the extra will likely come out as padding, not more story. Lower the runtime, write a fuller plot, or continue and subdivide anyway.`
 }
 
 // ── revision: wiring the cut into the EXISTING invalidation path ────────

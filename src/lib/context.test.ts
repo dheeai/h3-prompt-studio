@@ -58,16 +58,19 @@ test('platesBlock numbers plates in declaration order and carries each job', () 
     { name: 'Lira — identity', job: 'take her face and build; ignore the wardrobe', kind: 'image' },
     { name: 'porter uniform', job: 'the garment only', kind: 'image' },
   ])
-  assert.match(out, /<Subject 1> — Lira — identity \(image\): take her face and build; ignore the wardrobe/)
-  assert.match(out, /<Subject 2> — porter uniform \(image\): the garment only/)
+  // An IMAGE plate is <Picture N> — the slot `refs_json` actually wires it to.
+  // It used to read <Subject N>, which nothing resolves to a wired slot.
+  assert.match(out, /<Picture 1> — Lira — identity: take her face and build; ignore the wardrobe/)
+  assert.match(out, /<Picture 2> — porter uniform: the garment only/)
   // the swap rule is what `job` exists to inform
   assert.match(out, /attribute_transfer/)
 })
 
 test('a video plate gets a <Video N> label, since H3 takes it on a different input', () => {
   const out = platesBlock([{ name: 'source clip', job: 'continue from its last moment', kind: 'video' }])
-  assert.match(out, /<Video 1> — source clip \(video\)/)
-  assert.doesNotMatch(out, /<Subject 1>/)
+  assert.match(out, /<Video 1> — source clip/)
+  // A video plate is not offered as a Picture slot.
+  assert.doesNotMatch(out, /<Picture 1>/)
 })
 
 test('no plates yields an empty block, and fillTemplate says so explicitly', () => {

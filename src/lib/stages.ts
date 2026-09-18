@@ -741,18 +741,39 @@ export function nextRole(role: ClipRole): ClipRole {
 export function platesBlock(plates: { name: string; job: string; kind: 'image' | 'video' }[] | undefined): string {
   if (!plates?.length) return ''
   const lines = plates.map((p, i) => {
-    const label = p.kind === 'video' ? `<Video ${i + 1}>` : `<Subject ${i + 1}>`
+    const label = p.kind === 'video' ? `<Video ${i + 1}>` : `<Picture ${i + 1}>`
     const job = p.job.trim() || '(no job written — say what it is for, or do not cite it)'
-    return `- ${label} — ${p.name.trim() || 'unnamed plate'} (${p.kind}): ${job}`
+    return `- ${label} — ${p.name.trim() || 'unnamed plate'}: ${job}`
   })
-  return `REFERENCE PLATES WIRED TO THIS RENDER — cite these labels, and only these
+  // The Subject-from-Picture rule is about IMAGE plates only, so it is only
+  // stated when there is an image plate to state it about. A video-only list
+  // was getting an example citing `<Picture 1>` that resolved to nothing —
+  // caught by its own test, which asserted no Picture slot is offered for a
+  // video plate and was right to.
+  const firstImage = plates.findIndex((p) => p.kind !== 'video')
+  const subjectRule =
+    firstImage === -1
+      ? ''
+      : `
+A plate that defines a PERSON, a place, a costume or a style — which is what
+these usually are — does NOT get a standalone picture entry. Define a
+\`<Subject N>\` for it and cite its source inside that definition, exactly so:
+
+  <Subject 1> is the woman in <Picture ${firstImage + 1}>, [what to take from it].
+`
+
+  return `REFERENCE PLATES WIRED TO THIS RENDER — the label IS the slot, and N is its position
 
 ${lines.join('\n')}
 
+THAT LABEL IS HOW THE RENDER ADDRESSES THE ASSET. It is wired to slot N and
+nothing else resolves to it, so an asset you never cite is an asset the render
+loaded and never used.
+${subjectRule}
 Each plate's line says what to TAKE from it and what to IGNORE. Honour that:
 a plate whose job is an identity must not also dictate wardrobe, and a
 garment moved onto a different person is \`attribute_transfer\`, not
-\`fully_preserved\`. Do not cite a label that is not listed above, and do not
+\`fully_preserved\`. Do not cite a slot that is not listed above, and do not
 invent a plate that is not wired.
 `
 }

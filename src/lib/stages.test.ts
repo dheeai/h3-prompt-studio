@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createHash } from 'node:crypto'
-import {
+import { platesBlock,
   DEFAULT_TEMPLATES, OFF_CHAIN, PROMPT_STAGES, SCHEMA_STAGES, STAGE_INFO, STAGE_LABEL,
   continuationFrameBlock, durationBlock, fillTemplate, fillTemplateWithDuration, filmBlock,
 } from './stages'
@@ -258,4 +258,57 @@ test('draftDirected has its own label and stage info, distinct from draft', () =
   assert.equal(STAGE_LABEL.draftDirected, 'Draft (directed)')
   assert.notEqual(STAGE_LABEL.draftDirected, STAGE_LABEL.draft)
   assert.ok(STAGE_INFO.draftDirected.blurb.length > 0)
+})
+
+// ── plates cite the slot the render actually resolves (2026-09-18) ──────
+
+test('an image plate is offered as <Picture N> — the slot refs_json wires it to', () => {
+  const b = platesBlock([
+    { name: 'nusrat', kind: 'image', job: 'her identity' },
+    { name: 'farid', kind: 'image', job: 'his identity' },
+  ])
+  assert.match(b, /- <Picture 1> — nusrat: her identity/)
+  assert.match(b, /- <Picture 2> — farid: his identity/)
+  // It must NOT label an image plate <Subject N>: nothing resolves that to a
+  // wired slot, and the old block did exactly this while also forbidding the
+  // model from citing any other label — so an obedient model would never
+  // reference the image at all.
+  assert.doesNotMatch(b, /- <Subject 1>/)
+})
+
+test('a video plate keeps <Video N>', () => {
+  assert.match(platesBlock([{ name: 'walk', kind: 'video', job: 'the gait' }]), /- <Video 1> — walk: the gait/)
+})
+
+test('plates position is the slot number, in order', () => {
+  const b = platesBlock([
+    { name: 'a', kind: 'image', job: 'x' },
+    { name: 'b', kind: 'video', job: 'y' },
+    { name: 'c', kind: 'image', job: 'z' },
+  ])
+  assert.ok(b.indexOf('<Picture 1> — a') < b.indexOf('<Video 2> — b'))
+  assert.ok(b.indexOf('<Video 2> — b') < b.indexOf('<Picture 3> — c'))
+})
+
+test('the block teaches the guide’s own shape: a Subject defined FROM a Picture', () => {
+  // ref_guide.md 2.2: "If an image is used only to define a character, scene,
+  // costume, or style, do not create a standalone picture entry. Instead, cite
+  // the image source inside the corresponding <Subject N> definition."
+  const b = platesBlock([{ name: 'nusrat', kind: 'image', job: 'her identity' }])
+  assert.match(b, /<Subject 1> is the woman in <Picture 1>/)
+  assert.match(b, /does NOT get a standalone picture entry/)
+})
+
+test('an uncited plate is called out as loaded-and-unused', () => {
+  const b = platesBlock([{ name: 'nusrat', kind: 'image', job: 'her identity' }])
+  assert.match(b, /loaded and never used/)
+})
+
+test('a plate with no job still says so rather than going silent', () => {
+  assert.match(platesBlock([{ name: 'x', kind: 'image', job: '  ' }]), /no job written/)
+})
+
+test('no plates writes nothing at all', () => {
+  assert.equal(platesBlock([]), '')
+  assert.equal(platesBlock(undefined), '')
 })

@@ -71,7 +71,7 @@ function SkillRow({ skill }: { skill: Skill }) {
 }
 
 export function SkillsPanel({ onClose }: { onClose: () => void }) {
-  const { skills, addSkills, context } = useApp()
+  const { skills, addSkills, context, settings } = useApp()
   const [hot, setHot] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -136,6 +136,20 @@ export function SkillsPanel({ onClose }: { onClose: () => void }) {
     }
   }
 
+  // Preset B ("Directed", `lib/pipeline.ts`) runs a Direction call and an
+  // Acting call per clip — but `selectionForStage` only ever NARROWS the
+  // operator's own selection, it never adds to it (`context.ts`'s module
+  // comment). So if `h3-direction`/`h3-acting` aren't ticked below, those
+  // calls run with NO craft document at all — deliberately not auto-fixed
+  // here, since silently changing the loaded corpus would change what
+  // preset A sees too and void the comparison the founder asked for.
+  const isSelected = (skillName: string) =>
+    skills.some((s) => s.name.toLowerCase() === skillName && (settings.selection[s.id]?.length ?? 0) > 0)
+  const directedMissing =
+    settings.pipelinePreset === 'directed'
+      ? [!isSelected('h3-direction') && 'h3-direction', !isSelected('h3-acting') && 'h3-acting'].filter((x): x is string => !!x)
+      : []
+
   return (
     <div className="backdrop" onClick={onClose}>
       <div className="modal" style={{ maxWidth: 820 }} onClick={(e) => e.stopPropagation()}>
@@ -153,6 +167,14 @@ export function SkillsPanel({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="modal-body">
+          {directedMissing.length > 0 && (
+            <div className="alert warn" style={{ marginBottom: 10 }}>
+              The "Directed" pipeline preset is active, but {directedMissing.join(' and ')} {directedMissing.length === 1 ? 'is' : 'are'} not
+              ticked below — its {directedMissing.length === 1 ? 'call' : 'calls'} will run with no craft document at all. Tick{' '}
+              {directedMissing.length === 1 ? 'it' : 'them'} below if you want Direction/Acting to see the corresponding document. Not
+              ticked automatically on purpose — that would change what preset A sees too and void the comparison.
+            </div>
+          )}
           <div
             className={`dropzone${hot ? ' hot' : ''}`}
             onDragOver={(e) => {

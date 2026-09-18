@@ -1,4 +1,6 @@
 import { describeFilmLookText } from './filmLook'
+import { sectionsFor } from './schema'
+import { splitH3PromptSections } from './sessionExport'
 import type { FilmLook, H3Mode } from './types'
 
 /**
@@ -102,4 +104,34 @@ export function injectFilmLook(
     return { ...sections, [field]: `${body.slice(0, at)} ${text}${body.slice(at)}` }
   }
   return { ...sections, [field]: `${text}\n\n${body}` }
+}
+
+/**
+ * `injectFilmLook` above works on SECTIONS; every prompt-producing stage
+ * (`draft`, preset B's `draftDirected`, revise, rebuild, freeform — see
+ * `state.tsx`'s `run()`) hands back one joined string, `field: value` blocks
+ * separated by a blank line (`joinH3Sections`'s own format, `schema.ts`).
+ * This is the ONE place that round-trips through that shape so `run()`
+ * doesn't have to: split into sections, inject, rejoin — and BOTH pipeline
+ * presets call this same function, so the look reaches Preset A and Preset B
+ * identically and neither can quietly become the confound (see this file's
+ * own module comment for why baking the look at authoring time, rather than
+ * leaving it to the model, is the point at all).
+ *
+ * A prompt that doesn't parse into the mode's own sections (a hand edit that
+ * broke the field structure, a model reply that never took the canonical
+ * shape) is returned UNCHANGED rather than guessed at — the same "safe
+ * fallback over a wrong rewrite" rule `splitH3PromptSections` itself
+ * documents.
+ */
+export function injectFilmLookIntoPromptText(promptText: string, mode: H3Mode, look: FilmLook | undefined): string {
+  if (!promptText.trim() || !filmLookPromptText(look)) return promptText
+  const parsed = splitH3PromptSections(promptText, mode)
+  if (!parsed) return promptText
+  const sections: Record<string, string> = {}
+  for (const s of parsed) sections[s.field] = s.value
+  const injected = injectFilmLook(sections, mode, look)
+  return sectionsFor(mode)
+    .map((field) => `${field}: ${injected[field] ?? ''}`)
+    .join('\n\n')
 }

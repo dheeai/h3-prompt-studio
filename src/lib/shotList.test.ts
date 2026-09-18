@@ -1,5 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import type { AllocatedBeat, Beat, Shot, ShotGroup } from './types'
 import { dropFromIndex } from './filmEdit'
 import {
@@ -815,4 +816,17 @@ test('formatRuntime reads as minutes past a minute', () => {
   assert.equal(formatRuntime(60), '1m')
   assert.equal(formatRuntime(150), '2m 30s')
   assert.equal(formatRuntime(600), '10m')
+})
+
+// ── frozen — shared by BOTH pipeline presets, never forked ─────────────────
+//
+// Preset B (`lib/pipeline.ts`) is purely additive: same plot, beats, shots
+// and groups for every preset. These two templates are pass 1/pass 2 of
+// that shared planner, so they must never move as part of building preset
+// B — hashed the same way `stages.ts`'s frozen-arm test guards `draft`.
+
+test('frozen: BEAT_LIST_TEMPLATE and SHOT_SUBDIVIDE_TEMPLATE are unchanged by preset B', () => {
+  const sha256 = (text: string) => createHash('sha256').update(text, 'utf8').digest('hex')
+  assert.equal(sha256(BEAT_LIST_TEMPLATE), 'f24fde22a333953cf9647f5e5dbd364f734bc1dcf1b1763731912afe25bee4c9')
+  assert.equal(sha256(SHOT_SUBDIVIDE_TEMPLATE), 'cf49641564b32b601dc434a6987c81bdf6360b9ec3664a8c2de2a3bc1587a879')
 })

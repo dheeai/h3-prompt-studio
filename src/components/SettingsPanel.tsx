@@ -13,7 +13,7 @@ const MODES: { id: H3Mode; note: string }[] = [
   { id: 'MoGr', note: 'motion graphics' },
 ]
 
-const EDITABLE: StageId[] = ['direct', 'draft', 'critique', 'revise', 'rebuild', 'freeform']
+const EDITABLE: StageId[] = ['direct', 'draft', 'draftDirected', 'critique', 'revise', 'rebuild', 'freeform']
 
 export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const { settings, providers, patchSettings, reset, versions } = useApp()
@@ -231,7 +231,13 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 
               <div className="tok" style={{ marginBottom: 7, lineHeight: 1.5 }}>
                 Placeholders: <code>{'{{story}}'}</code> <code>{'{{current}}'}</code> <code>{'{{mode}}'}</code> <code>{'{{notes}}'}</code>{' '}
-                <code>{'{{critique}}'}</code> <code>{'{{findings}}'}</code>. Editing one pins it — it will no longer track improvements to
+                <code>{'{{critique}}'}</code> <code>{'{{findings}}'}</code>
+                {editing === 'draftDirected' && (
+                  <>
+                    {' '}<code>{'{{direction}}'}</code> <code>{'{{acting}}'}</code>
+                  </>
+                )}
+                . Editing one pins it — it will no longer track improvements to
                 the shipped prompt until you restore the default. The loaded skills are sent separately, ahead of this — don’t repeat them here or you break
                 the cached prefix.
               </div>

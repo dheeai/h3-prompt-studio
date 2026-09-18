@@ -2,6 +2,71 @@ import { useEffect, useMemo, useState } from 'react'
 import { useApp } from '../app/state'
 import { LoraStackEditor } from './LoraStackEditor'
 import { localLoraStackOverride } from '../lib/loras'
+import { DraftingStatus } from './DraftingStatus'
+import { offVocabularyMovements } from '../lib/direction'
+import type { DirectionDoc } from '../lib/direction'
+import type { ActingDoc } from '../lib/acting'
+
+/**
+ * The Direction/Acting documents for one clip, read-only (2026-09-18 brief:
+ * "the direction document should be inspectable for a clip — the operator
+ * needs to see what the camera was told to do"). Only preset B
+ * (`lib/pipeline.ts`) ever writes these, so this renders nothing for a clip
+ * authored under preset A. An editor is a separate job — this never calls
+ * back into `state.tsx`.
+ */
+function DirectionInspector({ direction, acting }: { direction: DirectionDoc | undefined; acting: ActingDoc | undefined }) {
+  if (!direction && !acting) return null
+  const offVocab = direction ? offVocabularyMovements(direction) : []
+  return (
+    <div className="card" style={{ marginTop: 10 }}>
+      <div className="lbl">Direction &amp; acting — what the camera and the performance were told (preset B)</div>
+      {direction && (
+        <>
+          <div className="tok" style={{ marginTop: 8, lineHeight: 1.55, color: 'var(--ink2)' }}>
+            <strong>Geometry:</strong> {direction.geometrySentence || '(none written)'}
+            <br />
+            <strong>Rhythm:</strong> {direction.rhythm || '(none written)'}
+          </div>
+          <div className="tok" style={{ marginTop: 6 }}>
+            {/* Reported, never corrected — a camera term outside H3's controlled
+                vocabulary is the interesting failure and the number the A/B
+                wants (see `offVocabularyMovements`'s own module comment). */}
+            {offVocab.length > 0 ? (
+              <span style={{ color: 'var(--amb)' }}>
+                {offVocab.length} shot{offVocab.length === 1 ? '' : 's'} named a camera move outside H3's controlled vocabulary: shot{offVocab.length === 1 ? '' : 's'} {offVocab.join(', ')}
+              </span>
+            ) : (
+              <span style={{ color: 'var(--grn)' }}>every shot's camera move is in H3's controlled vocabulary</span>
+            )}
+          </div>
+          {direction.shots.map((s) => (
+            <div key={s.index} className="tok" style={{ display: 'flex', gap: 9, padding: '4px 0', borderTop: '1px solid var(--rule)', color: 'var(--ink2)' }}>
+              <span style={{ width: 20, flex: '0 0 auto', color: 'var(--ink3)' }}>{s.index}</span>
+              <span style={{ flex: '1 1 auto' }}>
+                {s.action}
+                <br />
+                <span className="tok">
+                  camera: {s.cameraStartAngle} → {s.cameraEndAngle}, {s.cameraMovement} · {s.optics}
+                </span>
+              </span>
+            </div>
+          ))}
+        </>
+      )}
+      {acting && (
+        <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--rule)' }}>
+          <div className="tok" style={{ color: 'var(--ink3)', marginBottom: 4 }}>Performance</div>
+          {acting.performances.map((p, i) => (
+            <div key={i} className="tok" style={{ padding: '2px 0', color: 'var(--ink2)' }}>
+              <strong>{p.characterId}</strong> — wants: {p.objective || '(none written)'}; by: {p.tactic || '(none written)'}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 /**
  * Screen 2 — "The clip in hand" (2026-09-17 brief). The set currently open,
@@ -16,7 +81,7 @@ export function ClipInHand({ onOpenStoryAndShots }: { onOpenStoryAndShots: () =>
   const {
     shotList, shotGroups, editingGroupIndex, setEditingGroupIndex, breakdown,
     rewordShotText, retimeShotSeconds, addShotInGroup, dropShotByIndex, pullShotIntoGroup, pushShotOutOfGroup,
-    approveShotGroups, shotListBusy, streaming,
+    approveShotGroups, shotListBusy, streaming, pipelineStreaming, directionForClip, actingForClip,
     setClipLoraStack, filmLoraStack, extenderDefaultLoraStack, endpoint, loraNames, loraNamesState, refreshLoraNames,
   } = app
   const [newCovers, setNewCovers] = useState('')
@@ -32,7 +97,7 @@ export function ClipInHand({ onOpenStoryAndShots }: { onOpenStoryAndShots: () =>
     return local.length ? local : extenderDefaultLoraStack
   }, [filmLoraStack, extenderDefaultLoraStack])
 
-  const busy = shotListBusy || !!streaming
+  const busy = shotListBusy || !!streaming || !!pipelineStreaming
   const groupPos = shotGroups.findIndex((g) => g.index === editingGroupIndex)
   const group = groupPos === -1 ? null : shotGroups[groupPos]
 
@@ -163,6 +228,14 @@ export function ClipInHand({ onOpenStoryAndShots }: { onOpenStoryAndShots: () =>
           </button>
         </div>
       </div>
+
+      {pipelineStreaming && (
+        <div className="card" style={{ marginTop: 9 }}>
+          <DraftingStatus streaming={pipelineStreaming} />
+        </div>
+      )}
+
+      <DirectionInspector direction={directionForClip(group.index)} acting={actingForClip(group.index)} />
     </div>
   )
 }

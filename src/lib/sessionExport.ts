@@ -1,5 +1,7 @@
 import { slugifyFilmName } from './extender'
 import { filmLookPreset } from './filmLook'
+import { pipelinePreset } from './pipeline'
+import type { PipelinePresetId } from './pipeline'
 import { sectionsFor } from './schema'
 import { latestPromptForClip } from './stages'
 import type { ClipRole, FilmLook, H3Mode, LoraStackEntry, ShotGroup, ShotList, Version } from './types'
@@ -211,16 +213,23 @@ export interface ClipMdInput {
   promptText: string
   explanation?: string
   approvedAt: number
+  /** Which pipeline preset (`lib/pipeline.ts`) authored this prompt — the
+   * A/B's own provenance. Unset for a prompt written before presets existed. */
+  pipelinePreset?: PipelinePresetId
 }
 
 /** One clip's approved prompt — the six (or three) H3 sections, as
  * readable Markdown rather than a JSON dump. One file per clip,
  * `prompts/clipNN.md`. */
 export function clipMarkdown(input: ClipMdInput): string {
-  const { clip, mode, promptText, explanation, approvedAt } = input
+  const { clip, mode, promptText, explanation, approvedAt, pipelinePreset: presetId } = input
   const lines: string[] = []
   lines.push(`# Clip ${String(clip.index).padStart(2, '0')} — ${clip.title || '(untitled)'}`, '')
   lines.push(`Role: ${clip.role} · ${fmtSeconds(clip.seconds)}`, '')
+  // Unset (a prompt written before presets existed) says nothing rather than
+  // guessing which preset produced it — see `Version.pipelinePreset`'s
+  // module comment for why provenance is never backfilled.
+  if (presetId) lines.push(`Pipeline preset: ${pipelinePreset(presetId).name}`, '')
   if (clip.covers.trim()) lines.push(clip.covers.trim(), '')
 
   const sections = splitH3PromptSections(promptText, mode)
@@ -247,6 +256,10 @@ export interface ExportedBreakdownClip {
   loraStack: RedactedLoraStack | null
   prompt: string | null
   explanation: string | null
+  /** See `ClipMdInput.pipelinePreset` — carried into `project.json` so the
+   * A/B is attributable from the machine-readable export too, not only the
+   * human-readable `plan.md`/`clipNN.md`. */
+  pipelinePreset: PipelinePresetId | null
 }
 
 export interface ExportedProjectV1 {
@@ -313,6 +326,7 @@ export function buildProjectJson(input: BuildProjectInput): ExportedProjectV1 {
                 loraStack: redactLoraStack(c.loraStack),
                 prompt: v?.text ?? null,
                 explanation: v?.explanation ?? null,
+                pipelinePreset: v?.pipelinePreset ?? null,
               }
             }),
         }
@@ -360,7 +374,7 @@ export function buildExportPlan(input: BuildExportPlanInput): ExportFile[] {
     if (!v) continue
     files.push({
       path: `prompts/${clipFileBase(c.index)}.md`,
-      content: clipMarkdown({ clip: c, mode: input.mode, promptText: v.text, explanation: v.explanation, approvedAt: v.at }),
+      content: clipMarkdown({ clip: c, mode: input.mode, promptText: v.text, explanation: v.explanation, approvedAt: v.at, pipelinePreset: v.pipelinePreset }),
     })
   }
   return files

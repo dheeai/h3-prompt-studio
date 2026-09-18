@@ -88,3 +88,21 @@ test('the prompt-producing templates all carry the plates block', () => {
     if (t.includes('SOURCE')) assert.ok(t.includes('{{plates}}'), `${stage} must show the wired plates`)
   }
 })
+
+// ── preset B (`lib/pipeline.ts`) — direction/acting/draftDirected's own ────
+// ── narrowed skill selection ────────────────────────────────────────────
+
+test('selectionForStage: draftDirected gets only the format document — direction/acting already did the craft reasoning', () => {
+  const names = namesFor('draftDirected')
+  assert.deepStrictEqual(names, ['h3-prompting', 'my-own-notes'])
+  assert.ok(!names.includes('h3-direction'), 'the directing corpus is not re-sent — the direction call already used it')
+  assert.ok(!names.includes('h3-acting'), 'the performance corpus is not re-sent — the acting call already used it')
+})
+
+test('selectionForStage: direction gets only h3-direction', () => {
+  assert.deepStrictEqual(namesFor('direction'), ['h3-direction', 'my-own-notes'])
+})
+
+test('selectionForStage: acting gets only h3-acting', () => {
+  assert.deepStrictEqual(namesFor('acting'), ['h3-acting', 'my-own-notes'])
+})

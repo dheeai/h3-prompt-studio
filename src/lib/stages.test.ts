@@ -1,8 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { DEFAULT_TEMPLATES, continuationFrameBlock, durationBlock, fillTemplate, fillTemplateWithDuration, filmBlock } from './stages'
+import { createHash } from 'node:crypto'
+import {
+  DEFAULT_TEMPLATES, OFF_CHAIN, PROMPT_STAGES, SCHEMA_STAGES, STAGE_INFO, STAGE_LABEL,
+  continuationFrameBlock, durationBlock, fillTemplate, fillTemplateWithDuration, filmBlock,
+} from './stages'
 import { framesForSeconds } from './geometry'
 import { FILM_LOOK_PRESETS } from './filmLook'
+import { pipelinePreset } from './pipeline'
 import type { FilmContext } from './types'
 
 test('durationBlock states the ACTUAL grid-snapped length, not the chosen one', () => {
@@ -132,4 +137,125 @@ test('filmBlock: free text survives alongside a preset choice, in the same clip'
   const block = filmBlock(f)
   assert.ok(block.includes(preset.description))
   assert.match(block, /match the reference film we discussed/)
+})
+
+// ── the frozen arm — preset A's incumbent must stay byte-identical ────────
+//
+// "I want to save the current mode -- as its working well.. dont touch the
+// prompt etc of the current. But put it as a preset." Preset A is the
+// control of an A/B; if a shared template moves, both arms move and the
+// experiment measures nothing. Hashed rather than inlined byte-for-byte
+// here (these are long) — any edit at all, even whitespace, changes the
+// hash and fails this loudly.
+
+const FROZEN_TEMPLATE_HASHES: Record<string, string> = {
+  direct: '8d39c8fffaf92c30d203d158db3317b9f2e1e58a035500749a3f995f0fe77d63',
+  draft: '49de4c4d561c382784f19e275862af61ebcd8dff411beae415c3d9487ccfd1d2',
+  critique: '738c6e1152489002e329d73b4a44ac540796a4f737bc1bfc5fff50efacfc1f9b',
+  revise: 'a99bfc095bdfd7b8b9e12e5c690c48a5b0028a2fc27532533bb97fe405e71b75',
+  rebuild: 'c15cdd688682a5c0a4ed9b8f72ea294401c568466552d72e281e033c005db804',
+  handoff: '9c52d4d3beecdc3c91ed9b8a60a5701712f03b93e708eefdb78458f4f9b3edaa',
+  freeform: '264733ed91419efd75c4b4c36ef90159aa100e3451f5975befa1e3dae5630d26',
+  breakdown: '47f6f10f53dd6555310e54f3669236b7770c0527961fb977436ee3e24bbf66c9',
+}
+
+function sha256(text: string): string {
+  return createHash('sha256').update(text, 'utf8').digest('hex')
+}
+
+test('frozen arm: every DEFAULT_TEMPLATES entry that existed before preset B is byte-identical', () => {
+  for (const [stage, expected] of Object.entries(FROZEN_TEMPLATE_HASHES)) {
+    const actual = sha256(DEFAULT_TEMPLATES[stage as keyof typeof DEFAULT_TEMPLATES])
+    assert.equal(
+      actual,
+      expected,
+      `${stage}'s DEFAULT_TEMPLATES entry changed — preset A must stay frozen, or the A/B measures nothing`,
+    )
+  }
+})
+
+test('frozen arm: preset A\'s stage list contains no direction/acting stage', () => {
+  const a = pipelinePreset('direct-write')
+  assert.deepStrictEqual(a.extraStages, [])
+  assert.equal(a.writerStage, 'draft')
+})
+
+test('draftDirected is a NEW template, not a rename or edit of draft', () => {
+  assert.notEqual(DEFAULT_TEMPLATES.draftDirected, DEFAULT_TEMPLATES.draft)
+  assert.ok(!Object.values(FROZEN_TEMPLATE_HASHES).includes(sha256(DEFAULT_TEMPLATES.draftDirected)))
+})
+
+// ── the draftDirected template itself ──────────────────────────────────────
+
+test('draftDirected tells the writer the shots/camera/performance are already decided', () => {
+  const t = DEFAULT_TEMPLATES.draftDirected
+  assert.match(t, /ALREADY DECIDED/)
+  assert.match(t, /Do not re-choose a shot/)
+})
+
+test('draftDirected keeps the same <<<PROMPT>>> output contract as draft', () => {
+  assert.match(DEFAULT_TEMPLATES.draftDirected, /<<<PROMPT>>>/)
+  assert.match(DEFAULT_TEMPLATES.draftDirected, /no preamble, no explanation, no\nfences/)
+})
+
+test('draftDirected carries the same shared placeholder vocabulary as draft', () => {
+  const t = DEFAULT_TEMPLATES.draftDirected
+  for (const ph of ['{{film}}', '{{plates}}', '{{previous}}', '{{story}}', '{{standing}}', '{{continuationFrame}}', '{{mode}}']) {
+    assert.ok(t.includes(ph), `draftDirected must keep ${ph}`)
+  }
+})
+
+test('draftDirected adds {{direction}} and {{acting}} placeholders draft does not have', () => {
+  assert.ok(DEFAULT_TEMPLATES.draftDirected.includes('{{direction}}'))
+  assert.ok(DEFAULT_TEMPLATES.draftDirected.includes('{{acting}}'))
+  assert.ok(!DEFAULT_TEMPLATES.draft.includes('{{direction}}'))
+  assert.ok(!DEFAULT_TEMPLATES.draft.includes('{{acting}}'))
+})
+
+test('fillTemplate fills {{direction}} and {{acting}} when supplied', () => {
+  const out = fillTemplate('D: {{direction}}\nA: {{acting}}', { direction: 'shot 1: push in', acting: 'wants: leave' })
+  assert.match(out, /D: shot 1: push in/)
+  assert.match(out, /A: wants: leave/)
+})
+
+test('fillTemplate states the gap explicitly when direction/acting are not supplied', () => {
+  const out = fillTemplate('{{direction}} / {{acting}}', {})
+  assert.match(out, /no direction document supplied/)
+  assert.match(out, /no acting document supplied/)
+})
+
+test('draftDirected fills end to end, same as draft', () => {
+  const filled = fillTemplateWithDuration(DEFAULT_TEMPLATES.draftDirected, {
+    duration: 'DURATION — 124 frames',
+    story: 'a woman enters a shop',
+    mode: 'Ref2VA',
+    film: 'FILM-WIDE LOOK\nsome look',
+    standing: 'a plain idea',
+    previous: '',
+    plates: '',
+    continuationFrame: '',
+    direction: '[Shot 1]\n  camera: wide -> close, Push In',
+    acting: '- Lira — wants: leave the shop',
+  })
+  assert.match(filled, /a woman enters a shop/)
+  assert.match(filled, /Push In/)
+  assert.match(filled, /wants: leave the shop/)
+  assert.match(filled, /<<<PROMPT>>>/)
+})
+
+// ── stage bookkeeping picks up the new stage ───────────────────────────────
+
+test('draftDirected is schema-constrained and counts as a canonical prompt stage, same as draft', () => {
+  assert.ok(SCHEMA_STAGES.has('draftDirected'))
+  assert.ok(PROMPT_STAGES.has('draftDirected'))
+})
+
+test('draftDirected is off the manual chain — an action a preset invokes, not a button to click through', () => {
+  assert.ok(OFF_CHAIN.includes('draftDirected'))
+})
+
+test('draftDirected has its own label and stage info, distinct from draft', () => {
+  assert.equal(STAGE_LABEL.draftDirected, 'Draft (directed)')
+  assert.notEqual(STAGE_LABEL.draftDirected, STAGE_LABEL.draft)
+  assert.ok(STAGE_INFO.draftDirected.blurb.length > 0)
 })

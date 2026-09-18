@@ -8,7 +8,50 @@ import { DraftingStatus } from './DraftingStatus'
 import { FILM_LOOK_PRESETS, filmLookPreset, isFilmLookSet } from '../lib/filmLook'
 import { LoraStackEditor } from './LoraStackEditor'
 import { localLoraStackOverride } from '../lib/loras'
-import type { FilmContext, FilmLook, LoraStackEntry } from '../lib/types'
+import { PIPELINE_PRESETS, pipelinePreset } from '../lib/pipeline'
+import type { PipelinePresetId } from '../lib/pipeline'
+import type { FilmContext, FilmLook, LoraStackEntry, Settings } from '../lib/types'
+
+/**
+ * The preset switch (2026-09-18 brief: "Create a new preset with direction +
+ * acting.. and we will test the production against the two"). Lives right
+ * next to the Project field — both are once-per-film decisions. Preset A is
+ * stated as unchanged, in plain words, so nobody has to go read `pipeline.ts`
+ * to know that leaving this alone changes nothing.
+ */
+function PipelinePresetRow({
+  pipelinePreset: current,
+  patchSettings,
+}: {
+  pipelinePreset: PipelinePresetId | undefined
+  patchSettings: (p: Partial<Settings>) => void
+}) {
+  const active = pipelinePreset(current)
+  return (
+    <div style={{ marginBottom: 9 }}>
+      <div className="lbl">Pipeline preset</div>
+      <div style={{ display: 'flex', gap: 7, marginTop: 5, flexWrap: 'wrap' }}>
+        {PIPELINE_PRESETS.map((p) => (
+          <button
+            key={p.id}
+            className={`chip${active.id === p.id ? ' on' : ''}`}
+            style={{ flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left', maxWidth: 320, height: 'auto', padding: '7px 10px' }}
+            onClick={() => patchSettings({ pipelinePreset: p.id })}
+          >
+            <span style={{ fontWeight: 600 }}>{p.name}</span>
+            <span className="tok" style={{ color: 'inherit', opacity: 0.75, whiteSpace: 'normal', lineHeight: 1.4 }}>{p.description}</span>
+            <span className="tok" style={{ color: 'inherit', opacity: 0.6 }}>{p.cost}</span>
+          </button>
+        ))}
+      </div>
+      <div className="tok" style={{ marginTop: 5, lineHeight: 1.5 }}>
+        {active.id === 'direct-write'
+          ? 'Preset A — the incumbent, unchanged. Nothing about how a prompt is authored is different from before this switch existed.'
+          : 'Preset B — every clip gets two extra model calls (Direction, then Acting) before the prompt is written.'}
+      </div>
+    </div>
+  )
+}
 
 function bandColor(state: GroupBandState): string {
   if (state === 'kept') return 'var(--grn)'
@@ -240,11 +283,11 @@ export function StoryAndShots({
   const app = useApp()
   const {
     plot, setPlot, maxRuntimeSeconds, setMaxRuntimeSeconds, shotList, thinBriefCheck, shotsAuthoredSoFar,
-    shotGroups, shotGroupIssues, shotListBusy, shotStreaming, makeShotList, continueSubdivision, reviseShotsFrom,
+    shotGroups, shotGroupIssues, shotListBusy, shotStreaming, pipelineStreaming, makeShotList, continueSubdivision, reviseShotsFrom,
     approveShotGroups, breakdown, extenderPlanPreview,
     setEditingGroupIndex, streaming, plates, platesFrozenReason, film, setFilm,
     filmLoraStack, setFilmLoraStack, extenderDefaultLoraStack, endpoint, loraNames, loraNamesState, refreshLoraNames,
-    filmName, filmNameEffective, setFilmName,
+    filmName, filmNameEffective, setFilmName, settings, patchSettings,
     exportDirName, exportDirStatus, chooseExportDirectory, reconnectExportDirectory, saveFilmNow,
   } = app
 
@@ -279,7 +322,7 @@ export function StoryAndShots({
     return groupBandState(approved, validated)
   }
 
-  const busy = shotListBusy || !!streaming
+  const busy = shotListBusy || !!streaming || !!pipelineStreaming
 
   const toggle = (i: number) =>
     setSelected((prev) => {
@@ -329,6 +372,7 @@ export function StoryAndShots({
             {filmOutputPrefix(filmNameEffective)}_00001_.mp4
           </span>
         </div>
+        <PipelinePresetRow pipelinePreset={settings.pipelinePreset} patchSettings={patchSettings} />
         <SaveFilmRow
           exportDirName={exportDirName}
           exportDirStatus={exportDirStatus}
@@ -399,6 +443,12 @@ export function StoryAndShots({
         )}
         {platesFrozenReason && <div className="alert warn" style={{ marginTop: 9 }}>{platesFrozenReason}</div>}
       </div>
+
+      {pipelineStreaming && (
+        <div className="card" style={{ marginTop: 9 }}>
+          <DraftingStatus streaming={pipelineStreaming} />
+        </div>
+      )}
 
       {shotStreaming && (
         <div className="card" style={{ marginTop: 9 }}>

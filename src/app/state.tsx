@@ -34,6 +34,17 @@ import {
   checkDirPermission, downloadTextFile, pickExportDirectory, requestDirPermission, supportsFileSystemAccess, writeFilesToDirectory,
 } from '../lib/fsExport'
 import { buildExportPlan, buildFallbackBundle } from '../lib/sessionExport'
+import { pipelinePreset, presetRunsActing, presetRunsDirection } from '../lib/pipeline'
+import type { PipelinePresetId } from '../lib/pipeline'
+import {
+  ACTING_TEMPLATE, actingResponseFormat, actingToPromptBlock, fillActingTemplate, parseActing,
+} from '../lib/acting'
+import type { ActingDoc } from '../lib/acting'
+import {
+  DIRECTION_TEMPLATE, directionResponseFormat, directionToPromptBlock, fillDirectionTemplate, parseDirection,
+} from '../lib/direction'
+import type { DirectionDoc } from '../lib/direction'
+import { injectFilmLookIntoPromptText } from '../lib/filmLookInject'
 import { authoringModeForContent, authorContinuation, canAutoAuthorNext, clearDraftContext, continuationSource, interruptedReasoningText, migrateBreakIntoScenes, nextPlanClipToAuthor, previousPromptForClip, promptSourceForAuthoringMode, withContinuationFrame } from '../lib/entry'
 import type { AuthoringMode } from '../lib/entry'
 import { clipsNeedingPrompt, isSingleRequestStage, type DraftingProgress, type StudioRunPhase } from '../lib/studio-workflow'
@@ -73,6 +84,7 @@ const DEFAULT_SETTINGS: Settings = {
   maxTokens: 0,
   thinkingBudgets: {},
   mode: 'Ref2VA',
+  pipelinePreset: 'direct-write',
   selection: {},
   stageTemplates: {},
   onboarded: false,
@@ -232,6 +244,19 @@ interface Session {
    * the machine.
    */
   filmName?: string
+
+  // ── preset B (`lib/pipeline.ts`) — direction/acting documents ──────────
+  /**
+   * Every clip's Direction document, keyed by `BreakdownClip.index` — one
+   * call per clip (`direction.ts`'s module comment), so this is a map, not
+   * a single value. Persists on the session like everything else here, so
+   * "the clip in hand" can show what the camera was told to do even after a
+   * reload, and the directed writer can re-read it without a second call.
+   */
+  directionByClip?: Record<number, DirectionDoc>
+  /** Every clip's Acting document, keyed the same way. Deliberately
+   * unverified — see `acting.ts`'s module comment. */
+  actingByClip?: Record<number, ActingDoc>
 }
 
 /** The operator's runtime ceiling before they have set one — see
@@ -267,6 +292,16 @@ interface RunContextOverride {
    * operator action — tags the resulting `Version`/`streaming` so the
    * operator can tell a prompt on the page apart from one they asked for. */
   auto?: boolean
+  /** Preset B only — this clip's Direction document, already rendered as the
+   * block `draftDirected`'s `{{direction}}` placeholder wants (see
+   * `directionToPromptBlock`, `direction.ts`). */
+  direction?: string
+  /** Preset B only — this clip's Acting document, rendered the same way
+   * (`actingToPromptBlock`, `acting.ts`). */
+  acting?: string
+  /** Stamped onto the resulting `Version` for provenance — see
+   * `Version.pipelinePreset`'s module comment. */
+  pipelinePreset?: PipelinePresetId
 }
 
 /** A prompt version written by a deterministic surface such as Agent. */
@@ -445,6 +480,18 @@ export interface Api {
    * `useState`) for why this is a slot of its own rather than a reuse of
    * `streaming`. */
   shotStreaming: DraftingProgress | null
+  /**
+   * Preset B's own direction/acting calls (`lib/pipeline.ts`) are, like the
+   * shots calls above, off the `StageId` chain — same reasoning, same
+   * `DraftingStatus`-shaped progress slot of their own rather than a reuse
+   * of `streaming` (which is typed to `StageId`) or a second UI idiom.
+   */
+  pipelineStreaming: DraftingProgress | null
+  /** This clip's Direction document, if preset B has authored one — for
+   * "the clip in hand" to show what the camera was told to do. */
+  directionForClip: (clipIndex: number) => DirectionDoc | undefined
+  /** This clip's Acting document, if preset B has authored one. */
+  actingForClip: (clipIndex: number) => ActingDoc | undefined
   /**
    * Pass 1 (`BEAT_LIST_TEMPLATE`/`beatListResponseFormat`/`parseBeatList`),
    * from `plot` alone — then `allocateBeatSeconds` against
@@ -820,6 +867,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
    * `cancel()` — defined well before Full Story's own actions — can close
    * over it directly. */
   const [shotStreaming, setShotStreaming] = useState<DraftingProgress | null>(null)
+  /** Preset B's direction/acting calls' own progress — same reasoning as
+   * `shotStreaming` right above: off the `StageId` chain, so a slot of its
+   * own rather than a reuse of `streaming` or `shotStreaming`. */
+  const [pipelineStreaming, setPipelineStreaming] = useState<DraftingProgress | null>(null)
   const [error, setError] = useState<string | null>(null)
   // Advisory, non-blocking, and deliberately a SEPARATE channel from `error`:
   // a model swap is a cost to state, not a failure to refuse (see modelLock.ts).
@@ -1381,17 +1432,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const selectVersion = useCallback((id: string) => setSession((s) => ({ ...s, currentId: id })), [])
 
   const cancel = useCallback(() => {
-    // Exactly one of `streaming`/`shotStreaming` is ever live at a time (the
-    // GPU mutex single-flights both onto the same `abortRef`), so reading
-    // whichever has reasoning covers either without needing to know which.
-    const thought = interruptedReasoningText(streaming?.reasoning ?? shotStreaming?.reasoning ?? '')
+    // Exactly one of `streaming`/`shotStreaming`/`pipelineStreaming` is ever
+    // live at a time (the GPU mutex single-flights all three onto the same
+    // `abortRef`), so reading whichever has reasoning covers any of them
+    // without needing to know which.
+    const thought = interruptedReasoningText(streaming?.reasoning ?? shotStreaming?.reasoning ?? pipelineStreaming?.reasoning ?? '')
     if (thought) setInterruptedReasoning(thought)
     continuationAbortRef.current?.abort()
     abortRef.current?.abort()
     abortRef.current = null
     setStreaming(null)
     setShotStreaming(null)
-  }, [streaming?.reasoning, shotStreaming?.reasoning])
+    setPipelineStreaming(null)
+  }, [streaming?.reasoning, shotStreaming?.reasoning, pipelineStreaming?.reasoning])
 
   /**
    * Abort any in-flight PIPELINE (background) authoring and wait for the GPU
@@ -1514,6 +1567,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         standing: standingToText(classifyInput(snap.story)),
         plates: platesBlock(plates),
         continuationFrame: continuationFrameBlock(!!snap.continuationFrame),
+        direction: override?.direction,
+        acting: override?.acting,
       })
 
       // Show the plates, not just describe them. Only a plate added from THIS
@@ -1682,7 +1737,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const schemaResult =
           result.schemaHonoured && SCHEMA_STAGES.has(stage) ? joinH3Sections(result.text, settings.mode) : null
 
-        const wantsSplit = stage === 'draft' || stage === 'revise' || stage === 'rebuild' || stage === 'freeform'
+        const wantsSplit = stage === 'draft' || stage === 'revise' || stage === 'rebuild' || stage === 'freeform' || stage === 'draftDirected'
         const strictReplacement = stage === 'revise' || stage === 'rebuild'
         const splitResult = schemaResult
           ? { ...schemaResult, changelog: [] as string[] }
@@ -1700,12 +1755,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
         setFailedReasoning(null)
         const { prompt: bodyText, explanation, changelog } = splitResult ?? { prompt: '', explanation: '', changelog: [] as string[] }
+        // The film-wide look is baked into the prompt TEXT itself, not left
+        // to the model to restate — see `filmLookInject.ts`'s module comment.
+        // Applied here, after the split but before the Version is built, so
+        // BOTH presets' writers (`draft` and `draftDirected`) get it exactly
+        // the same way and neither can become the confound.
+        const styledBody = wantsSplit && bodyText
+          ? injectFilmLookIntoPromptText(bodyText, settings.mode, (override?.film ?? snap.film)?.look)
+          : bodyText
 
         const version: Version = {
           id: `v${Date.now().toString(36)}`,
           stage,
           label: STAGE_LABEL[stage],
-          text: bodyText || result.text.trim(),
+          text: styledBody || result.text.trim(),
           fromText: working || undefined,
           explanation: explanation || undefined,
           changelog: changelog.length ? changelog : undefined,
@@ -1721,6 +1784,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           truncated: result.truncated || undefined,
           clipIndex,
           auto: override?.auto,
+          pipelinePreset: override?.pipelinePreset,
         }
         // The composer is the ONE box — a pass that produced a canonical
         // prompt (Draft/Revise/Rebuild/a prompt-bearing freeform note) writes
@@ -1784,6 +1848,129 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [providers, settings, context, skills, findings, breakIntoScenes, beginGpuUse, endGpuUse],
   )
 
+  /**
+   * Preset B's Direction call (`direction.ts`) — one clip. Off the
+   * `StageId`/`run()` chain entirely, same reasoning as the Full Story shots
+   * calls (`shotList.ts`'s module comment): its own template/schema/parse
+   * machinery, and its own progress slot (`pipelineStreaming`) rather than
+   * `streaming` (typed to `StageId`, and already claimed by `Composer.tsx`'s
+   * unconditional display — see `shotStreaming`'s own comment for why that
+   * matters). Persists the result onto the session directly, keyed by
+   * `clipIndex`, so it survives a reload and "the clip in hand" can show it
+   * without a second call.
+   */
+  const runDirection = useCallback(
+    async (clipIndex: number, covers: string, shots: string): Promise<DirectionDoc | null> => {
+      const provider = providers.find((p) => p.id === settings.providerId)
+      if (!provider) { setError('Pick a provider first.'); return null }
+      if (!settings.model) { setError('Pick a model first.'); return null }
+      const stageSelection = selectionForStage(skills, settings.selection, 'direction')
+      const ctx = await buildContext(skills, stageSelection)
+      const user = fillDirectionTemplate(DIRECTION_TEMPLATE, {
+        covers,
+        shots,
+        film: filmBlock(sessionRef.current.film),
+        plates: platesBlock(plates),
+      })
+      if (!beginGpuUse('llm')) return null
+      const ac = new AbortController()
+      abortRef.current = ac
+      setPipelineStreaming({ stage: 'direction', text: '', reasoning: '', startedAt: Date.now(), continuations: 0, phase: 'thinking' })
+      try {
+        const result = await streamChatComplete({
+          provider,
+          model: settings.model,
+          temperature: settings.temperature,
+          maxTokens: settings.maxTokens,
+          thinkingBudget: resolveThinkingBudget(provider.id, settings.model, settings.thinkingBudgets),
+          responseFormat: provider.supportsJsonSchema ? directionResponseFormat() : undefined,
+          contextHash: ctx.hash,
+          signal: ac.signal,
+          messages: [
+            { role: 'system', content: ctx.text || '# No selected H3 skills\n\nNo skill files are currently selected.' },
+            { role: 'user', content: user },
+          ],
+          ...streamingCallbacks(setPipelineStreaming),
+        })
+        if (!result.text.trim()) throw new Error('Direction returned nothing.')
+        const doc = parseDirection(result.text, clipIndex)
+        if (!doc) throw new Error('Could not parse a direction document from the reply — try again.')
+        const next = { ...sessionRef.current, directionByClip: { ...sessionRef.current.directionByClip, [clipIndex]: doc } }
+        sessionRef.current = next
+        setSession(next)
+        return doc
+      } catch (e) {
+        if ((e as Error).name !== 'AbortError') setError(String((e as Error).message || e))
+        return null
+      } finally {
+        abortRef.current = null
+        setPipelineStreaming(null)
+        endGpuUse()
+      }
+    },
+    [providers, settings, skills, plates, beginGpuUse, endGpuUse],
+  )
+
+  /**
+   * Preset B's Acting call (`acting.ts`) — one clip. Same shape as
+   * `runDirection` right above, run immediately after it. Deliberately
+   * tolerant of a parse failure (see `acting.ts`'s "deliberately thin, and
+   * deliberately unverified" module comment): acting is an input to the
+   * writer, not a gate, so a failed/unparseable reply returns `null` and the
+   * writer proceeds without it rather than blocking the clip.
+   */
+  const runActing = useCallback(
+    async (clipIndex: number, covers: string, direction: string): Promise<ActingDoc | null> => {
+      const provider = providers.find((p) => p.id === settings.providerId)
+      if (!provider) { setError('Pick a provider first.'); return null }
+      if (!settings.model) { setError('Pick a model first.'); return null }
+      const stageSelection = selectionForStage(skills, settings.selection, 'acting')
+      const ctx = await buildContext(skills, stageSelection)
+      const user = fillActingTemplate(ACTING_TEMPLATE, {
+        covers,
+        direction,
+        film: filmBlock(sessionRef.current.film),
+        plates: platesBlock(plates),
+      })
+      if (!beginGpuUse('llm')) return null
+      const ac = new AbortController()
+      abortRef.current = ac
+      setPipelineStreaming({ stage: 'acting', text: '', reasoning: '', startedAt: Date.now(), continuations: 0, phase: 'thinking' })
+      try {
+        const result = await streamChatComplete({
+          provider,
+          model: settings.model,
+          temperature: settings.temperature,
+          maxTokens: settings.maxTokens,
+          thinkingBudget: resolveThinkingBudget(provider.id, settings.model, settings.thinkingBudgets),
+          responseFormat: provider.supportsJsonSchema ? actingResponseFormat() : undefined,
+          contextHash: ctx.hash,
+          signal: ac.signal,
+          messages: [
+            { role: 'system', content: ctx.text || '# No selected H3 skills\n\nNo skill files are currently selected.' },
+            { role: 'user', content: user },
+          ],
+          ...streamingCallbacks(setPipelineStreaming),
+        })
+        if (!result.text.trim()) return null
+        const doc = parseActing(result.text, clipIndex)
+        if (!doc) return null
+        const next = { ...sessionRef.current, actingByClip: { ...sessionRef.current.actingByClip, [clipIndex]: doc } }
+        sessionRef.current = next
+        setSession(next)
+        return doc
+      } catch (e) {
+        if ((e as Error).name !== 'AbortError') setError(String((e as Error).message || e))
+        return null
+      } finally {
+        abortRef.current = null
+        setPipelineStreaming(null)
+        endGpuUse()
+      }
+    },
+    [providers, settings, skills, plates, beginGpuUse, endGpuUse],
+  )
+
   const rebuild = useCallback(async (mode?: AuthoringMode, opts?: { auto?: boolean }) => {
     const studioModeOverride = mode ?? authoringModeForContent(classifyInput(sessionRef.current.story).kind, breakIntoScenes)
     if (studioModeOverride === 'prompt') {
@@ -1792,13 +1979,67 @@ export function AppProvider({ children }: { children: ReactNode }) {
       await run('rebuild', undefined, { studioMode: 'prompt', auto: opts?.auto })
       return
     }
-    // ONE pass. `draft` now works the directing gates internally and writes the
-    // prompt from them, so the sheet is no longer generated, returned, and sent
-    // straight back in — which cost a second reasoning warm-up, a second round
-    // trip, and the sheet's own tokens twice. `direct` remains its own stage
-    // for anyone who wants the sheet itself.
-    await run('draft', undefined, { studioMode: studioModeOverride, auto: opts?.auto })
-  }, [run, breakIntoScenes])
+
+    const preset = pipelinePreset(settings.pipelinePreset)
+    let directionBlock: string | undefined
+    let actingBlock: string | undefined
+
+    // Preset B's direction/acting are documents ABOUT A CLIP — a shot list
+    // decided against the plan's own shots — so they only apply to Full
+    // Story ('story' mode) authoring of a clip that actually has a
+    // `clipIndex`. An Idea-mode clip or a Prompt-mode edit still uses
+    // preset A's own `draft`/`rebuild` behaviour unchanged, regardless of
+    // the preset switch — there is no shot list for a direction pass to
+    // honour there. This is the design call the founder's brief left open;
+    // the alternative (running `draftDirected` with empty direction/acting
+    // blocks) would tell the writer "already decided" about nothing.
+    if (preset.writerStage === 'draftDirected' && studioModeOverride === 'story') {
+      const clipIndex = sessionRef.current.film?.clipIndex
+      if (clipIndex !== undefined) {
+        const covers = sessionRef.current.film?.covers ?? ''
+        const group = sessionRef.current.shotGroups?.find((g) => g.index === clipIndex)
+        const groupShots = group
+          ? (sessionRef.current.shotList?.shots ?? []).filter((s) => group.shotIndices.includes(s.index))
+          : []
+        const shotsText = groupShots.length
+          ? groupShots.map((s) => `- ${s.covers} (${s.seconds}s)`).join('\n')
+          : covers
+
+        // Sequentially, through the SAME one-model-call-at-a-time GPU lock
+        // (`beginGpuUse`/`endGpuUse`) every other authoring call uses — never
+        // in parallel. Re-uses an already-authored document for this clip
+        // rather than re-asking, exactly as `run()` re-uses an existing
+        // 'direct' pass for `draft`.
+        let directionDoc: DirectionDoc | undefined = sessionRef.current.directionByClip?.[clipIndex]
+        if (presetRunsDirection(preset)) {
+          directionDoc = (await runDirection(clipIndex, covers, shotsText)) ?? undefined
+          // Direction failed (provider error, Stop, unparseable reply) — there
+          // is nothing for the writer to honour, so do not fall through to a
+          // "directed" pass with an empty direction block.
+          if (!directionDoc) return
+        }
+        directionBlock = directionToPromptBlock(directionDoc)
+
+        let actingDoc: ActingDoc | undefined = sessionRef.current.actingByClip?.[clipIndex]
+        if (presetRunsActing(preset)) {
+          actingDoc = (await runActing(clipIndex, covers, directionBlock)) ?? undefined
+        }
+        actingBlock = actingToPromptBlock(actingDoc)
+      }
+    }
+
+    // ONE pass writes the prompt — `draft` works the directing gates
+    // internally, and `draftDirected` (preset B) is handed them already
+    // worked. `direct` remains its own stage for anyone who wants the sheet
+    // itself.
+    await run(preset.writerStage, undefined, {
+      studioMode: studioModeOverride,
+      auto: opts?.auto,
+      direction: directionBlock,
+      acting: actingBlock,
+      pipelinePreset: preset.id,
+    })
+  }, [run, breakIntoScenes, settings.pipelinePreset, runDirection, runActing])
 
   const reset = useCallback(async () => {
     abortRef.current?.abort()
@@ -2296,6 +2537,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     },
     [setFilm, rebuild],
   )
+
+  /** This clip's Direction/Acting document, if preset B has authored one —
+   * `ClipInHand.tsx`'s read-only inspector. Reads `session` (not
+   * `sessionRef`) so the component re-renders once a call lands. */
+  const directionForClip = useCallback((clipIndex: number) => session.directionByClip?.[clipIndex], [session.directionByClip])
+  const actingForClip = useCallback((clipIndex: number) => session.actingByClip?.[clipIndex], [session.actingByClip])
 
   const rewordShotText = useCallback((shotIndex: number, covers: string) => {
     const snap = sessionRef.current
@@ -3619,6 +3866,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     shotGroupIssues: session.shotGroupIssues ?? [],
     shotListBusy,
     shotStreaming,
+    pipelineStreaming,
+    directionForClip,
+    actingForClip,
     makeShotList,
     continueSubdivision,
     reviseShotsFrom,

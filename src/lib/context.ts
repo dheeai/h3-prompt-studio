@@ -229,7 +229,19 @@ export function selectionKey(selection: Selection): string {
  * included, because we cannot know what it governs. Only the shipped ones are
  * routed.
  */
-const STAGE_SKILLS: Partial<Record<StageId, readonly string[]>> = {
+/**
+ * Preset B's two extra per-clip calls (`direction.ts`/`acting.ts`,
+ * `lib/pipeline.ts`) are NOT `StageId`s — same reasoning as the Full Story
+ * shots calls (`shotList.ts`'s module comment): they have their own
+ * template/schema/parse machinery, off the `run()`/`StageId` chain. But they
+ * still need their OWN narrowed skill selection, so this map's key type is
+ * widened by exactly those two rather than forcing them into `StageId` (and
+ * therefore into `STAGE_ORDER`/`STAGE_INFO`/`DEFAULT_TEMPLATES`, which they
+ * have no use for).
+ */
+export type StageSkillKey = StageId | 'direction' | 'acting'
+
+const STAGE_SKILLS: Partial<Record<StageSkillKey, readonly string[]>> = {
   // Deciding what to show, and how it is performed.
   direct: ['h3-direction', 'h3-acting', 'h3-two-hander', 'h3-lira'],
   breakdown: ['h3-direction'],
@@ -243,10 +255,23 @@ const STAGE_SKILLS: Partial<Record<StageId, readonly string[]>> = {
   freeform: ['h3-prompting'],
   handoff: ['h3-prompting'],
   // Audits against everything, so it keeps the whole selection.
+
+  // ── preset B (`lib/pipeline.ts`) ───────────────────────────────────────
+  // Preset B's direction/acting calls already did the directing/performance
+  // reasoning and wrote it down — `draftDirected` is handed those documents
+  // (`{{direction}}`/`{{acting}}` in `stages.ts`) rather than the craft
+  // documents that produced them, so it needs only the FORMAT document. This
+  // is deliberately a SMALLER payload than `draft`'s: the whole point of
+  // making direction/acting artifacts is that the writer no longer has to
+  // carry the full directing/performance corpus to re-derive what those
+  // calls already decided.
+  draftDirected: ['h3-prompting'],
+  direction: ['h3-direction'],
+  acting: ['h3-acting'],
 }
 
 /** Narrow a selection to the documents a stage needs — see `STAGE_SKILLS`. */
-export function selectionForStage(skills: Skill[], selection: Selection, stage: StageId | undefined): Selection {
+export function selectionForStage(skills: Skill[], selection: Selection, stage: StageSkillKey | undefined): Selection {
   const wanted = stage ? STAGE_SKILLS[stage] : undefined
   if (!wanted) return selection
   const byId = new Map(skills.map((s) => [s.id, s.name.toLowerCase()]))

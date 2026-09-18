@@ -304,3 +304,36 @@ test('exportRootName flattens a project name with slashes instead of creating a 
   assert.equal(name.includes('/'), false)
   assert.equal(name, 'Act_2_the_door')
 })
+
+// ── provenance — which pipeline preset authored this prompt ────────────────
+// The A/B is unmeasurable if a prompt on disk can't be attributed to the
+// preset that wrote it (`lib/pipeline.ts`).
+
+test('clipMarkdown states the pipeline preset when the Version carries one', () => {
+  const v = makeVersion({ pipelinePreset: 'directed' })
+  const md = clipMarkdown({ clip: makeClip(), mode: 'Ref2VA', promptText: v.text, approvedAt: v.at, pipelinePreset: v.pipelinePreset })
+  assert.ok(md.includes('Pipeline preset: Directed'))
+})
+
+test('clipMarkdown says nothing about a preset for a prompt written before presets existed', () => {
+  const v = makeVersion()
+  const md = clipMarkdown({ clip: makeClip(), mode: 'Ref2VA', promptText: v.text, approvedAt: v.at })
+  assert.equal(md.includes('Pipeline preset'), false)
+})
+
+test('buildProjectJson carries the pipeline preset per clip, null when the Version has none', () => {
+  const directed = baseExportInput({ versions: [makeVersion({ pipelinePreset: 'directed' })] })
+  const json = buildProjectJson(directed)
+  assert.equal(json.breakdown!.clips[0].pipelinePreset, 'directed')
+
+  const legacy = baseExportInput({ versions: [makeVersion()] })
+  const legacyJson = buildProjectJson(legacy)
+  assert.equal(legacyJson.breakdown!.clips[0].pipelinePreset, null)
+})
+
+test('buildExportPlan\'s clipNN.md reports the preset that produced it', () => {
+  const input = baseExportInput({ versions: [makeVersion({ pipelinePreset: 'direct-write' })] })
+  const files = buildExportPlan(input)
+  const clipFile = files.find((f) => f.path === 'prompts/clip01.md')!
+  assert.ok(clipFile.content.includes('Pipeline preset: Direct and write'))
+})

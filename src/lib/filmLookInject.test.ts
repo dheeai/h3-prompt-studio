@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { FILM_LOOK_PRESETS } from './filmLook'
-import { filmLookPromptText, injectFilmLook, styleTargetFor } from './filmLookInject'
+import { filmLookPromptText, injectFilmLook, injectFilmLookIntoPromptText, styleTargetFor } from './filmLookInject'
 
 const LOOK = { preset: FILM_LOOK_PRESETS[1].id }
 const TEXT = FILM_LOOK_PRESETS[1].description
@@ -109,4 +109,48 @@ test('the look names real hardware once it is in the prompt — the whole point 
   const body = injectFilmLook({ detailed_description: '[Shot 1] x' }, 'Ref2VA', LOOK).detailed_description
   assert.match(body, /ARRI Alexa 35/)
   assert.match(body, /Cooke S4\/i/)
+})
+
+// ── injectFilmLookIntoPromptText — the whole-prompt-string wrapper `run()` ──
+// ── actually calls, for BOTH pipeline presets ──────────────────────────────
+
+test('injectFilmLookIntoPromptText bakes the look into a joined Ref2VA prompt', () => {
+  const prompt = [
+    'subject_definitions: <Subject 1> is a woman.',
+    'summary: [reference generation] She crosses a courtyard.',
+    'retention_analysis: <Subject 1>: fully_preserved',
+    'detailed_description: [Shot 1] She crosses the courtyard.',
+    'overall_soundscape: footsteps on stone.',
+    'non_diegetic_music: N/A',
+  ].join('\n\n')
+  const out = injectFilmLookIntoPromptText(prompt, 'Ref2VA', LOOK)
+  assert.ok(out.includes(TEXT))
+  assert.ok(out.indexOf(TEXT) < out.indexOf('[Shot 1]'))
+  // every other field survives untouched
+  assert.ok(out.includes('<Subject 1> is a woman.'))
+  assert.ok(out.includes('footsteps on stone.'))
+})
+
+test('injectFilmLookIntoPromptText: no look set leaves the prompt byte-identical', () => {
+  const prompt = 'detailed_description: [Shot 1] x\n\nsummary: s\n\nsubject_definitions: d\n\nretention_analysis: r\n\noverall_soundscape: o\n\nnon_diegetic_music: N/A'
+  assert.equal(injectFilmLookIntoPromptText(prompt, 'Ref2VA', undefined), prompt)
+  assert.equal(injectFilmLookIntoPromptText('', 'Ref2VA', LOOK), '')
+})
+
+test('injectFilmLookIntoPromptText leaves an unparseable prompt untouched rather than guessing', () => {
+  const freeText = 'a hand-edited prompt that does not carry the six field labels at all'
+  assert.equal(injectFilmLookIntoPromptText(freeText, 'Ref2VA', LOOK), freeText)
+})
+
+test('injectFilmLookIntoPromptText applies identically for a base mode (T2VA), matching styleTargetFor', () => {
+  const prompt = 'integrated_multimodal_description: [Shot 1] She crosses.\n\noverall_soundscape: quiet\n\nnon_diegetic_music: N/A'
+  const out = injectFilmLookIntoPromptText(prompt, 'T2VA', LOOK)
+  assert.ok(out.indexOf('[Shot 1]') < out.indexOf(TEXT))
+})
+
+test('injectFilmLookIntoPromptText is idempotent, same as the section-level function', () => {
+  const prompt = 'integrated_multimodal_description: [Shot 1] She crosses.\n\noverall_soundscape: quiet\n\nnon_diegetic_music: N/A'
+  const once = injectFilmLookIntoPromptText(prompt, 'T2VA', LOOK)
+  const twice = injectFilmLookIntoPromptText(once, 'T2VA', LOOK)
+  assert.equal(twice, once)
 })

@@ -8,7 +8,7 @@ export const STAGE_ORDER: StageId[] = ['direct', 'draft', 'critique', 'revise']
  * schema-constrained reply when the provider supports one. Direct and Critique
  * return one undivided document; Handoff and Breakdown have their own shapes.
  */
-export const SCHEMA_STAGES = new Set<StageId>(['draft', 'revise', 'rebuild'])
+export const SCHEMA_STAGES = new Set<StageId>(['draft', 'revise', 'rebuild', 'draftDirected'])
 
 /**
  * Stages whose output is a canonical prompt, as opposed to a direction sheet,
@@ -18,7 +18,7 @@ export const SCHEMA_STAGES = new Set<StageId>(['draft', 'revise', 'rebuild'])
  * 2026-09-16) and "Generate the rest" (Task 2), so they can never quietly
  * disagree about what counts as authored.
  */
-export const PROMPT_STAGES = new Set<StageId>(['draft', 'revise', 'rebuild', 'freeform'])
+export const PROMPT_STAGES = new Set<StageId>(['draft', 'revise', 'rebuild', 'freeform', 'draftDirected'])
 
 /** The latest canonical prompt version authored for one plan clip, or
  * undefined if it has none yet. */
@@ -27,7 +27,7 @@ export function latestPromptForClip(versions: readonly Version[], clipIndex: num
 }
 
 /** Stages that are actions rather than steps in the chain. */
-export const OFF_CHAIN: StageId[] = ['rebuild', 'freeform', 'handoff', 'breakdown']
+export const OFF_CHAIN: StageId[] = ['rebuild', 'freeform', 'handoff', 'breakdown', 'draftDirected']
 
 /**
  * What each pass consumes and produces.
@@ -79,6 +79,12 @@ export const STAGE_INFO: Record<StageId, { produces: string; needs: 'story' | 'a
     needs: 'story',
     blurb: 'Decides how many clips the source needs and what each one covers, precedes and follows. Writes no prompt.',
   },
+  draftDirected: {
+    produces: 'the prompt',
+    needs: 'anything',
+    blurb:
+      'Preset B\'s writer: writes the prompt from a Direction and an Acting document already decided by two earlier calls, instead of deciding the shots and the performance itself.',
+  },
 }
 
 export const STAGE_LABEL: Record<StageId, string> = {
@@ -90,6 +96,7 @@ export const STAGE_LABEL: Record<StageId, string> = {
   freeform: 'Note',
   handoff: 'Hand-off',
   breakdown: 'Break down',
+  draftDirected: 'Draft (directed)',
 }
 
 /**
@@ -423,6 +430,60 @@ shape:
 {{plates}}
 SOURCE
 {{story}}`,
+
+  draftDirected: `Write the {{mode}} prompt. The shots, the camera moves and the
+performance are ALREADY DECIDED below — a Direction pass and an Acting pass
+did that work and wrote it down before this call ever started. Your job is
+narrower than Draft's own "decide, then write": render exactly what they
+decided into the official field structure, rather than re-deriving it in
+your head.
+
+FOLLOW THE FORMAT DOCUMENT LITERALLY — field names, order and formatting
+exactly as specified there, not a paraphrase. Apply every craft rule it
+states about sound and suppressed modalities, including any failure mode it
+records from real measurement.
+
+HONOUR THE DIRECTION AND THE ACTING BELOW EXACTLY AS WRITTEN. Each block
+states its own "already decided" contract — that contract governs this pass,
+not this template restating it. Do not re-choose a shot, a camera move or a
+performance choice, and do not add or drop a shot. The camera terms named in
+the direction block are from H3's controlled vocabulary and must reach
+detailed_description / integrated_multimodal_description verbatim, spelled
+exactly as given — never paraphrased into a synonym.
+
+WHAT YOU MAY NOT CHANGE. The people, the place, the action and its outcome,
+the named objects, and any dialogue are fixed exactly as the brief asked for
+them — same as Draft. The shots and the performance are ALSO fixed now, by
+the two passes below, not by you.
+
+{{film}}
+
+DIRECTION — already decided
+{{direction}}
+
+ACTING — already decided
+{{acting}}
+
+PREVIOUS CLIP PROMPT (continuity reference only — do not recreate its action)
+{{previous}}
+
+{{continuationFrame}}
+A DETERMINISTIC READ OF THE SOURCE, computed before you looked at it — treat
+it as context, not as something to reproduce:
+{{standing}}
+
+{{plates}}
+SOURCE
+{{story}}
+
+Now write your reply. Output exactly one block, with no heading of your own
+before or after it:
+
+<<<PROMPT>>>
+the complete prompt — and nothing else in it: no preamble, no explanation, no
+fences
+
+Write the prompt and stop.`,
 }
 
 /** The user's override for a stage if they set one, otherwise the default. */
@@ -804,6 +865,13 @@ export function fillTemplate(
     /** The continuation frame's explanatory note — see `continuationFrameBlock`.
      * Empty when no frame is attached to this request. */
     continuationFrame?: string
+    /** Preset B only — the Direction document for this clip, as
+     * `directionToPromptBlock` renders it. Empty for preset A, which never
+     * fills `draftDirected`'s template. */
+    direction?: string
+    /** Preset B only — the Acting document for this clip, as
+     * `actingToPromptBlock` renders it. */
+    acting?: string
     /**
      * The clip's DURATION, as `durationBlock` renders it.
      *
@@ -830,6 +898,8 @@ export function fillTemplate(
     .replace(/\{\{previous\}\}/g, vars.previous?.trim() || '(none — this is the first clip)')
     .replace(/\{\{plates\}\}/g, vars.plates?.trim() || '(no reference plates are wired — do not cite any <Subject N> or <Video N> label)')
     .replace(/\{\{continuationFrame\}\}/g, vars.continuationFrame?.trim() ?? '')
+    .replace(/\{\{direction\}\}/g, vars.direction?.trim() || '(no direction document supplied for this clip — decide the shots yourself)')
+    .replace(/\{\{acting\}\}/g, vars.acting?.trim() || '(no acting document supplied for this clip — decide the performance yourself)')
     .replace(/\{\{duration\}\}/g, vars.duration?.trim() ?? '')
     .trim()
 }

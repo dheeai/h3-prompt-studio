@@ -1,3 +1,5 @@
+import type { PipelinePresetId } from './pipeline'
+
 export type SkillSource = 'bundled' | 'upload' | 'url'
 
 export interface SkillFile {
@@ -88,7 +90,19 @@ export interface ProbeResult {
   at: number
 }
 
-export type StageId = 'direct' | 'draft' | 'critique' | 'revise' | 'rebuild' | 'freeform' | 'handoff' | 'breakdown'
+export type StageId =
+  | 'direct'
+  | 'draft'
+  | 'critique'
+  | 'revise'
+  | 'rebuild'
+  | 'freeform'
+  | 'handoff'
+  | 'breakdown'
+  /** Preset B's writer — same job as `draft`, but given a `direction`/`acting`
+   * document instead of deciding the shots and the performance itself. See
+   * `lib/pipeline.ts`'s module comment. */
+  | 'draftDirected'
 
 export interface Version {
   id: string
@@ -119,6 +133,15 @@ export interface Version {
   truncated?: boolean
   /** Which clip of a breakdown this pass was directed for, if any. */
   clipIndex?: number
+  /**
+   * Which pipeline preset (`lib/pipeline.ts`) produced this pass — the
+   * provenance the A/B is measured on. Without this, a prompt on the page
+   * cannot be attributed to "Direct and write" vs "Directed" once both have
+   * been tried in the same session, and the comparison is unmeasurable.
+   * Unset for any pass written before this existed, or for a stage
+   * (Critique, Hand-off, Break down…) that isn't a preset's own writer.
+   */
+  pipelinePreset?: PipelinePresetId
   /**
    * Written by the studio's OWN pipeline while the operator was watching a
    * scene render, rather than in response to something they clicked — see
@@ -367,6 +390,13 @@ export interface Settings {
   /** Per-provider/model reasoning budget for compatible local Qwen models. */
   thinkingBudgets?: Record<string, number>
   mode: H3Mode
+  /**
+   * Which per-clip authoring pipeline Full Story mode runs — see
+   * `lib/pipeline.ts`. Unset (or an id `pipelinePreset()` doesn't recognise)
+   * means preset A ("Direct and write"), the incumbent — so an operator who
+   * never touches the switch sees no change at all.
+   */
+  pipelinePreset?: PipelinePresetId
   selection: Selection
   /**
    * User overrides ONLY. Storing a full copy meant a stored snapshot shadowed

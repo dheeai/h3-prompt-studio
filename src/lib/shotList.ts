@@ -199,6 +199,24 @@ export function groupShotsIntoClips(
   return { groups, issues }
 }
 
+// ── what the film is called ─────────────────────────────────────────────
+
+/**
+ * A default project name from the film's own spine — the opening few words,
+ * so an operator who never names a film still finds
+ * `video/A_lighthouse_keeper_loses_the_light_00001_.mp4` on the box rather
+ * than `video/Untitled_00001_.mp4`.
+ *
+ * Deliberately NOT slugified here: this returns a human name, and
+ * `filmOutputPrefix` (`extender.ts`) owns every decision about what is safe
+ * in a path. Keeping the two apart means the name shown in the UI and the
+ * name on disk can never drift into two different sanitising rules.
+ */
+export function deriveFilmName(spine: string | undefined): string {
+  if (!spine) return ''
+  return spine.trim().split(/\s+/).slice(0, 8).join(' ')
+}
+
 // ── the runtime ceiling, as a checkable fact ────────────────────────────
 
 export interface RuntimeCeilingCheck {

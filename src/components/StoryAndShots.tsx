@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useApp } from '../app/state'
-import { RUNTIME_MAX_SECONDS, RUNTIME_MIN_SECONDS, RUNTIME_STEP_SECONDS, checkRuntimeCeiling, clampRuntimeSeconds, formatRuntime, groupsAffectedByCut, parsePartialShotList } from '../lib/shotList'
+import { RUNTIME_MAX_SECONDS, RUNTIME_MIN_SECONDS, RUNTIME_STEP_SECONDS, checkRuntimeCeiling, clampRuntimeSeconds, deriveFilmName, formatRuntime, groupsAffectedByCut, parsePartialShotList } from '../lib/shotList'
 import { ceilingAlert, groupBandState } from '../lib/shotScreens'
 import type { GroupBandState } from '../lib/shotScreens'
-import { EXTENDER_REF_SLOTS } from '../lib/extender'
+import { EXTENDER_REF_SLOTS, filmOutputPrefix } from '../lib/extender'
 import { DraftingStatus } from './DraftingStatus'
 import { FILM_LOOK_PRESETS, filmLookPreset, isFilmLookSet } from '../lib/filmLook'
 import { LoraStackEditor } from './LoraStackEditor'
@@ -161,7 +161,15 @@ export function StoryAndShots({
     shotListBusy, shotStreaming, makeShotList, reviseShotsFrom, approveShotGroups, breakdown, extenderPlanPreview,
     setEditingGroupIndex, streaming, plates, platesFrozenReason, film, setFilm,
     filmLoraStack, setFilmLoraStack, extenderDefaultLoraStack, endpoint,
+    filmName, filmNameEffective, setFilmName,
   } = app
+
+  // `app.filmName` is the EFFECTIVE name (the operator's own, else one
+  // derived from the spine), which is what the readout below should show —
+  // but the input itself must bind to what was actually TYPED, or a derived
+  // name would appear as real text the operator has to delete before they
+  // can name the film themselves. The derived name is the placeholder.
+  const derivedName = deriveFilmName(shotList?.spine)
 
   const [loraNames, setLoraNames] = useState<string[]>([])
   // The box's own LoRA folder — `/object_info` is on ComfyUI's light paths, so
@@ -228,6 +236,20 @@ export function StoryAndShots({
       </div>
 
       <div className="card">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 9 }}>
+          <span className="lbl" style={{ whiteSpace: 'nowrap' }}>Project</span>
+          <input
+            type="text"
+            value={filmName}
+            onChange={(e) => setFilmName(e.target.value)}
+            placeholder={derivedName || 'name this film'}
+            aria-label="Project name"
+            style={{ flexGrow: 1, minWidth: 0, fontSize: 12 }}
+          />
+          <span className="tok" style={{ whiteSpace: 'nowrap' }} title="Where this film lands on the box">
+            {filmOutputPrefix(filmNameEffective)}_00001_.mp4
+          </span>
+        </div>
         <div className="lbl">The plot</div>
         <textarea
           className="composer-textarea"

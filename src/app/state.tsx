@@ -35,8 +35,8 @@ import { clipsNeedingPrompt, isSingleRequestStage, type DraftingProgress, type S
 import { streamingCallbacks } from '../lib/streamingProgress'
 import { normalizeThinkingBudgets, resolveThinkingBudget } from '../lib/thinking'
 import {
-  SHOT_LIST_TEMPLATE, fillShotListTemplate, groupShotsIntoClips, parseShotList, reviseShotsFromIndex,
-  shotListResponseFormat,
+  SHOT_LIST_TEMPLATE, deriveFilmName, fillShotListTemplate, groupShotsIntoClips, parseShotList,
+  reviseShotsFromIndex, shotListResponseFormat,
 } from '../lib/shotList'
 import {
   addShotToGroup, clipsDiscardedByShotRevision, discardBreakdownFromIndex, dropShot, planForTickedSubmission,
@@ -200,6 +200,16 @@ interface Session {
    * the moment "Story & shots" is used to choose one.
    */
   filmLoraStack?: LoraStackEntry[]
+  /**
+   * What this film is CALLED — the name it is saved under on the box
+   * (`video/<name>_00001_.mp4`, see `filmOutputPrefix` in `lib/extender.ts`).
+   *
+   * Empty or unset falls back to a name derived from the shot list's own
+   * spine, so a film always lands under something recognisable. Kept on the
+   * session rather than in `Settings` because it belongs to THIS film, not to
+   * the machine.
+   */
+  filmName?: string
 }
 
 /** The operator's runtime ceiling before they have set one — see
@@ -438,6 +448,16 @@ export interface Api {
    * default unless it has its own override. */
   filmLoraStack: LoraStackEntry[] | undefined
   setFilmLoraStack: (stack: LoraStackEntry[] | undefined) => void
+  /** What the operator has actually TYPED as this film's name — `''` when
+   * they have typed nothing. Bind an input to this, never to
+   * `filmNameEffective`, or a derived name shows up as real text they have
+   * to delete before they can name the film themselves. */
+  filmName: string
+  /** The name a render will actually use: the operator's own if they typed
+   * one, else one derived from the shot list's spine. See
+   * `Session.filmName`. */
+  filmNameEffective: string
+  setFilmName: (name: string) => void
 
   // ── the render loop ─────────────────────────────────────────────────
   plates: Plate[]
@@ -1659,6 +1679,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setSession(next)
   }, [])
 
+  /** The name a render actually uses: the operator's own, else one derived
+   * from the spine. Read off `sessionRef` so a submit started from inside a
+   * callback sees the name as it is NOW, not as it was when the callback was
+   * created. */
+  const effectiveFilmName = useCallback(
+    () => sessionRef.current.filmName?.trim() || deriveFilmName(sessionRef.current.shotList?.spine),
+    [],
+  )
+
+  /** Name this film — what it is saved as on the box. See `Session.filmName`. */
+  const setFilmName = useCallback((filmName: string) => {
+    const next = { ...sessionRef.current, filmName }
+    sessionRef.current = next
+    setSession(next)
+  }, [])
+
   /** One shots-stage model call. No skills, no system prompt — the template
    * is the whole ask (see `shotList.ts`'s module comment on why `shots` is
    * kept off the Direct/Draft `StageId` chain), so this never touches
@@ -2335,6 +2371,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           overrides: settings.extenderOverrides,
           priorMasterInputs: extenderFrozenRef.current[nodeId],
           validatedCount,
+          filmName: effectiveFilmName(),
         })
         // What this submit actually sent — the new frozen baseline the NEXT
         // submit of this same film compares against. Recorded only once the
@@ -2617,6 +2654,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         overrides: settings.extenderOverrides,
         priorMasterInputs: extenderFrozenRef.current[nodeId],
         validatedCount: priorClips.length,
+        filmName: effectiveFilmName(),
       })
       const masterInputsUsed = built.graph[nodeId].inputs
 
@@ -3133,6 +3171,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     pullShotIntoGroup,
     pushShotOutOfGroup,
     filmLoraStack: session.filmLoraStack,
+    filmName: session.filmName ?? '',
+    filmNameEffective: session.filmName?.trim() || deriveFilmName(session.shotList?.spine),
+    setFilmName,
     setFilmLoraStack,
     plates,
     endpoints,

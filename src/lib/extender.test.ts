@@ -3,6 +3,9 @@ import assert from 'node:assert/strict'
 import {
   EXTENDER_SIGNATURE_FIELDS,
   ExtenderError,
+  FILM_FALLBACK_NAME,
+  filmOutputPrefix,
+  slugifyFilmName,
   buildExtenderClipsJson,
   buildExtenderGraph,
   buildExtenderRefsJson,
@@ -66,7 +69,9 @@ function fixtureGraph(): Record<string, ComfyNode> {
       class_type: 'MiniMaxH3MasterFinalDecode',
       inputs: { fps: 24, cache: ['6', 0], vae: ['3', 0], audio_vae: ['4', 0] },
     },
-    '9': { class_type: 'SaveVideo', inputs: { video: ['7', 0] } },
+    // The stale dated prefix the shipped workflow used to bake — kept in the
+    // fixture so the naming tests below prove it is actually replaced.
+    '9': { class_type: 'SaveVideo', inputs: { video: ['7', 0], filename_prefix: 'video/2026-09-15/Extender__' } },
     '11': { class_type: 'LTX_lora_loader', inputs: { model: ['1', 0], stack_data: '[]' } },
   }
 }
@@ -753,4 +758,81 @@ test('EXTENDER_SIGNATURE_FIELDS never gained the style-stack fields this brief t
   assert.ok(!fields.includes('filmLoraStack'))
   assert.ok(!fields.includes('style_lora'))
   assert.ok(!fields.includes('style_loras'))
+})
+
+// ── where a film is saved, and under what name ──────────────────────────
+
+test('slugifyFilmName flattens a name into something safe inside a filename_prefix', () => {
+  assert.equal(slugifyFilmName('The Lighthouse Keeper'), 'The_Lighthouse_Keeper')
+  // A `/` must never survive: ComfyUI would read it as a subfolder, which is
+  // the exact behaviour this change exists to remove.
+  assert.equal(slugifyFilmName('Act 2 / the door'), 'Act_2_the_door')
+  assert.equal(slugifyFilmName('../../etc/passwd'), 'etc_passwd')
+  assert.equal(slugifyFilmName('  spaced  out  '), 'spaced_out')
+  assert.equal(slugifyFilmName('कहानी'), 'कहानी')
+})
+
+test('slugifyFilmName falls back rather than returning an empty prefix', () => {
+  assert.equal(slugifyFilmName(''), FILM_FALLBACK_NAME)
+  assert.equal(slugifyFilmName('!!!'), FILM_FALLBACK_NAME)
+})
+
+test('slugifyFilmName caps a long name and never leaves a trailing separator', () => {
+  const slug = slugifyFilmName('a '.repeat(60))
+  assert.ok(slug.length <= 48)
+  assert.ok(!slug.endsWith('_'))
+})
+
+test('filmOutputPrefix puts a film directly in video/, never in a dated subfolder', () => {
+  assert.equal(filmOutputPrefix('The Lighthouse Keeper'), 'video/The_Lighthouse_Keeper')
+  assert.equal(filmOutputPrefix(undefined), `video/${FILM_FALLBACK_NAME}`)
+  // One separator only — anything deeper would be a folder again.
+  assert.equal(filmOutputPrefix('Act 2 / the door').split('/').length, 2)
+})
+
+test('buildExtenderGraph names the save after the project, replacing the shipped dated prefix', () => {
+  const built = buildExtenderGraph({
+    graph: fixtureGraph(),
+    nodeId: 'm_keeper',
+    clips: [{ prompt: 'the lamp goes out', seconds: 5, seed: 1, validated: false }],
+    plates: [],
+    runMode: 'clip_by_clip',
+    validatedCount: 0,
+    filmName: 'The Lighthouse Keeper',
+  })
+  assert.equal(built.graph['9'].inputs.filename_prefix, 'video/The_Lighthouse_Keeper')
+})
+
+test('buildExtenderGraph replaces the dated prefix even when no film name was given', () => {
+  const built = buildExtenderGraph({
+    graph: fixtureGraph(),
+    nodeId: 'm_unnamed',
+    clips: [{ prompt: 'a door closes', seconds: 5, seed: 1, validated: false }],
+    plates: [],
+    runMode: 'clip_by_clip',
+    validatedCount: 0,
+  })
+  assert.equal(built.graph['9'].inputs.filename_prefix, `video/${FILM_FALLBACK_NAME}`)
+})
+
+test('renaming a film never invalidates a validated clip — filename_prefix is not a hashed field', () => {
+  const args = {
+    graph: fixtureGraph(),
+    nodeId: 'm_keeper',
+    clips: [{ prompt: 'the lamp goes out', seconds: 5, seed: 1, validated: true }],
+    plates: [],
+    runMode: 'clip_by_clip' as const,
+    validatedCount: 1,
+  }
+  const first = buildExtenderGraph({ ...args, filmName: 'Working Title' })
+  // A rename, with the FIRST submit's master inputs as the frozen baseline:
+  // the guard must not fire, and the signature must be byte-identical.
+  const renamed = buildExtenderGraph({
+    ...args,
+    filmName: 'The Lighthouse Keeper',
+    priorMasterInputs: first.graph.m_keeper.inputs,
+  })
+  assert.equal(renamed.signature, first.signature)
+  assert.equal(renamed.refusalAccepted, null)
+  assert.equal(renamed.graph['9'].inputs.filename_prefix, 'video/The_Lighthouse_Keeper')
 })

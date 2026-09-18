@@ -331,6 +331,58 @@ export function buildExtenderRefsJson(plates: ExtenderPlate[]): string {
   return JSON.stringify({ images })
 }
 
+// ── where a film is saved, and under what name ──────────────────────────
+
+/** ComfyUI's own video save node — node 9 in the shipped graph, and the file
+ * `pickExtenderVideo` recognises by its `type: "output"`. */
+const SAVE_VIDEO_CLASS = 'SaveVideo'
+
+/**
+ * Every film lands here, directly — never in a dated subfolder.
+ *
+ * The shipped graph bakes `video/2026-09-15/Extender__`: the date whoever
+ * exported the workflow happened to save it. That has nothing to do with the
+ * day a film is rendered, and it buries every output one level down under a
+ * name that means nothing to the operator looking for it.
+ */
+export const FILM_OUTPUT_DIR = 'video'
+
+/** What a film with no project name is called on disk. */
+export const FILM_FALLBACK_NAME = 'Untitled'
+
+/**
+ * A project name reduced to something safe to sit inside a `filename_prefix`.
+ *
+ * ComfyUI reads `/` in a prefix as a subfolder separator, so a name is
+ * FLATTENED rather than escaped — a project called "Act 2 / the door" must
+ * not silently create a folder, which is the whole point of this change.
+ * Everything that is not a letter, a digit or a combining MARK becomes `_`,
+ * which disposes of `..`, leading dots and every platform's reserved
+ * punctuation in one pass; runs collapse, and the result is capped so a long
+ * spine-derived name cannot push the path past what a filesystem accepts.
+ *
+ * Marks are kept, and the form is NFC rather than NFKD, because a
+ * decomposing normalisation turns every Indic vowel sign into a standalone
+ * mark: `कहानी` came back as `कह_न` under NFKD + a letters-and-digits-only
+ * filter. A film named in Devanagari, Tamil or Thai must keep its name.
+ */
+export function slugifyFilmName(name: string): string {
+  const slug = name
+    .normalize('NFC')
+    .replace(/[^\p{L}\p{N}\p{M}]+/gu, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 48)
+    .replace(/_+$/, '')
+  return slug || FILM_FALLBACK_NAME
+}
+
+/** The `filename_prefix` a film is saved under: `video/<project name>`.
+ * ComfyUI appends its own `_00001_` counter, so re-rendering one project
+ * never overwrites an earlier take. */
+export function filmOutputPrefix(name: string | undefined): string {
+  return `${FILM_OUTPUT_DIR}/${slugifyFilmName(name ?? '')}`
+}
+
 /** One clip going into `clips_json` — the pieces the studio actually has an
  * opinion about. `validated` mirrors the Studio's existing append-only
  * semantics (`ScenesStrip.tsx`'s replace-discards-everything-after) rather
@@ -409,6 +461,15 @@ export interface ExtenderBuildArgs {
   /** Explicit operator override: proceed even though the guard would
    * otherwise refuse, discarding the validated clips named in the message. */
   acceptReset?: boolean
+  /**
+   * What this film is called — becomes its `filename_prefix` under `video/`
+   * (see `filmOutputPrefix`).
+   *
+   * Never hashed: `filename_prefix` belongs to `SaveVideo`, not to the master
+   * node's 28 `EXTENDER_SIGNATURE_FIELDS`, so naming or renaming a film can
+   * never invalidate a validated clip.
+   */
+  filmName?: string
 }
 
 export interface ExtenderBuildResult {
@@ -445,6 +506,13 @@ export function buildExtenderGraph(args: ExtenderBuildArgs): ExtenderBuildResult
   master.inputs.refs_json = refsJson
   master.inputs.clips_json = clipsJson
   master.inputs.run_mode = args.runMode
+
+  // The film's own name on disk. A different node from the master, and not a
+  // hashed field — see `filmName` on `ExtenderBuildArgs`. Written even when
+  // no name was given, so the shipped graph's stale dated folder is never
+  // what a render actually lands in.
+  const saveId = byClass(g, SAVE_VIDEO_CLASS)
+  if (saveId) g[saveId].inputs.filename_prefix = filmOutputPrefix(args.filmName)
 
   const { signature, refusalAccepted } = checkExtenderSignature(master.inputs, args.priorMasterInputs, args.validatedCount, args.acceptReset)
 

@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { Breakdown, BreakdownClip, Clip, Shot, ShotGroup, Version } from './types'
 import type { DirectedShot, DirectionDoc } from './direction'
-import { buildTimeline, deriveClipTimelineState } from './timeline'
+import { buildTimeline, bulkSelectionPlan, deriveClipTimelineState } from './timeline'
 import type { TimelineInput } from './timeline'
 
 // ── fixtures ───────────────────────────────────────────────────────────
@@ -325,4 +325,65 @@ test('buildTimeline: a shots covers text survives byte-for-byte, including non-L
   })
   assert.equal(t.clips[0].shots[0].covers, covers)
   assert.equal(t.clips[0].shots[0].covers.length, covers.length)
+})
+
+// ── bulkSelectionPlan: the founder's "select all and render in 1 shot" ──
+
+test('bulkSelectionPlan: a written clip in the selection goes to render, never to write', () => {
+  const clips = [{ index: 1, state: 'written' as const }]
+  const plan = bulkSelectionPlan(clips, new Set([1]))
+  assert.deepEqual(plan.toRender, [1])
+  assert.deepEqual(plan.toWrite, [])
+})
+
+test('bulkSelectionPlan: a planned clip in the selection goes to write, never to render', () => {
+  const clips = [{ index: 4, state: 'planned' as const }]
+  const plan = bulkSelectionPlan(clips, new Set([4]))
+  assert.deepEqual(plan.toWrite, [4])
+  assert.deepEqual(plan.toRender, [])
+})
+
+test('bulkSelectionPlan: a failed clip already has its prompt, so retrying it is a RENDER, never a write', () => {
+  const clips = [{ index: 2, state: 'failed' as const }]
+  const plan = bulkSelectionPlan(clips, new Set([2]))
+  assert.deepEqual(plan.toRender, [2])
+  assert.deepEqual(plan.toWrite, [])
+})
+
+test('bulkSelectionPlan: a kept clip is NEVER resampled, even when it is in the selection', () => {
+  const clips = [{ index: 1, state: 'kept' as const }, { index: 2, state: 'written' as const }]
+  const plan = bulkSelectionPlan(clips, new Set([1, 2]))
+  assert.deepEqual(plan.toRender, [2])
+  assert.ok(!plan.toRender.includes(1), 'a kept clip must never be submitted to render')
+})
+
+test('bulkSelectionPlan: a clip with no prompt yet is NEVER submitted to render, even mid-render elsewhere', () => {
+  const clips = [
+    { index: 1, state: 'rendering' as const },
+    { index: 2, state: 'planned' as const },
+    { index: 3, state: 'written' as const },
+  ]
+  const plan = bulkSelectionPlan(clips, new Set([1, 2, 3]))
+  assert.deepEqual(plan.toRender, [3])
+  assert.deepEqual(plan.toWrite, [2])
+})
+
+test('bulkSelectionPlan: a clip outside the selection is skipped entirely, from either bucket', () => {
+  const clips = [
+    { index: 1, state: 'written' as const },
+    { index: 2, state: 'planned' as const },
+  ]
+  const plan = bulkSelectionPlan(clips, new Set())
+  assert.deepEqual(plan.toRender, [])
+  assert.deepEqual(plan.toWrite, [])
+})
+
+test('bulkSelectionPlan: order follows the input clips, not insertion order of the selection', () => {
+  const clips = [
+    { index: 3, state: 'written' as const },
+    { index: 1, state: 'written' as const },
+    { index: 2, state: 'written' as const },
+  ]
+  const plan = bulkSelectionPlan(clips, new Set([2, 1, 3]))
+  assert.deepEqual(plan.toRender, [3, 1, 2])
 })

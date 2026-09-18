@@ -94,6 +94,16 @@ export type StudioRunPhase = 'thinking' | 'writing' | 'continuing' | 'thinking-r
  * of either forcing a fake `StageId` into that enum or building a second
  * progress indicator that could drift out of step with the real one.
  */
+/**
+ * Where this call's output belongs on screen — which beat or clip band
+ * should render it IN PLACE, rather than a fixed panel somewhere else
+ * (founder, 2026-09-18: "the streaming text.. should come exactly where it
+ * is working.. not in some random place"). Optional so an untargeted call
+ * (pass 1's beat list, which is about the whole plot rather than one beat)
+ * simply has nowhere narrower to render than the section that started it.
+ */
+export type DraftingTarget = { kind: 'beat'; beatIndex: number } | { kind: 'clip'; clipIndex: number }
+
 export interface DraftingProgress {
   stage: string
   text: string
@@ -102,6 +112,7 @@ export interface DraftingProgress {
   continuations: number
   phase?: StudioRunPhase
   auto?: boolean
+  target?: DraftingTarget
 }
 
 /** Human-readable status for a run; avoids presenting long reasoning as calls. */

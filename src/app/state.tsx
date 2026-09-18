@@ -47,7 +47,7 @@ import type { DirectionDoc } from '../lib/direction'
 import { injectFilmLookIntoPromptText } from '../lib/filmLookInject'
 import { authoringModeForContent, authorContinuation, canAutoAuthorNext, clearDraftContext, continuationSource, interruptedReasoningText, migrateBreakIntoScenes, nextPlanClipToAuthor, previousPromptForClip, promptSourceForAuthoringMode, withContinuationFrame } from '../lib/entry'
 import type { AuthoringMode } from '../lib/entry'
-import { clipsNeedingPrompt, isSingleRequestStage, type DraftingProgress, type StudioRunPhase } from '../lib/studio-workflow'
+import { clipsNeedingPrompt, isSingleRequestStage, type DraftingProgress, type DraftingTarget, type StudioRunPhase } from '../lib/studio-workflow'
 import { streamingCallbacks } from '../lib/streamingProgress'
 import { normalizeThinkingBudgets, resolveThinkingBudget } from '../lib/thinking'
 import {
@@ -419,6 +419,10 @@ export interface Api {
     /** Written by the background pipeline rather than an operator action —
      * see `Version.auto`'s module comment. */
     auto?: boolean
+    /** Which clip band this call's output belongs to — Full Story's own
+     * `clipIndex`, when this call has one. See `DraftingTarget`'s own
+     * module comment. */
+    target?: DraftingTarget
   } | null
   chat: ChatTurn[]
   film: FilmContext
@@ -796,6 +800,10 @@ export interface Api {
    * rolls back.
    */
   generateRest: () => Promise<void>
+  /** The write-only half of `generateRest` — see its own module comment.
+   * Full Story's next-step bar's `'write-prompts'` step and its own bulk
+   * button both call this, never a render call. */
+  writePendingPrompts: () => Promise<boolean>
   /** A pipeline-authored draft still sitting on the page, not yet rendered —
    * see HAZARD 1 in the 2026-09-16 brief and `dropInvalidatedAutoDraft`. Null
    * once it renders, is discarded, or was never authored automatically. */
@@ -864,6 +872,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     continuations: number
     phase?: StudioRunPhase
     auto?: boolean
+    target?: DraftingTarget
   } | null>(null)
   /** `makeShotList`/`reviseShotsFrom`'s own progress, shown via
    * `DraftingStatus` exactly as `run()`'s `streaming` is above — but kept as
@@ -1611,7 +1620,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       abortRef.current = ac
       setFailedReasoning(null)
       setInterruptedReasoning(null)
-      setStreaming({ stage, text: '', reasoning: '', startedAt: Date.now(), continuations: 0, phase: 'thinking', auto: override?.auto })
+      setStreaming({
+        stage,
+        text: '',
+        reasoning: '',
+        startedAt: Date.now(),
+        continuations: 0,
+        phase: 'thinking',
+        auto: override?.auto,
+        target: clipIndex !== undefined ? { kind: 'clip', clipIndex } : undefined,
+      })
       setError(null)
 
       try {
@@ -1887,7 +1905,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (!beginGpuUse('llm')) return null
       const ac = new AbortController()
       abortRef.current = ac
-      setPipelineStreaming({ stage: 'direction', text: '', reasoning: '', startedAt: Date.now(), continuations: 0, phase: 'thinking' })
+      setPipelineStreaming({ stage: 'direction', text: '', reasoning: '', startedAt: Date.now(), continuations: 0, phase: 'thinking', target: { kind: 'clip', clipIndex } })
       try {
         const result = await streamChatComplete({
           provider,
@@ -1947,7 +1965,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (!beginGpuUse('llm')) return null
       const ac = new AbortController()
       abortRef.current = ac
-      setPipelineStreaming({ stage: 'acting', text: '', reasoning: '', startedAt: Date.now(), continuations: 0, phase: 'thinking' })
+      setPipelineStreaming({ stage: 'acting', text: '', reasoning: '', startedAt: Date.now(), continuations: 0, phase: 'thinking', target: { kind: 'clip', clipIndex } })
       try {
         const result = await streamChatComplete({
           provider,
@@ -2280,6 +2298,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (!provider) throw new Error('Pick a provider first.')
       if (!settings.model) throw new Error('Pick a model first.')
       const call: ShotSubdivideCall = async (user, ctx) => {
+        // `ctx.beatOrdinal` is 1-based WITHIN whichever `beats` slice this
+        // run was handed — for a plot revision that's a tail slice starting
+        // mid-film, so it is not the beat's own `Beat.index`. `beats[...]`
+        // (this closure's own param, the real `AllocatedBeat`s) still is —
+        // that's what the shot-list UI keys its per-beat streaming target on.
+        const beatIndex = beats[ctx.beatOrdinal - 1]?.index ?? ctx.beatOrdinal
         setShotStreaming({
           stage: `shots · beat ${ctx.beatOrdinal}/${ctx.beatCount} · window ${ctx.windowIndex + 1}/${ctx.windowCount}`,
           text: '',
@@ -2287,6 +2311,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           startedAt: Date.now(),
           continuations: 0,
           phase: 'thinking',
+          target: { kind: 'beat', beatIndex },
         })
         const result = await streamChatComplete({
           provider,
@@ -3811,16 +3836,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
   authorNextAfterLandingRef.current = authorNextAfterLanding
 
   /**
-   * "Generate the rest" (Task 2, 2026-09-16) — see the module comment on
-   * `Api.generateRest`. Wiring plus a gate over two things that already
-   * exist: `clipsNeedingPrompt` (the same "has a prompt" notion as
-   * everywhere else) drives the authoring loop, and `renderExtenderPlan()`
-   * submits the whole plan exactly as the manual "Render every pending clip"
-   * button does.
+   * The write-only half of "Generate the rest" — every approved clip with
+   * no prompt yet (`clipsNeedingPrompt`, the same notion used everywhere
+   * else), authored in place, with NO render call at the end. This is its
+   * own function — not merely `generateRest` minus its last line — because
+   * Full Story's next-step bar has a step for exactly this
+   * (`nextStep.ts`'s `'write-prompts'`) that must never spend GPU, while
+   * "Generate the rest" (Studio mode's `ClipPlan`) still wants write-then-
+   * render as one press. Returns whether every clip got a prompt, so a
+   * caller chaining a render after it (`generateRest`, right below) knows
+   * whether to.
    */
-  const generateRest = useCallback(async () => {
+  const writePendingPrompts = useCallback(async (): Promise<boolean> => {
     const breakdown = sessionRef.current.breakdown
-    if (!breakdown) return
+    if (!breakdown) return true
     setError(null)
     for (const c of clipsNeedingPrompt(breakdown, sessionRef.current.versions)) {
       setFilm({
@@ -3838,10 +3867,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // success is whether this clip actually got a prompt. Stopping here
       // leaves every earlier clip's authoring AND every already-rendered
       // scene untouched — nothing in this loop retries or rewinds.
-      if (!latestPromptForClip(sessionRef.current.versions, c.index)) return
+      if (!latestPromptForClip(sessionRef.current.versions, c.index)) return false
     }
+    return true
+  }, [rebuild, setFilm])
+
+  /**
+   * "Generate the rest" (Task 2, 2026-09-16) — see the module comment on
+   * `Api.generateRest`. `writePendingPrompts` drives the authoring loop, and
+   * `renderExtenderPlan()` submits the whole plan exactly as the manual
+   * "Render every pending clip" button does — skipped entirely if a write
+   * failed, same as before this was split in two.
+   */
+  const generateRest = useCallback(async () => {
+    const wroteEverything = await writePendingPrompts()
+    if (!wroteEverything) return
     await renderExtenderPlan('full_batch')
-  }, [rebuild, renderExtenderPlan, setFilm])
+  }, [writePendingPrompts, renderExtenderPlan])
 
   // The graph's own baked master-node inputs — what the settings panel seeds
   // every control from — with the operator's overrides merged on top for
@@ -4007,6 +4049,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     scenesFrom,
     continueFrom,
     generateRest,
+    writePendingPrompts,
     pendingAutoDraft: session.pendingAutoDraft ?? null,
     appendPromptVersion,
     setBreakdown,

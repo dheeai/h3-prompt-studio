@@ -848,6 +848,17 @@ mark.w.del { background: oklch(0.895 0.060 25); color: oklch(0.36 0.13 27); text
 .workspace-tabs button span { color: var(--studio-faint); font: 9px var(--mono); }
 .workspace-view { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; }
 .workspace-view.is-hidden { display: none; }
+
+/* ── Full Story's sticky next-step bar ───────────────────────────────── */
+.next-step-bar {
+  position: sticky; top: 0; z-index: 5;
+  margin: 0 26px 9px; padding: 10px 15px;
+  background: var(--paper); border: 1px solid var(--rule2); border-left: 3px solid var(--ox);
+  box-shadow: 0 4px 12px oklch(0.255 0.016 62 / 0.10);
+}
+.next-step-bar-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.next-step-kind { text-transform: uppercase; letter-spacing: 0.04em; font-size: 9.5px; color: var(--ink3); }
+.next-step-detail { margin-top: 5px; line-height: 1.5; }
 .agent-workspace { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 300px; background: var(--studio-shell); }
 .agent-main { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--studio-line); }
 .agent-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 24px 28px 18px; border-bottom: 1px solid var(--studio-line); background: var(--studio-work); }

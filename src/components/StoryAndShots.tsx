@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useApp } from '../app/state'
 import { RUNTIME_MAX_SECONDS, RUNTIME_MIN_SECONDS, RUNTIME_STEP_SECONDS, checkRuntimeCeiling, clampRuntimeSeconds, deriveFilmName, formatRuntime, groupsAffectedByCut, parsePartialShotList } from '../lib/shotList'
-import { ceilingAlert, groupBandState, thinBriefAlert } from '../lib/shotScreens'
-import type { GroupBandState } from '../lib/shotScreens'
+import { ceilingAlert, thinBriefAlert } from '../lib/shotScreens'
 import { EXTENDER_REF_SLOTS, filmOutputPrefix } from '../lib/extender'
 import { DraftingStatus } from './DraftingStatus'
 import { FILM_LOOK_PRESETS, filmLookPreset, isFilmLookSet } from '../lib/filmLook'
@@ -51,18 +50,6 @@ function PipelinePresetRow({
       </div>
     </div>
   )
-}
-
-function bandColor(state: GroupBandState): string {
-  if (state === 'kept') return 'var(--grn)'
-  if (state === 'waiting') return 'var(--amb)'
-  return 'var(--rule2)'
-}
-
-function bandLabel(state: GroupBandState): string {
-  if (state === 'kept') return 'kept · validated'
-  if (state === 'waiting') return 'rendered-and-waiting'
-  return 'not yet written'
 }
 
 /**
@@ -266,26 +253,22 @@ function FilmLoraCard({
 }
 
 /**
- * Screen 1 — "Story & shots" (2026-09-17 brief). The plot and the runtime
- * ceiling live HERE; a rendered clip reports its own state back onto the
- * SAME list, so this stays the one map of the film. Approving a set derives
- * a `BreakdownClip` and hands it straight to the EXISTING per-clip
- * Direct/Draft path (`app.approveShotGroups`) — nothing here writes camera,
- * performance or an H3 prompt.
+ * "The film" — project name, plot, runtime ceiling, look, LoRAs, plates and
+ * pipeline preset (2026-09-18 brief). Set once near the start of a film and
+ * then in the way, so once a shot list exists it COLLAPSES to a one-line
+ * summary with a way to reopen — the top of the single-page Full Story
+ * layout (`App.tsx`'s module comment), never a tab of its own. Grouping
+ * shots into clips and approving them into the plan now live on the
+ * timeline (`FilmTimeline.tsx`) and the sticky next-step bar
+ * (`NextStepBar.tsx`) — this file only ever writes `plot`/`maxRuntimeSeconds`/
+ * `film`/`filmLoraStack`/settings, never a `BreakdownClip` or an H3 prompt.
  */
-export function StoryAndShots({
-  onOpenClipInHand,
-  onOpenPlates,
-}: {
-  onOpenClipInHand: (groupIndex: number) => void
-  onOpenPlates: () => void
-}) {
+export function StoryAndShots({ onOpenPlates }: { onOpenPlates: () => void }) {
   const app = useApp()
   const {
     plot, setPlot, maxRuntimeSeconds, setMaxRuntimeSeconds, shotList, thinBriefCheck, shotsAuthoredSoFar,
-    shotGroups, shotGroupIssues, shotListBusy, shotStreaming, pipelineStreaming, makeShotList, continueSubdivision, reviseShotsFrom,
-    approveShotGroups, breakdown, extenderPlanPreview,
-    setEditingGroupIndex, streaming, plates, platesFrozenReason, film, setFilm,
+    shotGroups, shotGroupIssues, shotListBusy, shotStreaming, makeShotList, continueSubdivision, reviseShotsFrom,
+    breakdown, plates, platesFrozenReason, film, setFilm,
     filmLoraStack, setFilmLoraStack, extenderDefaultLoraStack, endpoint, loraNames, loraNamesState, refreshLoraNames,
     filmName, filmNameEffective, setFilmName, settings, patchSettings,
     exportDirName, exportDirStatus, chooseExportDirectory, reconnectExportDirectory, saveFilmNow,
@@ -312,51 +295,43 @@ export function StoryAndShots({
     return local.length ? local : extenderDefaultLoraStack
   }, [extenderDefaultLoraStack])
 
-  const [selected, setSelected] = useState<Set<number>>(new Set())
   const [revFrom, setRevFrom] = useState(1)
   const [revOpen, setRevOpen] = useState(false)
 
-  const bandFor = (groupIndex: number): GroupBandState => {
-    const approved = !!breakdown?.clips.some((c) => c.index === groupIndex)
-    const validated = extenderPlanPreview?.clips.find((c) => c.index === groupIndex)?.validated ?? false
-    return groupBandState(approved, validated)
-  }
-
-  const busy = shotListBusy || !!streaming || !!pipelineStreaming
-
-  const toggle = (i: number) =>
-    setSelected((prev) => {
-      const next = new Set(prev)
-      if (next.has(i)) next.delete(i)
-      else next.add(i)
-      return next
-    })
-
-  const doApprove = async () => {
-    const indices = [...selected].sort((a, b) => a - b)
-    setSelected(new Set())
-    await approveShotGroups(indices)
-  }
+  const busy = shotListBusy
 
   const ceiling = shotList ? checkRuntimeCeiling(shotList.shots, maxRuntimeSeconds) : null
   const alert = ceiling ? ceilingAlert(ceiling) : null
 
   const revPreview = shotGroups.length ? groupsAffectedByCut(shotGroups, revFrom) : null
   const revDiscardCount = revPreview
-    ? revPreview.discardedGroupIndices.filter((i) => extenderPlanPreview?.clips.find((c) => c.index === i)?.validated).length
+    ? revPreview.discardedGroupIndices.filter((i) => breakdown?.clips.some((c) => c.index === i)).length
     : 0
 
-  const openInHand = (groupIndex: number) => {
-    setEditingGroupIndex(groupIndex)
-    onOpenClipInHand(groupIndex)
-  }
+  // Once a shot list exists this whole card is set-and-forget and only in
+  // the way, so it collapses to one line — but the operator can always
+  // reopen (or re-collapse early) by hand; a wizard that traps them here
+  // would be exactly the "no way onward" the brief rules out.
+  const hasFullShotList = !!shotList && shotList.shots.length > 0
+  const [manuallyOpen, setManuallyOpen] = useState<boolean | null>(null)
+  const open = manuallyOpen ?? !hasFullShotList
 
   return (
     <div style={{ padding: '4px 26px 24px' }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 9 }}>
-        <span className="lbl">Story &amp; shots</span>
+        <span className="lbl">The film</span>
+        <div style={{ flexGrow: 1 }} />
+        <button className="btn sm ghost" onClick={() => setManuallyOpen(!open)}>{open ? 'collapse' : 'edit the film'}</button>
       </div>
 
+      {!open ? (
+        <div className="card" style={{ display: 'flex', alignItems: 'baseline', gap: 9, flexWrap: 'wrap' }}>
+          <span style={{ fontWeight: 600, fontSize: 12.5 }}>{filmNameEffective || 'this film'}</span>
+          <span className="tok">{shotGroups.length} clip{shotGroups.length === 1 ? '' : 's'} planned</span>
+          {ceiling && <span className="tok">{ceiling.totalSeconds.toFixed(1)}s of {maxRuntimeSeconds.toFixed(1)}s ceiling</span>}
+        </div>
+      ) : (
+      <>
       <div className="card">
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 9 }}>
           <span className="lbl" style={{ whiteSpace: 'nowrap' }}>Project</span>
@@ -413,6 +388,13 @@ export function StoryAndShots({
             {shotListBusy ? 'Making the shot list…' : shotList ? 'Remake the shot list' : 'Make the shot list'}
           </button>
         </div>
+        {/* Pass 1 (the beat list) is about the WHOLE plot, not one beat yet
+            — so it renders right here, next to the button that started it,
+            rather than at a beat it has no beat to attach to (2026-09-18:
+            streaming belongs "exactly where it is working"). */}
+        {shotStreaming && !shotStreaming.target && (
+          <div style={{ marginTop: 9 }}><DraftingStatus streaming={shotStreaming} /></div>
+        )}
       </div>
 
       <FilmLookCard look={film.look} setFilm={setFilm} />
@@ -444,53 +426,48 @@ export function StoryAndShots({
         {platesFrozenReason && <div className="alert warn" style={{ marginTop: 9 }}>{platesFrozenReason}</div>}
       </div>
 
-      {pipelineStreaming && (
+      {shotList?.beats && shotList.beats.length > 0 && (
         <div className="card" style={{ marginTop: 9 }}>
-          <DraftingStatus streaming={pipelineStreaming} />
-        </div>
-      )}
-
-      {shotStreaming && (
-        <div className="card" style={{ marginTop: 9 }}>
-          <DraftingStatus streaming={shotStreaming} />
-          {(() => {
-            // Shots close off in ARRIVAL order and never get rewritten once
-            // closed (the model is a forward-only token stream), so — unlike
-            // a band that reflects render/approval state and can flip
-            // colors — a running total here only ever grows. Showing it live
-            // is a plain "how far in are we", not something that can jitter;
-            // see `parsePartialShotList`'s module comment for why a shot only
-            // appears once its object has fully closed.
-            const partial = parsePartialShotList(shotStreaming.text)
-            if (!partial.shots.length) return null
-            const total = partial.shots.reduce((sum, s) => sum + s.seconds, 0)
+          <div className="lbl">Beats</div>
+          {shotsAuthoredSoFar.length > 0 && shotList.shots.length === 0 && (
+            <div className="tok" style={{ marginTop: 6 }}>
+              whole film so far: {shotsAuthoredSoFar.length} shot{shotsAuthoredSoFar.length === 1 ? '' : 's'} ·{' '}
+              {shotsAuthoredSoFar.reduce((sum, s) => sum + s.seconds, 0).toFixed(1)}s of {maxRuntimeSeconds.toFixed(1)}s
+            </div>
+          )}
+          {shotList.beats.map((beat) => {
+            // The streaming call names the beat it is subdividing
+            // (`state.tsx`'s `beatIndex`), so THIS beat's own row is where
+            // its progress — and the shots it has closed so far — belongs,
+            // never a panel elsewhere on the page (2026-09-18 brief).
+            const isStreamingHere = shotStreaming?.target?.kind === 'beat' && shotStreaming.target.beatIndex === beat.index
+            const closedShots = (shotList.shots.length ? shotList.shots : shotsAuthoredSoFar).filter((s) => s.beatIndex === beat.index)
+            const partial = isStreamingHere ? parsePartialShotList(shotStreaming!.text).shots : []
             return (
-              <div style={{ marginTop: 9 }}>
-                <div className="tok">
-                  this window: {partial.shots.length} shot{partial.shots.length === 1 ? '' : 's'} so far · {total.toFixed(1)}s
+              <div key={beat.index} style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--rule)' }}>
+                <div className="tok" style={{ display: 'flex', gap: 9, alignItems: 'baseline' }}>
+                  <span style={{ width: 20, flex: '0 0 auto', color: 'var(--ink3)' }}>{beat.index}</span>
+                  <span style={{ flex: '1 1 auto', color: 'var(--ink2)' }}>{beat.covers}</span>
+                  <span style={{ color: 'var(--ink3)' }}>{beat.seconds.toFixed(1)}s</span>
                 </div>
-                {partial.shots.map((s) => (
-                  <div key={s.index} className="tok" style={{ display: 'flex', gap: 9, padding: '2px 0', color: 'var(--ink2)' }}>
+                {isStreamingHere && <div style={{ marginTop: 6 }}><DraftingStatus streaming={shotStreaming!} /></div>}
+                {closedShots.map((s) => (
+                  <div key={s.index} className="tok" style={{ display: 'flex', gap: 9, padding: '2px 0 2px 29px', color: 'var(--ink2)' }}>
                     <span style={{ width: 20, flex: '0 0 auto', color: 'var(--ink3)' }}>{s.index}</span>
                     <span style={{ flex: '1 1 auto' }}>{s.covers}</span>
                     <span style={{ color: 'var(--ink3)' }}>{s.seconds}s</span>
                   </div>
                 ))}
+                {partial.map((s, i) => (
+                  <div key={`partial-${i}`} className="tok" style={{ display: 'flex', gap: 9, padding: '2px 0 2px 29px', color: 'var(--ink3)' }}>
+                    <span style={{ width: 20, flex: '0 0 auto' }}>{s.index}</span>
+                    <span style={{ flex: '1 1 auto' }}>{s.covers}</span>
+                    <span>{s.seconds}s</span>
+                  </div>
+                ))}
               </div>
             )
-          })()}
-          {shotsAuthoredSoFar.length > 0 && (
-            // The WHOLE film's progress so far, across every beat that has
-            // already landed — distinct from the block above, which is only
-            // ever the ONE window currently in flight. This is the concrete
-            // answer to "shows no progress state, after sometime the whole
-            // thing loads": every beat that finishes is visible here the
-            // moment it lands, long before the last beat's call returns.
-            <div className="tok" style={{ marginTop: 9, paddingTop: 9, borderTop: '1px solid var(--rule)' }}>
-              whole film so far: {shotsAuthoredSoFar.length} shot{shotsAuthoredSoFar.length === 1 ? '' : 's'} ·{' '}
-              {shotsAuthoredSoFar.reduce((sum, s) => sum + s.seconds, 0).toFixed(1)}s of {maxRuntimeSeconds.toFixed(1)}s
-            </div>
-          )}
+          })}
         </div>
       )}
 
@@ -508,40 +485,12 @@ export function StoryAndShots({
 
       {shotList && !beatsOnly && (
         <>
-          <div className="card" style={{ marginTop: 9 }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 9 }}>
-              <span className="lbl">Authored vs. ceiling</span>
-              <div style={{ flexGrow: 1 }} />
-              <span className="tok">
-                {ceiling?.totalSeconds.toFixed(1)}s of {maxRuntimeSeconds.toFixed(1)}s
-              </span>
-            </div>
-            <div style={{ display: 'flex', height: 8, border: '1px solid var(--rule)', background: 'var(--sunk)', overflow: 'hidden', marginTop: 8 }}>
-              {shotGroups.map((g) => {
-                const state = bandFor(g.index)
-                const pct = maxRuntimeSeconds > 0 ? Math.min(100, (g.seconds / maxRuntimeSeconds) * 100) : 0
-                return <div key={g.index} style={{ width: `${pct}%`, background: bandColor(state) }} title={`clip ${g.index} · ${bandLabel(state)} · ${g.seconds}s`} />
-              })}
-            </div>
-            <div style={{ display: 'flex', gap: 14, marginTop: 7 }}>
-              {(['kept', 'waiting', 'unwritten'] as const).map((state) => (
-                <span key={state} className="tok" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: bandColor(state), display: 'inline-block', flex: '0 0 auto' }} />
-                  {bandLabel(state)}
-                </span>
-              ))}
-            </div>
-            {alert && <div className="alert warn" style={{ marginTop: 9 }}>{alert}</div>}
-          </div>
+          {alert && <div className="alert warn" style={{ marginTop: 9 }}>{alert}</div>}
 
           {shotGroupIssues.length > 0 && (
             <div className="alert warn" style={{ marginTop: 9 }}>
               {shotGroupIssues.map((i) => <div key={i}>{i}</div>)}
             </div>
-          )}
-
-          {extenderPlanPreview?.loraSplitWarning && (
-            <div className="alert warn" style={{ marginTop: 9 }}>{extenderPlanPreview.loraSplitWarning}</div>
           )}
 
           <div className="card" style={{ marginTop: 9 }}>
@@ -575,46 +524,9 @@ export function StoryAndShots({
               </div>
             )}
           </div>
-
-          <div style={{ marginTop: 12 }}>
-            {shotGroups.map((g) => {
-              const state = bandFor(g.index)
-              const groupShots = shotList.shots.filter((s) => g.shotIndices.includes(s.index))
-              return (
-                <div className="card" key={g.index} style={{ marginBottom: 7 }}>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 9, flexWrap: 'wrap' }}>
-                    {state === 'unwritten' && (
-                      <input type="checkbox" checked={selected.has(g.index)} onChange={() => toggle(g.index)} />
-                    )}
-                    <span className="tok">{g.index}</span>
-                    <span style={{ fontWeight: 600, fontSize: 12.5 }}>clip {g.index}</span>
-                    <span className="tok">{g.seconds.toFixed(1)}s</span>
-                    <div style={{ flexGrow: 1 }} />
-                    <span className="tok" style={{ color: bandColor(state) }}>{bandLabel(state)}</span>
-                    {state !== 'unwritten' && (
-                      <button className="btn sm ghost" onClick={() => openInHand(g.index)}>open in “the clip in hand”</button>
-                    )}
-                  </div>
-                  <div style={{ marginTop: 7 }}>
-                    {groupShots.map((s) => (
-                      <div key={s.index} className="tok" style={{ display: 'flex', gap: 9, padding: '2px 0', color: 'var(--ink2)' }}>
-                        <span style={{ width: 20, flex: '0 0 auto', color: 'var(--ink3)' }}>{s.index}</span>
-                        <span style={{ flex: '1 1 auto' }}>{s.covers}</span>
-                        <span style={{ color: 'var(--ink3)' }}>{s.seconds}s</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-
-          {selected.size > 0 && (
-            <button className="btn pri" disabled={busy} onClick={() => void doApprove()} style={{ marginTop: 4 }}>
-              Approve {selected.size} and generate {selected.size === 1 ? 'its prompt' : 'their prompts'}
-            </button>
-          )}
         </>
+      )}
+      </>
       )}
     </div>
   )

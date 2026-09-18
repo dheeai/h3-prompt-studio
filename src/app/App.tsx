@@ -16,9 +16,9 @@ import { AgentPanel } from '../components/AgentPanel'
 import { StoryAndShots } from '../components/StoryAndShots'
 import { ClipInHand } from '../components/ClipInHand'
 import { FilmTimeline } from '../components/FilmTimeline'
+import { NextStepBar } from '../components/NextStepBar'
 
 type Modal = 'connect' | 'skills' | 'settings' | 'plates' | 'extender-settings' | 'endpoint' | 'check' | null
-type StoryTab = 'timeline' | 'shots' | 'hand'
 
 /**
  * ONE COMPOSER. There are no entry-mode doors — see the module comment on
@@ -41,7 +41,6 @@ export function App() {
   // Full Story is the default (founder, 2026-09-17): it is the way a film gets
   // made now, and Studio is the single-clip surface you drop into for one shot.
   const [workspace, setWorkspace] = useState<'studio' | 'story' | 'agent'>('story')
-  const [storyTab, setStoryTab] = useState<StoryTab>('timeline')
   const [confirmClear, setConfirmClear] = useState(false)
   const [confirmStop, setConfirmStop] = useState(false)
 
@@ -170,21 +169,27 @@ export function App() {
       </div>
 
       <div className={`workspace-view ${workspace === 'story' ? 'is-active' : 'is-hidden'}`} aria-hidden={workspace !== 'story'}>
-        <nav className="workspace-tabs" aria-label="Full Story" style={{ margin: '10px 26px 0', borderLeft: 0, paddingLeft: 0 }}>
-          <button className={storyTab === 'timeline' ? 'active' : ''} aria-current={storyTab === 'timeline' ? 'page' : undefined} onClick={() => setStoryTab('timeline')}>Timeline</button>
-          <button className={storyTab === 'shots' ? 'active' : ''} aria-current={storyTab === 'shots' ? 'page' : undefined} onClick={() => setStoryTab('shots')}>Story &amp; shots</button>
-          <button className={storyTab === 'hand' ? 'active' : ''} aria-current={storyTab === 'hand' ? 'page' : undefined} onClick={() => setStoryTab('hand')}>The clip in hand</button>
-        </nav>
-        <div hidden={storyTab !== 'timeline'}>
-          <FilmTimeline onOpenClipInHand={() => setStoryTab('hand')} onOpenStoryAndShots={() => setStoryTab('shots')} />
-        </div>
-        <div hidden={storyTab !== 'shots'}>
-          <StoryAndShots onOpenClipInHand={() => setStoryTab('hand')} onOpenPlates={() => setModal('plates')} />
-        </div>
-        <div hidden={storyTab !== 'hand'}>
-          <ClipInHand onOpenStoryAndShots={() => setStoryTab('shots')} />
-        </div>
+        {/* ONE SCROLLING PAGE, no tabs — the tab order was never the work
+            order (2026-09-18 founder brief: "the whole flow is super
+            confusing.. we go to tab 2 first, then the user needs to know to
+            go to tab 1 for timeline"). Top to bottom is the order the work
+            actually happens: the film's own setup (collapses once a shot
+            list exists), the one sticky next step, then the timeline. "The
+            clip in hand" is a drill-in reached by clicking a clip, never a
+            tab — see the overlay below, driven by `editingGroupIndex`. */}
+        <StoryAndShots onOpenPlates={() => setModal('plates')} />
+        <NextStepBar />
+        <FilmTimeline />
         {error && <div className="alert err composer-error"><span>{error}</span><button className="btn sm ghost" onClick={app.clearError}>dismiss</button></div>}
+        {app.editingGroupIndex !== null && (
+          <div className="backdrop" onClick={() => app.setEditingGroupIndex(null)}>
+            <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 760, width: '94vw', maxHeight: '88vh' }}>
+              <div className="modal-body">
+                <ClipInHand onClose={() => app.setEditingGroupIndex(null)} />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className={`workspace-view ${workspace === 'agent' ? 'is-active' : 'is-hidden'}`} aria-hidden={workspace !== 'agent'}>

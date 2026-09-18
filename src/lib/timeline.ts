@@ -256,3 +256,41 @@ export function buildTimeline(input: TimelineInput): Timeline {
     runtimeBar: { keptSeconds, renderedSeconds, remainingSeconds },
   }
 }
+
+// ── bulk selection: the founder's "select all and render in 1 shot" ────
+
+export interface BulkSelectionPlan {
+  /** Selected clips a "write" action would author — `'planned'` only (never
+   * approved, or approved with the prompt cleared by a discard); never a
+   * clip that already has a prompt. */
+  toWrite: number[]
+  /** Selected clips a "render" action would submit — `'written'` (never
+   * rendered) AND `'failed'` (a render attempt that needs retrying; it
+   * already has its prompt, so retrying is a render, not a write). A
+   * `'kept'`/`'rendered'` clip is never resampled, and a clip with no
+   * prompt yet (`'planned'`) is never submitted to render — both asserted
+   * by this function's own tests, not left for a caller to get right by
+   * construction. */
+  toRender: number[]
+}
+
+/**
+ * What a bulk "write" or "render" action over a SELECTION would actually do
+ * — the pure seam behind the timeline's select-all/select-one checkboxes,
+ * so the checkbox's own visual meaning ("checked = will act on this clip")
+ * can never quietly invert into "checked = held back" the way the render
+ * submission's own `ticked` state once did (2026-09-18).
+ */
+export function bulkSelectionPlan(
+  clips: readonly Pick<TimelineClip, 'index' | 'state'>[],
+  selected: ReadonlySet<number>,
+): BulkSelectionPlan {
+  const toWrite: number[] = []
+  const toRender: number[] = []
+  for (const c of clips) {
+    if (!selected.has(c.index)) continue
+    if (c.state === 'planned') toWrite.push(c.index)
+    else if (c.state === 'written' || c.state === 'failed') toRender.push(c.index)
+  }
+  return { toWrite, toRender }
+}

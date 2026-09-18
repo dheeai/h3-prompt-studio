@@ -69,14 +69,16 @@ function DirectionInspector({ direction, acting }: { direction: DirectionDoc | u
 }
 
 /**
- * Screen 2 — "The clip in hand" (2026-09-17 brief). The set currently open,
- * on its own, with a link back to Story & shots. Editing here never touches
- * an H3 prompt — it only edits `shotList.shots`/`shotGroups` (via
- * `shotScreens.ts`'s pure editors, wired through `state.tsx`). Approving
- * writes the prompt through the EXISTING per-clip Direct/Draft path
- * (`app.approveShotGroups`), same as Screen 1's own approve.
+ * "The clip in hand" — a drill-in overlay onto one set, opened from any clip
+ * band on the timeline (`App.tsx`'s modal wired to `editingGroupIndex`),
+ * never a tab of its own (2026-09-18: the tab order was not the work order —
+ * see `App.tsx`'s module comment). Editing here never touches an H3 prompt —
+ * it only edits `shotList.shots`/`shotGroups` (via `shotScreens.ts`'s pure
+ * editors, wired through `state.tsx`). Approving writes the prompt through
+ * the EXISTING per-clip Direct/Draft path (`app.approveShotGroups`), same as
+ * the timeline's own per-band approve.
  */
-export function ClipInHand({ onOpenStoryAndShots }: { onOpenStoryAndShots: () => void }) {
+export function ClipInHand({ onClose }: { onClose: () => void }) {
   const app = useApp()
   const {
     shotList, shotGroups, editingGroupIndex, setEditingGroupIndex, breakdown,
@@ -103,10 +105,10 @@ export function ClipInHand({ onOpenStoryAndShots }: { onOpenStoryAndShots: () =>
 
   if (!shotList || !group) {
     return (
-      <div style={{ padding: '24px 26px' }}>
+      <div style={{ padding: '4px 4px 4px' }}>
         <span className="lbl">The clip in hand</span>
         <div className="tok" style={{ marginTop: 12, lineHeight: 1.6 }}>
-          No set is open. <button className="btn sm ghost" onClick={onOpenStoryAndShots}>Go to Story &amp; shots</button> and open one from its list.
+          No set is open. <button className="btn sm ghost" onClick={onClose}>Close</button>
         </div>
       </div>
     )
@@ -118,11 +120,11 @@ export function ClipInHand({ onOpenStoryAndShots }: { onOpenStoryAndShots: () =>
   const hasNext = groupPos < shotGroups.length - 1
 
   return (
-    <div style={{ padding: '4px 26px 24px' }}>
+    <div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 9 }}>
         <span className="lbl">The clip in hand</span>
         <div style={{ flexGrow: 1 }} />
-        <button className="btn sm ghost" onClick={onOpenStoryAndShots}>&larr; Story &amp; shots</button>
+        <button className="btn sm ghost" onClick={onClose}>&times; Close</button>
       </div>
 
       <div className="card">

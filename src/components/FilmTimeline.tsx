@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useApp } from '../app/state'
 import { FilmRegion } from './FilmRegion'
 import { latestPromptForClip } from '../lib/stages'
@@ -6,8 +6,15 @@ import { lint, summarise } from '../lib/lint'
 import { extenderCostEstimate } from '../lib/extender'
 import { planForTickedSubmission, promptIsStale, toggledSet } from '../lib/shotScreens'
 import { pairShotsWithPrompt, promptShotIssues, splitClipLevelSections, splitPromptShots } from '../lib/promptShots'
+import { clipsNeedingPrompt } from '../lib/studio-workflow'
+import { matchesOwner } from '../lib/extenderLiveProgress'
+import { bulkSelectionPlan } from '../lib/timeline'
+import { DraftingStatus, RenderProgress } from './DraftingStatus'
 import { PromptDoc } from './PromptDoc'
 import type { ClipTimelineState, TimelineClip } from '../lib/timeline'
+import type { DraftingProgress } from '../lib/studio-workflow'
+import type { ExtenderLiveProgress } from '../lib/extenderLiveProgress'
+import type { ExtenderPreviewInfo } from '../lib/extender'
 
 /**
  * The film, start to finish — one clip band per row, on a shared time axis
@@ -20,10 +27,19 @@ import type { ClipTimelineState, TimelineClip } from '../lib/timeline'
  *
  * `lib/timeline.ts`'s `buildTimeline` (`app.timeline`) is the one source of
  * truth for the geometry (clip/shot start times, delivered-vs-asked,
- * per-clip state) — this file adds no accounting of its own. The submit
- * card at the bottom still reads `extenderPlanPreview`/`submitTickedPrompts`
- * exactly as "Approve prompts" did; nothing about how a batch actually
- * renders changes here.
+ * per-clip state) — this file adds no accounting of its own. Approving
+ * (`approveShotGroups`) and writing (`writePendingPrompts`) an unwritten or
+ * failed clip, and the render submit card at the bottom, all call exactly
+ * the same functions `NextStepBar`'s primary button calls — there is
+ * exactly one implementation of each bulk action, dispatched from two
+ * places.
+ *
+ * SELECTION IS NOT INVERTED (fixed 2026-09-18, issue: "there is no option
+ * to select all and render in 1 shot" / the prior `ticked` set meant
+ * "held back"). `selected` here means exactly what the checkbox shows:
+ * checked = will render. Every newly-written clip is selected the moment it
+ * first appears, so the common case — "render everything that's ready" — is
+ * still zero clicks beyond the submit button; unchecking one holds it back.
  *
  * PROMPT TEXT IS CLOSED BY DEFAULT, per shot, per clip. A shot band shows
  * only what happens and how it is shot (`covers` + camera term); its own
@@ -35,23 +51,26 @@ import type { ClipTimelineState, TimelineClip } from '../lib/timeline'
  * `splitClipLevelSections`, not hardcoded) sit behind their own single
  * disclosure per clip. The raw whole prompt is always one click away
  * (`PromptDoc`), because it is ground truth.
+ *
+ * STREAMING RENDERS IN PLACE (2026-09-18: "the streaming text.. should come
+ * exactly where it is working"). A clip's own band shows its own Direction/
+ * Acting/Draft call the instant that call targets it (`DraftingProgress`'s
+ * `target`, set in `state.tsx`) — never a fixed panel elsewhere on the page.
+ * A clip that is actually rendering shows the live per-clip render progress
+ * (`RenderProgress`) the same way. Nothing here is a bare spinner: every
+ * in-flight call names the clip and the stage it belongs to.
  */
-export function FilmTimeline({
-  onOpenClipInHand,
-  onOpenStoryAndShots,
-}: {
-  onOpenClipInHand: (groupIndex: number) => void
-  onOpenStoryAndShots: () => void
-}) {
+export function FilmTimeline() {
   const app = useApp()
   const {
     timeline, shotGroups, breakdown, shotList, settings, versions,
     extenderPlanPreview, submitTickedPrompts, extenderReady, rendering,
     redoPlanClip, renderExtenderPlan, discardGroupRender, editPromptShotText,
-    setEditingGroupIndex, shotListBusy, streaming, pipelineStreaming,
+    setEditingGroupIndex, approveShotGroups, writePendingPrompts,
+    shotListBusy, streaming, pipelineStreaming, extenderLiveProgress, extenderProgress,
   } = app
 
-  const [ticked, setTicked] = useState<Set<number>>(new Set())
+  const [selected, setSelected] = useState<Set<number>>(new Set())
   const [openShots, setOpenShots] = useState<Set<string>>(new Set())
   const [openSections, setOpenSections] = useState<Set<number>>(new Set())
   const [openFullPrompt, setOpenFullPrompt] = useState<Set<number>>(new Set())
@@ -64,12 +83,33 @@ export function FilmTimeline({
 
   const busyNow = busy || !!rendering || shotListBusy || !!streaming || !!pipelineStreaming
 
+  // Every newly-written (or newly-failed) clip is selected the instant it
+  // appears — see this file's own module comment on why that keeps "render
+  // everything" a single press without the checkbox's own meaning ever
+  // inverting.
+  const seenRenderableRef = useRef<Set<number>>(new Set())
+  useEffect(() => {
+    const renderableNow = timeline.clips.filter((c) => c.state === 'written' || c.state === 'failed').map((c) => c.index)
+    setSelected((prev) => {
+      let changed = false
+      const next = new Set(prev)
+      for (const i of renderableNow) {
+        if (!seenRenderableRef.current.has(i)) {
+          seenRenderableRef.current.add(i)
+          next.add(i)
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [timeline.clips])
+
   if (!timeline.clips.length) {
     return (
-      <div style={{ padding: '24px 26px' }}>
+      <div id="film-timeline" style={{ padding: '24px 26px' }}>
         <span className="lbl">The film, start to finish</span>
         <div className="tok" style={{ marginTop: 12, lineHeight: 1.6 }}>
-          Nothing planned yet — make a shot list and approve a set or two in “Story &amp; shots” first.
+          Nothing planned yet — write the plot and make a shot list above first.
         </div>
       </div>
     )
@@ -77,24 +117,22 @@ export function FilmTimeline({
 
   const shotKey = (clipIndex: number, shotIndex: number) => `${clipIndex}:${shotIndex}`
 
-  const openInHand = (groupIndex: number) => {
-    setEditingGroupIndex(groupIndex)
-    onOpenClipInHand(groupIndex)
-  }
+  const openInHand = (groupIndex: number) => setEditingGroupIndex(groupIndex)
 
-  // `ticked` means "held BACK" — the same inversion "Approve prompts" used:
-  // every pending (written, not yet validated) clip is included by default,
-  // and un-ticking one holds it back from this submission.
   const pending = extenderPlanPreview?.clips.filter((c) => !c.validated && c.prompt.trim()) ?? []
-  const heldBack = ticked
-  const toSubmitIndices = pending.filter((c) => !heldBack.has(c.index)).map((c) => c.index)
+  // The tested pure seam decides WHICH selected clips actually render — see
+  // `bulkSelectionPlan`'s own module comment for why `'failed'` rides along
+  // here (it already has its prompt; retrying it is a render) while
+  // `'planned'` never does (no prompt yet to submit).
+  const { toRender: toSubmitIndices } = bulkSelectionPlan(timeline.clips, selected)
   const { toSubmit } = planForTickedSubmission(extenderPlanPreview?.clips ?? [], new Set(toSubmitIndices))
   const cost = extenderCostEstimate(toSubmit)
 
-  const submit = async () => {
+  const submit = async (indices: number[]) => {
+    if (!indices.length) return
     setBusy(true)
     try {
-      await submitTickedPrompts(toSubmitIndices)
+      await submitTickedPrompts(indices)
     } finally {
       setBusy(false)
     }
@@ -115,7 +153,7 @@ export function FilmTimeline({
     discardGroupRender(index)
     setConfirmingDiscard(null)
     setManaging(null)
-    onOpenClipInHand(index)
+    openInHand(index)
   }
 
   const saveEdit = (clipIndex: number, shotN: number) => {
@@ -123,16 +161,70 @@ export function FilmTimeline({
     setEditingShotKey(null)
   }
 
+  const approveOne = async (groupIndex: number) => {
+    setBusy(true)
+    try {
+      await approveShotGroups([groupIndex])
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // ── bulk: approve every unapproved group at once ────────────────────
+  const unapprovedGroupIndices = shotGroups.filter((g) => !breakdown?.clips.some((c) => c.index === g.index)).map((g) => g.index)
+  const approveAll = async () => {
+    setBusy(true)
+    try {
+      await approveShotGroups(unapprovedGroupIndices)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // ── bulk: retry every approved clip whose prompt never landed ───────
+  const needingPromptCount = breakdown ? clipsNeedingPrompt(breakdown, versions).length : 0
+  const writeAll = async () => {
+    setBusy(true)
+    try {
+      await writePendingPrompts()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const owningNodeId = extenderPlanPreview?.nodeId
+  const liveProgressHere = extenderLiveProgress && owningNodeId && matchesOwner(extenderLiveProgress, owningNodeId) ? extenderLiveProgress : null
+
   return (
-    <div style={{ padding: '4px 26px 24px' }}>
+    <div id="film-timeline" style={{ padding: '4px 26px 24px' }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 9 }}>
         <span className="lbl">The film, start to finish</span>
-        <div style={{ flexGrow: 1 }} />
-        <button className="btn sm ghost" onClick={onOpenStoryAndShots}>Story &amp; shots</button>
       </div>
 
       <FilmRegion />
       <RuntimeBar timeline={timeline} />
+
+      {unapprovedGroupIndices.length > 0 && (
+        <div className="card" style={{ marginTop: 9 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 9, flexWrap: 'wrap' }}>
+            <span className="lbl">{unapprovedGroupIndices.length} shot{unapprovedGroupIndices.length === 1 ? ' set has' : ' sets have'} not been approved yet</span>
+            <div style={{ flexGrow: 1 }} />
+            <button className="btn pri sm" disabled={busyNow} onClick={() => void approveAll()}>
+              {busyNow ? 'Working…' : `Approve ${unapprovedGroupIndices.length} and write ${unapprovedGroupIndices.length === 1 ? 'its prompt' : 'their prompts'}`}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {needingPromptCount > 0 && (
+        <div className="alert warn" style={{ marginTop: 9, display: 'flex', alignItems: 'baseline', gap: 9, flexWrap: 'wrap' }}>
+          <span>{needingPromptCount} approved clip{needingPromptCount === 1 ? '' : 's'} still {needingPromptCount === 1 ? 'has' : 'have'} no prompt — the last attempt didn't land.</span>
+          <div style={{ flexGrow: 1 }} />
+          <button className="btn sm" disabled={busyNow} onClick={() => void writeAll()}>
+            {busyNow ? 'Working…' : `Write ${needingPromptCount} prompt${needingPromptCount === 1 ? '' : 's'}`}
+          </button>
+        </div>
+      )}
 
       <div style={{ marginTop: 12 }}>
         {timeline.clips.map((clip) => (
@@ -147,8 +239,8 @@ export function FilmTimeline({
               const bc = breakdown?.clips.find((x) => x.index === clip.index)
               return g && bc && shotList ? promptIsStale(bc, shotList.shots, g) : false
             })()}
-            ticked={!heldBack.has(clip.index)}
-            onToggleTick={() => setTicked((prev) => toggledSet(prev, clip.index))}
+            selected={selected.has(clip.index)}
+            onToggleSelected={() => setSelected((prev) => toggledSet(prev, clip.index))}
             openShots={openShots}
             onToggleShot={(key) => setOpenShots((prev) => toggledSet(prev, key))}
             sectionsOpen={openSections.has(clip.index)}
@@ -165,6 +257,8 @@ export function FilmTimeline({
             onDiscard={() => discard(clip.index)}
             onRedo={(keepSeed) => void redo(clip.index, keepSeed)}
             onOpenInHand={() => openInHand(clip.index)}
+            onApprove={() => void approveOne(clip.index)}
+            onRenderThis={() => void submit([clip.index])}
             editingShotKey={editingShotKey}
             editText={editText}
             onStartEdit={(key, text) => {
@@ -176,6 +270,10 @@ export function FilmTimeline({
             onSaveEdit={(shotN) => saveEdit(clip.index, shotN)}
             busyNow={busyNow}
             shotKey={shotKey}
+            pipelineStreaming={pipelineStreaming}
+            streaming={streaming}
+            liveProgress={rendering && clip.state === 'rendering' ? liveProgressHere : null}
+            fallbackProgress={rendering && clip.state === 'rendering' && !liveProgressHere ? extenderProgress : null}
           />
         ))}
       </div>
@@ -183,24 +281,29 @@ export function FilmTimeline({
       {pending.length > 0 && (
         <div className="card" style={{ marginTop: 4 }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 9, flexWrap: 'wrap' }}>
-            <span className="lbl">Submit the written, un-ticked-held-back clips as one Master Extender job</span>
+            <span className="lbl">Render the selected, written clips as one Master Extender job</span>
             <div style={{ flexGrow: 1 }} />
-            <span className="tok">
-              {cost.totalSeconds.toFixed(1)}s · {cost.toSample} to sample · {cost.fromCache} from cache
-            </span>
+            <button className="btn sm ghost" onClick={() => setSelected(new Set(timeline.clips.filter((c) => c.state === 'written' || c.state === 'failed').map((c) => c.index)))}>select all</button>
+            <button className="btn sm ghost" onClick={() => setSelected(new Set())}>select none</button>
+          </div>
+          <div className="tok" style={{ marginTop: 6 }}>
+            {cost.totalSeconds.toFixed(1)}s · {cost.toSample} to sample · {cost.fromCache} from cache
           </div>
           {extenderPlanPreview?.issues && extenderPlanPreview.issues.length > 0 && (
             <div className="alert warn" style={{ marginTop: 8 }}>
               {extenderPlanPreview.issues.map((i) => <div key={i}>{i}</div>)}
             </div>
           )}
+          {extenderPlanPreview?.loraSplitWarning && (
+            <div className="alert warn" style={{ marginTop: 8 }}>{extenderPlanPreview.loraSplitWarning}</div>
+          )}
           <button
             className="btn pri"
             style={{ marginTop: 10 }}
             disabled={!toSubmitIndices.length || !extenderReady || busyNow}
-            onClick={() => void submit()}
+            onClick={() => void submit(toSubmitIndices)}
           >
-            {busyNow ? 'Rendering…' : `Render ${toSubmitIndices.length} written clip${toSubmitIndices.length === 1 ? '' : 's'}`}
+            {busyNow ? 'Rendering…' : `Render ${toSubmitIndices.length} selected clip${toSubmitIndices.length === 1 ? '' : 's'}`}
           </button>
         </div>
       )}
@@ -274,8 +377,8 @@ interface ClipBandProps {
   mode: import('../lib/types').H3Mode
   hasGroup: boolean
   stale: boolean
-  ticked: boolean
-  onToggleTick: () => void
+  selected: boolean
+  onToggleSelected: () => void
   openShots: Set<string>
   onToggleShot: (key: string) => void
   sectionsOpen: boolean
@@ -292,6 +395,8 @@ interface ClipBandProps {
   onDiscard: () => void
   onRedo: (keepSeed: boolean) => void
   onOpenInHand: () => void
+  onApprove: () => void
+  onRenderThis: () => void
   editingShotKey: string | null
   editText: string
   onStartEdit: (key: string, text: string) => void
@@ -300,10 +405,14 @@ interface ClipBandProps {
   onSaveEdit: (shotN: number) => void
   busyNow: boolean
   shotKey: (clipIndex: number, shotIndex: number) => string
+  pipelineStreaming: DraftingProgress | null
+  streaming: { stage: string; text: string; reasoning: string; startedAt: number; continuations: number; phase?: DraftingProgress['phase']; auto?: boolean; target?: DraftingProgress['target'] } | null
+  liveProgress: ExtenderLiveProgress | null
+  fallbackProgress: ExtenderPreviewInfo | null
 }
 
 function ClipBand(props: ClipBandProps) {
-  const { clip, versions, mode, hasGroup, stale, ticked, onToggleTick, onOpenInHand, busyNow } = props
+  const { clip, versions, mode, hasGroup, stale, selected, onToggleSelected, onOpenInHand, onApprove, onRenderThis, busyNow } = props
   const [keepSeed, setKeepSeed] = useState(false)
 
   const promptVersion = latestPromptForClip(versions, clip.index)
@@ -318,10 +427,13 @@ function ClipBand(props: ClipBandProps) {
   const isRenderedState = clip.state === 'kept' || clip.state === 'rendered'
   const shotsVisible = !isRenderedState || props.expandedRendered
 
+  const directionHere = props.pipelineStreaming?.target?.kind === 'clip' && props.pipelineStreaming.target.clipIndex === clip.index ? props.pipelineStreaming : null
+  const writingHere = props.streaming?.target?.kind === 'clip' && props.streaming.target.clipIndex === clip.index ? props.streaming : null
+
   return (
     <div className="card" style={{ marginBottom: 7 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 9, flexWrap: 'wrap' }}>
-        {clip.state === 'written' && <input type="checkbox" checked={ticked} onChange={onToggleTick} />}
+        {(clip.state === 'written' || clip.state === 'failed') && <input type="checkbox" checked={selected} onChange={onToggleSelected} title="will render" />}
         <span className="tok">{clip.index}</span>
         <span style={{ fontWeight: 600, fontSize: 12.5 }}>{clip.title}</span>
         <span className="tok" title="film-wide start time">starts {clip.filmStartSeconds.toFixed(1)}s</span>
@@ -333,8 +445,37 @@ function ClipBand(props: ClipBandProps) {
         </span>
         <div style={{ flexGrow: 1 }} />
         <span className="tok" style={{ color: stateColor(clip.state) }}>{stateLabel(clip.state)}</span>
+        {clip.state === 'planned' && hasGroup && (
+          <button className="btn sm" disabled={busyNow} onClick={onApprove}>
+            {busyNow ? 'Working…' : 'Approve & write this clip’s prompt'}
+          </button>
+        )}
+        {clip.state === 'written' && (
+          <button className="btn sm" disabled={busyNow} onClick={onRenderThis}>
+            {busyNow ? 'Rendering…' : 'Render just this clip'}
+          </button>
+        )}
+        {clip.state === 'failed' && (
+          <button className="btn sm" disabled={busyNow} onClick={onRenderThis}>
+            {busyNow ? 'Rendering…' : 'Retry this clip’s render'}
+          </button>
+        )}
         {hasGroup && <button className="btn sm ghost" onClick={onOpenInHand}>open in “the clip in hand”</button>}
       </div>
+
+      {directionHere && <DraftingStatus streaming={directionHere} />}
+      {writingHere && <DraftingStatus streaming={writingHere} />}
+      {clip.state === 'rendering' && (
+        props.liveProgress ? (
+          <div style={{ marginTop: 8 }}><RenderProgress progress={props.liveProgress} /></div>
+        ) : props.fallbackProgress ? (
+          <div className="tok" style={{ display: 'block', marginTop: 8 }}>
+            clip {props.fallbackProgress.clip}/{props.fallbackProgress.totalClips} · {props.fallbackProgress.cacheMode}
+          </div>
+        ) : (
+          <div className="tok" style={{ display: 'block', marginTop: 8 }}>rendering…</div>
+        )
+      )}
 
       {stale && (
         <div className="alert warn" style={{ marginTop: 8 }}>

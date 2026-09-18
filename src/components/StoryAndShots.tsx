@@ -23,6 +23,83 @@ function bandLabel(state: GroupBandState): string {
 }
 
 /**
+ * "Save the prompts locally" (the founder's own ask that opened this) — the
+ * save target belongs right next to the Project field, since the project
+ * name and the folder it saves into are one idea: what a film is called on
+ * disk. Says plainly what state it is in, one line, no modal:
+ *   - unsupported (Safari/Firefox) — a plain download, no folder concept.
+ *   - none — nothing chosen yet.
+ *   - granted — writes happen automatically as prompts are approved; "Save
+ *     now" also covers a film authored before the folder existed.
+ *   - needs-permission — a stored handle survived, but Chrome does not
+ *     guarantee the GRANT does; needs one more click, not a re-pick.
+ *   - denied — the grant was refused; only a fresh folder recovers.
+ */
+function SaveFilmRow({
+  exportDirName, exportDirStatus, chooseExportDirectory, reconnectExportDirectory, saveFilmNow,
+}: {
+  exportDirName: string | null
+  exportDirStatus: 'unsupported' | 'none' | 'granted' | 'needs-permission' | 'denied'
+  chooseExportDirectory: () => Promise<void>
+  reconnectExportDirectory: () => Promise<void>
+  saveFilmNow: () => Promise<void>
+}) {
+  const [busy, setBusy] = useState<string | null>(null)
+  const run = (label: string, fn: () => Promise<void>) => async () => {
+    setBusy(label)
+    try {
+      await fn()
+    } finally {
+      setBusy(null)
+    }
+  }
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 9, flexWrap: 'wrap' }}>
+      <span className="lbl" style={{ whiteSpace: 'nowrap' }}>Save to disk</span>
+      {exportDirStatus === 'unsupported' && (
+        <>
+          <span className="tok">This browser can't grant a folder — "Save now" downloads plan.md + prompts + project.json.</span>
+          <button className="btn sm ghost" disabled={!!busy} onClick={run('save', saveFilmNow)}>{busy === 'save' ? 'Saving…' : 'Save now'}</button>
+        </>
+      )}
+      {exportDirStatus === 'none' && (
+        <>
+          <span className="tok">No folder chosen — approved prompts exist only in this browser until you pick one.</span>
+          <button className="btn sm ghost" disabled={!!busy} onClick={run('choose', chooseExportDirectory)}>
+            {busy === 'choose' ? 'Opening…' : 'Choose a folder…'}
+          </button>
+          <button className="btn sm ghost" disabled={!!busy} onClick={run('save', saveFilmNow)}>
+            {busy === 'save' ? 'Saving…' : 'or download instead'}
+          </button>
+        </>
+      )}
+      {exportDirStatus === 'granted' && (
+        <>
+          <span className="tok" style={{ color: 'var(--grn)' }}>Saving to "{exportDirName}" as prompts are approved.</span>
+          <button className="btn sm ghost" disabled={!!busy} onClick={run('save', saveFilmNow)}>{busy === 'save' ? 'Saving…' : 'Save now'}</button>
+        </>
+      )}
+      {exportDirStatus === 'needs-permission' && (
+        <>
+          <span className="tok" style={{ color: 'var(--amb)' }}>Permission to "{exportDirName}" needs to be re-granted.</span>
+          <button className="btn sm ghost" disabled={!!busy} onClick={run('reconnect', reconnectExportDirectory)}>
+            {busy === 'reconnect' ? 'Reconnecting…' : 'Reconnect'}
+          </button>
+        </>
+      )}
+      {exportDirStatus === 'denied' && (
+        <>
+          <span className="tok" style={{ color: 'var(--rule2)' }}>Permission to "{exportDirName}" was denied.</span>
+          <button className="btn sm ghost" disabled={!!busy} onClick={run('choose', chooseExportDirectory)}>
+            {busy === 'choose' ? 'Opening…' : 'Choose a different folder…'}
+          </button>
+        </>
+      )}
+    </div>
+  )
+}
+
+/**
  * The film-wide camera/lens/look selector (2026-09-17 brief, refined same
  * day to ONE dropdown of named camera-and-lens COMBINATIONS rather than
  * independent axes — a focal length, a grain gauge and a palette are not
@@ -168,6 +245,7 @@ export function StoryAndShots({
     setEditingGroupIndex, streaming, plates, platesFrozenReason, film, setFilm,
     filmLoraStack, setFilmLoraStack, extenderDefaultLoraStack, endpoint, loraNames, loraNamesState, refreshLoraNames,
     filmName, filmNameEffective, setFilmName,
+    exportDirName, exportDirStatus, chooseExportDirectory, reconnectExportDirectory, saveFilmNow,
   } = app
 
   // Pass 1 landed but pass 2 hasn't run yet — either it's paused on
@@ -251,6 +329,13 @@ export function StoryAndShots({
             {filmOutputPrefix(filmNameEffective)}_00001_.mp4
           </span>
         </div>
+        <SaveFilmRow
+          exportDirName={exportDirName}
+          exportDirStatus={exportDirStatus}
+          chooseExportDirectory={chooseExportDirectory}
+          reconnectExportDirectory={reconnectExportDirectory}
+          saveFilmNow={saveFilmNow}
+        />
         <div className="lbl">The plot</div>
         <textarea
           className="composer-textarea"

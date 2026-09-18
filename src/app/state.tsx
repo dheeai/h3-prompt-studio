@@ -29,6 +29,11 @@ import { cumulativeFilm, sceneWorkLabel } from '../lib/filmDisplay'
 import type { PaddedClip, SceneWorkLabel } from '../lib/filmDisplay'
 import { fetchBundledSkills, loadSkills, removeSkill, saveSkill } from '../lib/skills'
 import { estTokens } from '../lib/tokens'
+import { reconcileRehydratedClips } from '../lib/rehydrate'
+import {
+  checkDirPermission, downloadTextFile, pickExportDirectory, requestDirPermission, supportsFileSystemAccess, writeFilesToDirectory,
+} from '../lib/fsExport'
+import { buildExportPlan, buildFallbackBundle } from '../lib/sessionExport'
 import { authoringModeForContent, authorContinuation, canAutoAuthorNext, clearDraftContext, continuationSource, interruptedReasoningText, migrateBreakIntoScenes, nextPlanClipToAuthor, previousPromptForClip, promptSourceForAuthoringMode, withContinuationFrame } from '../lib/entry'
 import type { AuthoringMode } from '../lib/entry'
 import { clipsNeedingPrompt, isSingleRequestStage, type DraftingProgress, type StudioRunPhase } from '../lib/studio-workflow'
@@ -510,6 +515,39 @@ export interface Api {
   filmNameEffective: string
   setFilmName: (name: string) => void
 
+  // ── save the film as files (local, no server — "can I save the prompts") ─
+  /** `null` with no folder granted; the picked folder's own name otherwise
+   * (still shown even mid-`needs-permission`/`denied`, so the operator
+   * knows WHICH folder to re-grant, not just that something needs it). */
+  exportDirName: string | null
+  /**
+   * `'unsupported'` — this browser has no `showDirectoryPicker` at all
+   * (Safari, Firefox); `chooseExportDirectory`/`reconnectExportDirectory`
+   * are no-ops and `saveFilmNow` always falls back to a download.
+   * `'none'` — supported, but the operator hasn't granted a folder yet.
+   * `'granted'` — writes happen as prompts are approved.
+   * `'needs-permission'` — a folder was granted in an earlier visit but the
+   * grant did not survive (Chrome does not guarantee it will); needs a
+   * fresh user gesture via `reconnectExportDirectory`.
+   * `'denied'` — the operator (or the browser) refused the grant.
+   */
+  exportDirStatus: 'unsupported' | 'none' | 'granted' | 'needs-permission' | 'denied'
+  /** Opens the browser's folder picker. Must be called directly from a
+   * click handler. Writes the whole film immediately once granted, so a
+   * film authored before the folder existed is not left waiting for its
+   * next approval to show up on disk. */
+  chooseExportDirectory: () => Promise<void>
+  /** Re-request permission on the already-picked folder (`needs-permission`
+   * / `denied`). Also needs a direct click-handler call. */
+  reconnectExportDirectory: () => Promise<void>
+  /** Write the whole film now: `plan.md`, `project.json`, and one
+   * `prompts/clipNN.md` per clip with an authored prompt. Writes into the
+   * granted folder when one is live; otherwise triggers the two-file
+   * download fallback (`buildFallbackBundle`) — the same action covers both
+   * "save everything now" for a film authored before a folder was granted,
+   * and the whole story for a browser with no File System Access API. */
+  saveFilmNow: () => Promise<void>
+
   // ── the render loop ─────────────────────────────────────────────────
   plates: Plate[]
   endpoints: ComfyEndpoint[]
@@ -792,6 +830,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [interruptedReasoning, setInterruptedReasoning] = useState<string | null>(null)
   const [continuation, setContinuation] = useState<ContinuationStatus | null>(null)
   const [plates, setPlates] = useState<Plate[]>([])
+  // ── save the film as files — see `Api.exportDirStatus`'s own comment ────
+  const [exportDirName, setExportDirName] = useState<string | null>(null)
+  const [exportDirStatus, setExportDirStatus] = useState<'unsupported' | 'none' | 'granted' | 'needs-permission' | 'denied'>('none')
+  const exportDirHandleRef = useRef<FileSystemDirectoryHandle | null>(null)
+  /** Which prompt VERSION id was last written to `prompts/clipNN.md` for
+   * each plan clip index — lets the auto-save effect fire only when a
+   * clip's authored prompt actually changed, not on every unrelated
+   * session edit (retiming a shot, editing the plot, switching tabs). */
+  const writtenPromptVersionRef = useRef<Record<number, string>>({})
   const [endpoints, setEndpointsState] = useState<ComfyEndpoint[]>(DEFAULT_ENDPOINTS)
   const [comfyProbes, setComfyProbes] = useState<Record<string, ProbeResult>>({})
   /** The Master Extender node's live `turbo_lora` file list, per endpoint —
@@ -1026,15 +1073,50 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const savedEndpoints = await idb.get<ComfyEndpoint[]>('settings', 'comfyEndpoints')
       if (savedEndpoints?.length) setEndpointsState(savedEndpoints)
 
-      // A refresh starts clean. The draft, its passes, the film context, the
-      // plates and the clips are all WORK, and work that reappears by itself
-      // is work you have to remember to throw away before you can trust what
-      // is on the page. Only the CONFIGURATION persists: settings, providers,
-      // skills and endpoints. Whatever an earlier visit wrote is cleared here
-      // rather than merely ignored, so nothing lingers on disk. The retired
-      // `recipes` store itself is dropped one layer down, in `db.ts`'s own
-      // upgrade migration — never recreated here.
-      await Promise.all([idb.clear('sessions'), idb.clear('plates'), idb.clear('clips')])
+      // issue #35: a reload used to wipe the whole film unconditionally
+      // (`idb.clear('sessions')`/`'plates'`/`'clips'`, every visit) — the
+      // plot, the shot list, the shot groups, every approved prompt, all
+      // gone with no recovery. These three stores are now populated by the
+      // debounced persistence effects below (`── persist the film ──`), so
+      // what a reload finds here IS the film as it stood at the last write,
+      // not stale leftover work from a visit that should have been thrown
+      // away. The retired `recipes` store is still dropped one layer down,
+      // in `db.ts`'s own upgrade migration — that is unrelated and unchanged.
+      const [savedSession, savedClips, savedPlates] = await Promise.all([
+        idb.get<Session>('sessions', 'current'),
+        idb.all<Clip>('clips'),
+        idb.all<Plate>('plates'),
+      ])
+      if (savedSession) {
+        sessionRef.current = savedSession
+        setSession(savedSession)
+      }
+      // A clip left `state: 'rendering'` belonged to a poll loop that lived
+      // in the tab that just went away — see `reconcileRehydratedClips`'s
+      // own module comment for why that becomes a visibly-failed clip
+      // rather than a spinner nothing is driving, or a silently dropped
+      // record. No network call fires here; a stale `promptId` is named in
+      // the error, never re-polled automatically.
+      if (savedClips.length) setClips(reconcileRehydratedClips(savedClips))
+      if (savedPlates.length) setPlates(savedPlates)
+
+      // Part 2 — "save the prompts as real files": rehydrate a previously
+      // granted export folder, if any. `queryPermission` is a read-only
+      // check (unlike `requestPermission`) and needs no user gesture, so
+      // it is safe here on boot; a stored `FileSystemDirectoryHandle` is
+      // NOT a live grant on its own — Chrome does not guarantee the grant
+      // survives a restart, and the operator can revoke it independently.
+      if (!supportsFileSystemAccess()) {
+        setExportDirStatus('unsupported')
+      } else {
+        const dirHandle = await idb.get<FileSystemDirectoryHandle>('settings', 'exportDirHandle')
+        if (dirHandle) {
+          exportDirHandleRef.current = dirHandle
+          setExportDirName(dirHandle.name)
+          const perm = await checkDirPermission(dirHandle)
+          setExportDirStatus(perm === 'granted' ? 'granted' : perm === 'denied' ? 'denied' : 'needs-permission')
+        }
+      }
 
       setSkills(stored)
       setSettings(merged)
@@ -1069,6 +1151,55 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (ready) void idb.set('settings', 'settings', settings)
   }, [ready, settings])
 
+  // ── persist the film (issue #35) ────────────────────────────────────────
+  //
+  // Debounced: an approve, a redo, a keystroke in the plot textarea must not
+  // fire an IndexedDB write per character. 800ms of quiet after the last
+  // change is short enough to feel instant on a reload and long enough to
+  // collapse a burst of edits (a fast retime, a paste) into one write.
+  // `ready` gates every one of these so the initial rehydrate (`setSession`/
+  // `setClips`/`setPlates` in the boot effect above) is never immediately
+  // re-written back over itself before the operator has touched anything.
+  useEffect(() => {
+    if (!ready) return
+    const t = setTimeout(() => { void idb.set('sessions', 'current', session) }, 800)
+    return () => clearTimeout(t)
+  }, [ready, session])
+
+  // `clips`/`plates` each get their OWN store (already existed, just never
+  // populated — see `db.ts`'s module comment on why IndexedDB over
+  // localStorage), written one record per id rather than one big blob: a
+  // `Plate.dataUrl` or a `Clip.lastFrame` can be a multi-megabyte data URL,
+  // and re-writing every plate/clip because ONE of them changed would make
+  // an ordinary edit cost as much as touching all of them. `idb.keys` finds
+  // records a deletion left behind so a removed plate/clip does not survive
+  // forever as an orphaned row nothing ever reads again — the exact bug the
+  // retired `recipes` store's own history (`db.ts`) already showed the cost of.
+  useEffect(() => {
+    if (!ready) return
+    const t = setTimeout(() => {
+      void (async () => {
+        const keep = new Set(clips.map((c) => c.id))
+        await Promise.all(clips.map((c) => idb.set('clips', c.id, c)))
+        const existing = await idb.keys('clips')
+        await Promise.all(existing.filter((k) => !keep.has(String(k))).map((k) => idb.del('clips', String(k))))
+      })()
+    }, 800)
+    return () => clearTimeout(t)
+  }, [ready, clips])
+
+  useEffect(() => {
+    if (!ready) return
+    const t = setTimeout(() => {
+      void (async () => {
+        const keep = new Set(plates.map((p) => p.id))
+        await Promise.all(plates.map((p) => idb.set('plates', p.id, p)))
+        const existing = await idb.keys('plates')
+        await Promise.all(existing.filter((k) => !keep.has(String(k))).map((k) => idb.del('plates', String(k))))
+      })()
+    }, 800)
+    return () => clearTimeout(t)
+  }, [ready, plates])
 
   // ── the cached context layer ──────────────────────────────────────────
   useEffect(() => {
@@ -1763,6 +1894,113 @@ export function AppProvider({ children }: { children: ReactNode }) {
     sessionRef.current = next
     setSession(next)
   }, [])
+
+  // ── save the film as files ───────────────────────────────────────────
+  //
+  // `buildExportPlan` (`sessionExport.ts`) is the one place that decides
+  // WHAT gets written; everything here just decides WHEN, off `sessionRef`
+  // so a save started from inside a callback sees the film as it is now.
+  const buildCurrentExportPlan = useCallback(() => {
+    const snap = sessionRef.current
+    return buildExportPlan({
+      filmName: effectiveFilmName(),
+      mode: settings.mode,
+      plot: snap.plot ?? '',
+      maxRuntimeSeconds: snap.maxRuntimeSeconds ?? DEFAULT_MAX_RUNTIME_SECONDS,
+      filmLook: snap.film?.look,
+      filmLoraStack: snap.filmLoraStack,
+      shotList: snap.shotList,
+      shotGroups: snap.shotGroups,
+      shotGroupIssues: snap.shotGroupIssues,
+      breakdown: snap.breakdown,
+      versions: snap.versions,
+      exportedAt: Date.now(),
+    })
+  }, [effectiveFilmName, settings.mode])
+
+  const markPromptsWritten = useCallback(() => {
+    for (const c of sessionRef.current.breakdown?.clips ?? []) {
+      const v = latestPromptForClip(sessionRef.current.versions, c.index)
+      if (v) writtenPromptVersionRef.current[c.index] = v.id
+    }
+  }, [])
+
+  /** See `Api.saveFilmNow`'s own comment. */
+  const saveFilmNow = useCallback(async () => {
+    const plan = buildCurrentExportPlan()
+    if (exportDirStatus === 'granted' && exportDirHandleRef.current) {
+      try {
+        await writeFilesToDirectory(exportDirHandleRef.current, plan)
+        markPromptsWritten()
+        setNotice(`Saved to "${exportDirHandleRef.current.name}" — plan.md, project.json and ${plan.length - 2} prompt file(s).`)
+      } catch (e) {
+        setError(`Could not save to the chosen folder — ${String((e as Error).message || e)}`)
+      }
+      return
+    }
+    const bundle = buildFallbackBundle(plan, effectiveFilmName())
+    downloadTextFile(bundle.markdownFilename, bundle.markdown, 'text/markdown')
+    downloadTextFile(bundle.jsonFilename, bundle.json, 'application/json')
+  }, [buildCurrentExportPlan, exportDirStatus, markPromptsWritten, effectiveFilmName])
+
+  /** See `Api.chooseExportDirectory`'s own comment. Must be called directly
+   * from a click handler — the browser refuses the picker without a fresh
+   * user gesture. */
+  const chooseExportDirectory = useCallback(async () => {
+    try {
+      const handle = await pickExportDirectory()
+      exportDirHandleRef.current = handle
+      setExportDirName(handle.name)
+      setExportDirStatus('granted')
+      await idb.set('settings', 'exportDirHandle', handle)
+      await saveFilmNow()
+    } catch (e) {
+      // The operator closing the picker is not a failure worth an error banner.
+      if ((e as { name?: string }).name !== 'AbortError') setError(`Could not open the folder picker — ${String((e as Error).message || e)}`)
+    }
+  }, [saveFilmNow])
+
+  /** See `Api.reconnectExportDirectory`'s own comment. */
+  const reconnectExportDirectory = useCallback(async () => {
+    const handle = exportDirHandleRef.current
+    if (!handle) return
+    try {
+      const perm = await requestDirPermission(handle)
+      setExportDirStatus(perm === 'granted' ? 'granted' : perm === 'denied' ? 'denied' : 'needs-permission')
+      if (perm === 'granted') await saveFilmNow()
+    } catch (e) {
+      setError(`Could not re-request folder permission — ${String((e as Error).message || e)}`)
+    }
+  }, [saveFilmNow])
+
+  /**
+   * Write as prompts are approved, not only on demand (the brief's own
+   * wording). "Approved" here is deliberately "the newest authored version
+   * for this plan clip" — a clip's `prompts/clipNN.md` mirrors whatever it
+   * currently reads on the page, so a later Revise/redo updates the file
+   * exactly as the first Draft created it, without a second "lock it in"
+   * click the rest of this UI has no equivalent gesture for. Only fires
+   * when something for THIS clip actually changed — `writtenPromptVersionRef`
+   * is the guard — so retiming a shot or editing the plot never triggers a
+   * write of its own.
+   */
+  useEffect(() => {
+    if (!ready) return
+    if (exportDirStatus !== 'granted' || !exportDirHandleRef.current) return
+    const breakdown = session.breakdown
+    if (!breakdown?.clips.length) return
+    const changed = breakdown.clips.some((c) => {
+      const v = latestPromptForClip(session.versions, c.index)
+      return v && writtenPromptVersionRef.current[c.index] !== v.id
+    })
+    if (!changed) return
+    const handle = exportDirHandleRef.current
+    const plan = buildCurrentExportPlan()
+    void writeFilesToDirectory(handle, plan)
+      .then(() => markPromptsWritten())
+      .catch((e) => setError(`Could not save the approved prompt to the chosen folder — ${String((e as Error).message || e)}`))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, exportDirStatus, session.breakdown, session.versions])
 
   /**
    * Pass 2's model call, wrapped once so `makeShotList`, `continueSubdivision`
@@ -3398,6 +3636,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     filmNameEffective: session.filmName?.trim() || deriveFilmName(session.shotList?.spine),
     setFilmName,
     setFilmLoraStack,
+    exportDirName,
+    exportDirStatus,
+    chooseExportDirectory,
+    reconnectExportDirectory,
+    saveFilmNow,
     plates,
     endpoints,
     endpoint,

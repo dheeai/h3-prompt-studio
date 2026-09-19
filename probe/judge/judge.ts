@@ -114,6 +114,16 @@ function arg(name: string): string | undefined {
 interface Plan {
   clipSeconds?: number
   approvedShots?: JudgeShot[]
+  /**
+   * Whether this clip is SUPPOSED to have spoken lines — a property of the
+   * brief, not of the prompt. Detecting it from the prompt's own `<d>` tags
+   * (the old default, kept as a fallback) means a prompt that silently drops
+   * required dialogue is simply not judged on dialogue, and omission escapes
+   * scrutiny — the same defect as an undelivered shot leaving the
+   * denominator. Measured 2026-09-19: one arm dropped the dialogue and was
+   * scored on six dimensions while the arm that kept it was scored on seven.
+   */
+  hasDialogue?: boolean
   /** Defaults to `true` when the plan omits it — most clips have people in
    * them, so a caller opts OUT deliberately (a landscape flythrough, a
    * product shot with no hands) rather than opting in. */
@@ -160,7 +170,7 @@ async function main() {
     mode,
     approvedShots: plan.approvedShots ?? [],
     clipSeconds: plan.clipSeconds ?? 0,
-    hasDialogue: /<d>/.test(promptText),
+    hasDialogue: plan.hasDialogue ?? /<d>/.test(promptText),
     hasCharacters: plan.hasCharacters ?? true,
   }
 

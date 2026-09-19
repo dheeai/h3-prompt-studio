@@ -295,6 +295,163 @@ test('a generic shot-scoped template that never reached any shot is not applied,
   assert.equal(row.applied, false)
 })
 
+// ── UNDELIVERED — a planned shot the prompt never wrote a fragment for ─────
+//
+// The measured A/B bug this fix addresses: a plan of 7 approved shots, a
+// prompt that only wrote fragments for the first 3. Shots 4-7 have no
+// `[Shot N]` fragment at all, so `buildJudgeRequest` never built a request
+// to ask about them. Before the fix, `scoreJudge` read that as "no answer
+// ever reached this shot" and dropped it out of the denominator — exactly
+// the same shape of bug already fixed once for `pacingTimeline`. After the
+// fix, an UNDELIVERED shot scores 0 and stays IN the denominator.
+
+const SEVEN_SHOT_PLAN = Array.from({ length: 7 }, (_, i) => ({ index: i + 1, summary: `Shot ${i + 1}`, seconds: 2 }))
+
+/** Three `[Shot N]` fragments only — shots 4-7 were never written. */
+const THREE_OF_SEVEN_PROMPT = [
+  'subject_definitions: <Subject 1> is a woman in a workshop.',
+  'summary: [reference generation] A woman works at a bench.',
+  'retention_analysis: <Subject 1> fully_preserved',
+  [
+    'detailed_description:',
+    '[Shot 1] She stands at the bench, tools scattered, in a Static Shot.',
+    '[Shot 2] At 00:02.000, she reaches for a wrench, Push In.',
+    '[Shot 3] At 00:04.000, she tightens a bolt, Static Shot.',
+  ].join(' '),
+  'overall_soundscape: a workshop hum, metal clinking.',
+  'non_diegetic_music: N/A',
+].join('\n\n')
+
+function sevenShotCtx(overrides: Partial<JudgeContext> = {}): JudgeContext {
+  return baseCtx({ promptText: THREE_OF_SEVEN_PROMPT, approvedShots: SEVEN_SHOT_PLAN, clipSeconds: 14, ...overrides })
+}
+
+test('a pinned per-shot question for an undelivered shot scores 0 with applied:true, in the denominator', () => {
+  // shots.chain.N shape: one question per approved shot, pinned via shotIndex.
+  const rubric: NoulQuestion[] = SEVEN_SHOT_PLAN.map((shot) => ({
+    kind: 'noul',
+    id: `shots.chain.${shot.index}`,
+    dimension: 'shots',
+    scope: 'shot',
+    shotIndex: shot.index,
+    instructions: 'x',
+    expect: true,
+  }))
+  // Only the 3 delivered shots get a response at all — nothing was ever sent
+  // for shots 4-7, since no fragment existed to build a request from.
+  const responses: ScopedAnswers[] = [1, 2, 3].map((shotIndex) => ({
+    scope: 'shot' as const,
+    shotIndex,
+    answers: { [`shots.chain.${shotIndex}`]: { type: 'noul' as const, noul: 1 } },
+  }))
+  const score = scoreJudge(sevenShotCtx(), rubric, responses)
+
+  for (const missing of [4, 5, 6, 7]) {
+    const row = score.questions.find((r) => r.id === `shots.chain.${missing}`)!
+    assert.equal(row.applied, true, `shots.chain.${missing} must be applied:true (undelivered, not unevaluable)`)
+    assert.equal(row.contribution, 0)
+    assert.equal(row.probability, 0)
+  }
+  for (const present of [1, 2, 3]) {
+    const row = score.questions.find((r) => r.id === `shots.chain.${present}`)!
+    assert.equal(row.applied, true)
+    assert.equal(row.contribution, 1)
+  }
+
+  // The dimension's denominator includes all 7 — the 4 missing shots pull
+  // the average down instead of quietly leaving it.
+  assert.equal(score.dimensions.shots.appliedCount, 7)
+  assert.equal(score.dimensions.shots.questionCount, 7)
+  assert.ok(Math.abs((score.dimensions.shots.score as number) - 3 / 7) < 1e-9)
+})
+
+test('a generic shot-scoped template scores each undelivered shot 0, applied:true, alongside delivered shots answered normally', () => {
+  const q: NoulQuestion = { kind: 'noul', id: 'camera.motivated', dimension: 'camera', scope: 'shot', instructions: 'x', expect: true }
+  const responses: ScopedAnswers[] = [1, 2, 3].map((shotIndex) => ({
+    scope: 'shot' as const,
+    shotIndex,
+    answers: { 'camera.motivated': { type: 'noul' as const, noul: 0.9 } },
+  }))
+  const score = scoreJudge(sevenShotCtx(), [q], responses)
+
+  for (const missing of [4, 5, 6, 7]) {
+    const row = score.questions.find((r) => r.id === `camera.motivated#shot${missing}`)!
+    assert.equal(row.applied, true)
+    assert.equal(row.contribution, 0)
+  }
+  for (const present of [1, 2, 3]) {
+    const row = score.questions.find((r) => r.id === `camera.motivated#shot${present}`)!
+    assert.equal(row.contribution, 0.9)
+  }
+  assert.equal(score.dimensions.camera.questionCount, 7)
+  assert.equal(score.dimensions.camera.appliedCount, 7)
+  assert.ok(Math.abs((score.dimensions.camera.score as number) - (3 * 0.9) / 7) < 1e-9)
+})
+
+test('with ctx.approvedShots empty, shot-scoped questions still skip entirely — no plan, no claim', () => {
+  const pinned: NoulQuestion = {
+    kind: 'noul',
+    id: 'shots.chain.1',
+    dimension: 'shots',
+    scope: 'shot',
+    shotIndex: 1,
+    instructions: 'x',
+    expect: true,
+  }
+  const generic: NoulQuestion = { kind: 'noul', id: 'camera.motivated', dimension: 'camera', scope: 'shot', instructions: 'x', expect: true }
+  const score = scoreJudge(baseCtx({ approvedShots: [] }), [pinned, generic], [])
+
+  assert.equal(score.dimensions.shots.score, null)
+  assert.equal(score.dimensions.shots.appliedCount, 0)
+  const pinnedRow = score.questions.find((r) => r.id === 'shots.chain.1')!
+  assert.equal(pinnedRow.applied, false)
+  assert.equal(pinnedRow.contribution, undefined)
+
+  assert.equal(score.dimensions.camera.score, null)
+  assert.equal(score.dimensions.camera.appliedCount, 0)
+  const genericRow = score.questions.find((r) => r.id === 'camera.motivated')!
+  assert.equal(genericRow.applied, false)
+  assert.equal(genericRow.contribution, undefined)
+})
+
+test('appliesWhen:false still wins over an undelivered shot — a genuinely exempt question never scores a manufactured zero', () => {
+  const q: NoulQuestion = {
+    kind: 'noul',
+    id: 'acting.observable-not-labeled',
+    dimension: 'acting',
+    scope: 'shot',
+    instructions: 'x',
+    expect: true,
+    appliesWhen: (ctx) => ctx.hasCharacters,
+  }
+  const score = scoreJudge(sevenShotCtx({ hasCharacters: false }), [q], [])
+  const row = score.questions.find((r) => r.id === 'acting.observable-not-labeled')!
+  assert.equal(row.applied, false)
+  assert.equal(row.contribution, undefined)
+  assert.equal(score.dimensions.acting.appliedCount, 0)
+})
+
+test('a sent question for a DELIVERED shot whose answer never came back is still applied:false — not caught by the undelivered rule', () => {
+  // shot 1 has a real fragment (delivered), but its answer is simply absent
+  // from the response — a network/API failure, not a missing shot.
+  const q: NoulQuestion = { kind: 'noul', id: 'shots.chain.1', dimension: 'shots', scope: 'shot', shotIndex: 1, instructions: 'x', expect: true }
+  const score = scoreJudge(sevenShotCtx(), [q], [{ scope: 'shot', shotIndex: 1, answers: {} }])
+  const row = score.questions.find((r) => r.id === 'shots.chain.1')!
+  assert.equal(row.applied, false)
+  assert.equal(row.contribution, undefined)
+  assert.equal(score.dimensions.shots.appliedCount, 0)
+})
+
+test('regression: a prompt that delivers every planned shot scores exactly as before this fix', () => {
+  const q: NoulQuestion = { kind: 'noul', id: 'shots.chain.1', dimension: 'shots', scope: 'shot', shotIndex: 1, instructions: 'x', expect: true }
+  const responses: ScopedAnswers[] = [{ scope: 'shot', shotIndex: 1, answers: { 'shots.chain.1': { type: 'noul', noul: 0.75 } } }]
+  const score = scoreJudge(baseCtx(), [q], responses)
+  const row = score.questions.find((r) => r.id === 'shots.chain.1')!
+  assert.equal(row.applied, true)
+  assert.equal(row.contribution, 0.75)
+  assert.equal(score.dimensions.shots.score, 0.75)
+})
+
 // ── judgeFeedback — deterministic and bounded ──────────────────────────────
 
 const NO_FINDINGS: Finding[] = []

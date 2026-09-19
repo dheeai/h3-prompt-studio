@@ -346,9 +346,13 @@ export interface QuestionResult {
   dimension: JudgeDimension
   kind: 'noul' | 'score' | 'exact'
   /** False when `appliesWhen` opted this out, an Exact check returned
-   * `null`, no shot ever supplied an answer for a shot-scoped template, or
-   * the answer for a sent question never came back (or came back malformed)
-   * — the cases that must NOT be silently read as zero. */
+   * `null`, `ctx.approvedShots` is empty for a shot-scoped question (no
+   * plan, no claim), or the answer for a sent question never came back (or
+   * came back malformed) — the cases that must NOT be silently read as
+   * zero. True with `contribution: 0` for the fourth, distinct outcome: the
+   * plan named a shot the rendered prompt never wrote a fragment for — a
+   * known defect, not an unknown. See `scoreJudge`'s module comment for the
+   * full exempt / unevaluable / undelivered breakdown. */
   applied: boolean
   weight: number
   /** The raw read off the answer: a Noul's `noul`, a Score's summed
@@ -379,6 +383,33 @@ export interface JudgeScore {
 
 function notApplied(q: JudgeQuestion, weight: number, id: string): QuestionResult {
   return { id, dimension: q.dimension, kind: q.kind, applied: false, weight }
+}
+
+/**
+ * UNDELIVERED — see `scoreJudge`'s module comment. The plan named this shot
+ * and the rendered prompt has no `[Shot N]` fragment for it at all, so
+ * `buildJudgeRequest` never had text to send and no request was ever built.
+ * Unlike `notApplied`, this scores the worst possible contribution (0) and
+ * stays IN its dimension's denominator: the plan promised a shot and the
+ * prompt failed to write it, which is a known defect, not an unknown.
+ */
+function undeliveredShot(q: JudgeQuestion, weight: number, id: string): QuestionResult {
+  return { id, dimension: q.dimension, kind: q.kind, applied: true, weight, probability: 0, contribution: 0 }
+}
+
+/**
+ * Which of `ctx.approvedShots` the rendered prompt actually wrote a
+ * `[Shot N]` fragment for. Reuses the exact positional pairing
+ * `buildJudgeRequest` already does when it decides which shot-scoped
+ * requests are even worth building (`if (!pair.fragment) continue`) — a
+ * shot index missing from this set is precisely a shot no request was ever
+ * sent for, which is what tells `scoreJudge` UNDELIVERED apart from
+ * UNEVALUABLE (see its module comment).
+ */
+function deliveredShotIndices(ctx: JudgeContext): Set<number> {
+  const split = splitPromptShots(splitClipLevelSections(ctx.promptText).shotSectionBody)
+  const { pairs } = pairShotsWithPrompt(ctx.approvedShots, split)
+  return new Set(pairs.filter((p) => p.fragment !== null).map((p) => p.shot.index))
 }
 
 function pushAnswerResult(out: QuestionResult[], q: ModelQuestion, weight: number, id: string, answer: SystemOneAnswer | undefined): void {
@@ -416,6 +447,38 @@ function pushAnswerResult(out: QuestionResult[], q: ModelQuestion, weight: numbe
  * looked up in EVERY `'shot'` response that reached it, producing one row
  * per shot; a question pinned to one shot (the generated fan-out) is looked
  * up only in that shot's own response.
+ *
+ * A SHOT-SCOPED QUESTION HAS THREE OUTCOMES, KEPT DISTINCT — the same
+ * discipline `judgeRubric.ts`'s `pacingTimeline` documents, applied here
+ * because this is the second time the distinction has been got wrong (see
+ * the measured A/B bug this fix addresses: a preset that wrote 3 of 7
+ * planned shots scored HIGHER than one that wrote all 7, because its four
+ * missing shots' questions silently fell out of the denominator instead of
+ * costing anything):
+ *
+ *  - EXEMPT — `appliesWhen` returns false, or `ctx.approvedShots` is empty
+ *    for a shot-scoped question. There is no plan (or the plan structurally
+ *    excludes this question), so there is no claim about what should exist.
+ *    `applied: false`, OUT of the denominator, never scored. (`notApplied`.)
+ *  - UNEVALUABLE — the plan named this shot, a fragment for it exists in the
+ *    rendered prompt, a request WAS built and sent — but no answer ever came
+ *    back, or it came back malformed. We do not know the true answer, so we
+ *    must not invent one. `applied: false`, OUT of the denominator. This is
+ *    the pre-existing "missing/malformed answer" path (`pushAnswerResult`),
+ *    UNCHANGED by this fix.
+ *  - UNDELIVERED — the plan named this shot (it is in `ctx.approvedShots`),
+ *    but the rendered prompt has NO `[Shot N]` fragment for it, so
+ *    `buildJudgeRequest` never even had text to build a request from. This
+ *    is a known defect in the artifact, not a gap in what we know about it:
+ *    the plan promised the shot and the prompt failed to write it.
+ *    `applied: true`, contribution **0**, IN the denominator. (`undeliveredShot`
+ *    — the one outcome this fix adds.)
+ *
+ * EXEMPT and UNEVALUABLE both mean "we have nothing to say about this
+ * shot"; UNDELIVERED means "we know the answer, and it's zero". Conflating
+ * UNDELIVERED with either of the other two is exactly the bug: it lets a
+ * prompt that quietly omits planned shots score as if those shots had
+ * simply never been asked about, which rewards under-delivery.
  */
 export function scoreJudge(ctx: JudgeContext, rubric: readonly JudgeQuestion[], responses: readonly ScopedAnswers[]): JudgeScore {
   const promptAnswers: SystemOneAnswers = responses.find((r) => r.scope === 'prompt')?.answers ?? {}
@@ -423,6 +486,9 @@ export function scoreJudge(ctx: JudgeContext, rubric: readonly JudgeQuestion[], 
   for (const r of responses) {
     if (r.scope === 'shot' && r.shotIndex !== undefined) shotAnswers.set(r.shotIndex, r.answers)
   }
+  // Which approved shots the prompt actually delivered a fragment for — the
+  // fact that tells UNDELIVERED apart from the other two outcomes above.
+  const delivered = deliveredShotIndices(ctx)
 
   const questions: QuestionResult[] = []
 
@@ -450,19 +516,51 @@ export function scoreJudge(ctx: JudgeContext, rubric: readonly JudgeQuestion[], 
     }
 
     // scope === 'shot'
-    if (q.shotIndex !== undefined) {
-      pushAnswerResult(questions, q, weight, q.id, shotAnswers.get(q.shotIndex)?.[q.id])
+    if (ctx.approvedShots.length === 0) {
+      // EXEMPT — no plan, no claim about what should exist. Applies
+      // uniformly to a pinned per-shot question and a generic shot-scoped
+      // template alike; see the module comment above.
+      questions.push(notApplied(q, weight, q.id))
       continue
     }
 
-    let reachedAnyShot = false
+    if (q.shotIndex !== undefined) {
+      if (!delivered.has(q.shotIndex)) {
+        // UNDELIVERED — the plan named this shot; the prompt never wrote a
+        // fragment for it, so no request was ever built to ask about it.
+        questions.push(undeliveredShot(q, weight, q.id))
+      } else {
+        // A fragment exists, so a request WAS sent. Whether an answer
+        // actually came back is `pushAnswerResult`'s call — UNEVALUABLE if
+        // not, exactly as before this fix.
+        pushAnswerResult(questions, q, weight, q.id, shotAnswers.get(q.shotIndex)?.[q.id])
+      }
+      continue
+    }
+
+    // A generic shot-scoped template (no `shotIndex` of its own) —
+    // instantiate once per approved shot.
+    let sawAnyDeliveredShot = false
+    let reachedAnyDeliveredShot = false
     for (const shot of ctx.approvedShots) {
+      const id = `${q.id}#shot${shot.index}`
+      if (!delivered.has(shot.index)) {
+        // UNDELIVERED, one row per undelivered shot — this is what makes the
+        // A/B bug's missing shots cost points instead of vanishing.
+        questions.push(undeliveredShot(q, weight, id))
+        continue
+      }
+      sawAnyDeliveredShot = true
       const answers = shotAnswers.get(shot.index)
       if (!answers) continue
-      reachedAnyShot = true
-      pushAnswerResult(questions, q, weight, `${q.id}#shot${shot.index}`, answers[q.id])
+      reachedAnyDeliveredShot = true
+      pushAnswerResult(questions, q, weight, id, answers[q.id])
     }
-    if (!reachedAnyShot) questions.push(notApplied(q, weight, q.id))
+    // UNEVALUABLE fallback, unchanged from before this fix: if every
+    // delivered shot's response was missing outright (never sent, or the
+    // transport dropped it), collapse to one not-applied row under the bare
+    // question id — exactly as when no shot-scoped requests existed at all.
+    if (sawAnyDeliveredShot && !reachedAnyDeliveredShot) questions.push(notApplied(q, weight, q.id))
   }
 
   const dimensions = {} as Record<JudgeDimension, DimensionScore>

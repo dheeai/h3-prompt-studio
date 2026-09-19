@@ -25,6 +25,7 @@ function baseCtx(overrides: Partial<JudgeContext> = {}): JudgeContext {
     ],
     clipSeconds: 5,
     hasDialogue: false,
+    hasCharacters: true,
     ...overrides,
   }
 }

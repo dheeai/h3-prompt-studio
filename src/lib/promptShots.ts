@@ -247,7 +247,30 @@ export interface PromptDisplaySections {
 
 export function splitClipLevelSections(promptText: string): PromptDisplaySections {
   const sections = splitSections(promptText)
-  const shotSection = sections.find((s) => s.name !== null && /\[Shot\s+\d+\]/.test(s.body))
+  // NOT simply the first section containing a marker. `retention_analysis`
+  // legitimately CITES shots — `ref_guide.md` asks for
+  // `<Subject 1> (appears in [Shot 1], [Shot 3]): fully_preserved` — and it
+  // is written BEFORE `detailed_description`, so "first match" handed back
+  // the retention lines and split them into nonsense fragments. Measured
+  // 2026-09-19: one clip's retention analysis yielded 20 fragments numbered
+  // [1,2,3,5,6,7,1,4,1,2,...] while its real description held a clean 7.
+  // Counting markers does not separate them either — the citations
+  // OUTNUMBER the real markers, because one subject line names many shots.
+  //
+  // What does separate them: a shot-bearing body opens each fragment with a
+  // marker and uses each number ONCE, ascending. Citations repeat numbers and
+  // jump. So prefer a unique ascending run, then the longest body — still
+  // structural, still no mode parameter, still no hardcoded field name.
+  const candidates = sections.filter((s) => s.name !== null && /\[Shot\s+\d+\]/.test(s.body))
+  const ascendingUnique = (body: string): boolean => {
+    const ns = [...body.matchAll(/\[Shot\s+(\d+)\]/g)].map((m) => Number(m[1]))
+    return ns.length > 0 && ns.every((n, i) => i === 0 || n > ns[i - 1])
+  }
+  const ranked = [...candidates].sort((a, b) => {
+    const byShape = Number(ascendingUnique(b.body)) - Number(ascendingUnique(a.body))
+    return byShape !== 0 ? byShape : b.body.length - a.body.length
+  })
+  const shotSection = ranked[0]
   return {
     shotSectionBody: shotSection ? shotSection.body : promptText,
     otherSections: sections.filter((s) => s !== shotSection && s.name !== null),

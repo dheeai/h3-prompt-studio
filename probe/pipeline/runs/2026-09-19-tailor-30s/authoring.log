@@ -1,0 +1,36 @@
+model=swift-qwen38-27b runtime=30s out=/private/tmp/claude-501/-Users-ganaraj-Projects-dhee-cofounder/fbe9fa1e-9b43-4fbc-8882-aabb9d9c476c/scratchpad/ab
+
+SHARED PLAN — beats
+  ✓ [plan] beats: 11.6s, 1360 completion tok
+  6 beats -> 4.4 + 4.4 + 6.2 + 4.4 + 4.4 + 6.2s
+SHARED PLAN — subdivide
+  ✓ [plan] beat 1: 5.5s, 685 completion tok
+  ✓ [plan] beat 2: 9.7s, 1162 completion tok
+  ✓ [plan] beat 3: 4.5s, 535 completion tok
+  ✓ [plan] beat 4: 5.0s, 530 completion tok
+  ✓ [plan] beat 5: 9.8s, 1203 completion tok
+  ✓ [plan] beat 6: 9.5s, 1214 completion tok
+  13 shots -> 2 clips: 15.0s, 15.0s
+
+CLIP 1 — 15.0s, shots 1,2,3,4,5,6,7
+  ✓ [A] clip 1 draft: 18.8s, 1620 completion tok
+  [A] 3 shot fragments for 7 planned shots
+  ✓ [B] clip 1 direction: 37.4s, 3576 completion tok
+  [B] 7 shots directed · off-vocabulary camera terms: []
+  ✓ [B] clip 1 acting: 12.7s, 1304 completion tok
+  ✓ [B] clip 1 draftDirected: 23.8s, 3023 completion tok
+  [B] 7 shot fragments for 7 planned shots
+
+CLIP 2 — 15.0s, shots 8,9,10,11,12,13
+  ✓ [A] clip 2 draft: 20.8s, 2357 completion tok
+  [A] 5 shot fragments for 6 planned shots
+  ✓ [B] clip 2 direction: 48.0s, 4965 completion tok
+  [B] 6 shots directed · off-vocabulary camera terms: []
+  ✓ [B] clip 2 acting: 13.4s, 1292 completion tok
+  ✓ [B] clip 2 draftDirected: 23.0s, 2721 completion tok
+  [B] 6 shot fragments for 6 planned shots
+
+=== spend ===
+  plan: 7 calls, 55.6s, 6689 completion tokens
+  A: 2 calls, 39.7s, 3977 completion tokens
+  B: 6 calls, 158.2s, 16881 completion tokens

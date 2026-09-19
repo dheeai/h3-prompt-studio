@@ -1,0 +1,36 @@
+{
+  "clipSeconds": 15,
+  "hasCharacters": true,
+  "approvedShots": [
+    {
+      "index": 1,
+      "summary": "Farid, from the doorway of Nusrat's shop, insists that the delivered bolt is the same one, ending with his insistence.",
+      "seconds": 4.4
+    },
+    {
+      "index": 2,
+      "summary": "Nusrat's small tailoring shop in a Surat cloth market is established as the place where cloth is judged and work is priced, ending with the shop established.",
+      "seconds": 2.2
+    },
+    {
+      "index": 3,
+      "summary": "Farid delivers a bolt of raw silk Nusrat has already paid for in Nusrat's shop, Nusrat unrolls it until the weave is visible and recognizes it is not the cloth she chose, and Farid from the doorway insists the delivered bolt is the same one, ending with his insistence.",
+      "seconds": 2.2
+    },
+    {
+      "index": 4,
+      "summary": "In Nusrat's shop, Nusrat names a price far below her normal rate for the job, ending with the price named.",
+      "seconds": 2
+    },
+    {
+      "index": 5,
+      "summary": "In Nusrat's shop, Farid accepts the underpriced job, ending with his acceptance.",
+      "seconds": 2
+    },
+    {
+      "index": 6,
+      "summary": "In Nusrat's shop, Nusrat and Farid's shared understanding is made plain by the accepted underprice, ending with the understanding plain.",
+      "seconds": 2.2
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "clipSeconds": 15,
+  "hasCharacters": true,
+  "approvedShots": [
+    {
+      "index": 1,
+      "summary": "Nusrat's small tailoring shop in a Surat cloth market is established as the place where cloth is judged.",
+      "seconds": 2.2
+    },
+    {
+      "index": 2,
+      "summary": "Nusrat's small tailoring shop in a Surat cloth market is established as the place where work is priced.",
+      "seconds": 2.2
+    },
+    {
+      "index": 3,
+      "summary": "Nusrat's small tailoring shop in a Surat cloth market is established as the place where cloth is judged and work is priced.",
+      "seconds": 2.2
+    },
+    {
+      "index": 4,
+      "summary": "Farid delivers a bolt of raw silk that Nusrat has already paid for in Nusrat's shop, ending with the bolt delivered.",
+      "seconds": 2.2
+    },
+    {
+      "index": 5,
+      "summary": "Nusrat begins unrolling the delivered bolt of raw silk in her shop, ending with the silk partially unrolled.",
+      "seconds": 2
+    },
+    {
+      "index": 6,
+      "summary": "Nusrat continues unrolling the silk until the weave is visible, ending with the bolt fully unrolled.",
+      "seconds": 2
+    },
+    {
+      "index": 7,
+      "summary": "Nusrat recognizes that the visible weave is not the cloth she chose, ending with her recognition.",
+      "seconds": 2.2
+    }
+  ]
+}

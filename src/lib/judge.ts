@@ -76,11 +76,11 @@ import { pairShotsWithPrompt, splitClipLevelSections, splitPromptShots } from '.
  * every Exact question before it can leave the process.
  */
 
-// ── the six dimensions ─────────────────────────────────────────────────────
+// ── the seven dimensions ────────────────────────────────────────────────────
 
-export type JudgeDimension = 'direction' | 'acting' | 'camera' | 'shots' | 'dialogue' | 'pacing'
+export type JudgeDimension = 'direction' | 'acting' | 'camera' | 'shots' | 'dialogue' | 'pacing' | 'sound'
 
-export const JUDGE_DIMENSIONS: readonly JudgeDimension[] = ['direction', 'acting', 'camera', 'shots', 'dialogue', 'pacing']
+export const JUDGE_DIMENSIONS: readonly JudgeDimension[] = ['direction', 'acting', 'camera', 'shots', 'dialogue', 'pacing', 'sound']
 
 /**
  * What slice of the clip a question needs as `state` — see the module
@@ -121,6 +121,14 @@ export interface JudgeContext {
    * dialogue Exact check off entirely via `appliesWhen`, rather than letting
    * them score a manufactured zero against a clip that was never meant to speak. */
   hasDialogue: boolean
+  /** False for a clip with no people in it (an architectural flythrough, a
+   * landscape, a product shot with no hands). Gates every acting question,
+   * plus `direction.objective-stated`/`direction.obstacle-concrete`, off
+   * entirely via `appliesWhen` — the same "leave the denominator, never score
+   * a manufactured zero" treatment `hasDialogue` gets. Measured: an
+   * architectural FPV drone brief scored `acting` 0.237 with `hand-detail`
+   * 0.03 and `attention-stated` 0.05 — there were no hands or eyes to find. */
+  hasCharacters: boolean
 }
 
 // ── question definitions ────────────────────────────────────────────────────

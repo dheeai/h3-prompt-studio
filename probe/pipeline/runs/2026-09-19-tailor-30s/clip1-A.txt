@@ -1,0 +1,16 @@
+subject_definitions: None
+
+summary: [reference generation] The target video shows Nusrat in her small tailoring shop in a Surat cloth market as Farid delivers a bolt of raw silk that Nusrat has already paid for. Nusrat begins unrolling the bolt, continues until the weave is visible, and recognizes that the visible weave is not the cloth she chose.
+
+retention_analysis: None
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+The scene is observational and immediate, with the camera behaving like a handheld documentary observer inside a narrow, working shop.
+[Shot 1] A medium-wide handheld frame opens on Nusrat's small tailoring shop in a Surat cloth market: hanging cloth lengths, a cutting table, folded fabric, and a doorway where daylight enters. Nusrat, a mature woman in practical work clothes, stands near the table with her hands ready to receive the cloth. Farid, a man in simple market-day clothing, enters from the doorway carrying a bolt of raw silk. The camera pushes in with small amplitude at slow speed as Farid sets the bolt down on the table and steps back. Nusrat places both hands on the bolt and turns it slightly, checking its weight and edge. The sound of fabric sliding across wood fills the moment, with distant market murmur outside.
+[Shot 2] At 00:03.000, the shot cuts to a tighter handheld medium shot of Nusrat's hands and the bolt on the table. She begins unrolling the raw silk, pulling the edge forward so the cloth opens in a smooth curve. The camera trucks right with small amplitude at slow speed, following the unrolling cloth. The silk catches the daylight, showing its sheen and the tension of the weave. Nusrat's fingers move steadily along the edge, testing the fabric as it opens.
+[Shot 3] At 00:06.000, the shot cuts to a close-up of the silk as Nusrat continues unrolling it until the weave is fully visible. The camera pushes in with small amplitude at slow speed toward the fabric surface. Nusrat's hand pauses, then moves slowly across the cloth, feeling the texture. Her face enters the top of the frame, her expression tightening as she studies the weave. The recognition lands quietly: the visible weave is not the cloth she chose. She lifts her eyes from the silk, and the shot holds on her face as the market sound outside remains faint and continuous.
+
+overall_soundscape: Cloth slides and rustles across the wooden table, with the soft tension of silk unrolling and the faint murmur of a cloth market outside the shop.
+
+non_diegetic_music: N/A

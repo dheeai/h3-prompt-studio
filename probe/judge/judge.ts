@@ -33,7 +33,9 @@
  * nothing to pair against and is skipped. That is `appliesWhen`/`shotIndex`
  * working as designed, not a failure — but it silently drops a third of the
  * rubric, so pass a plan whenever one exists. The plan file is
- * `{ clipSeconds: number, approvedShots: [{ index, summary, seconds }] }`.
+ * `{ clipSeconds: number, approvedShots: [{ index, summary, seconds }], hasCharacters?: boolean }`.
+ * `hasCharacters` defaults to `true` when omitted — most clips have people in
+ * them, so a caller opts OUT deliberately.
  *
  * `--repeat N` re-sends the identical request N times. Jev is NOT
  * deterministic: measured here across three runs of one prompt, a single
@@ -90,7 +92,8 @@ function usage(): never {
       'usage: npx tsx probe/judge/judge.ts <prompt-file> [options]',
       '',
       '  --mode <H3Mode>      default Ref2VA',
-      '  --plan <file.json>   { clipSeconds, approvedShots: [{index, summary, seconds}] }',
+      '  --plan <file.json>   { clipSeconds, approvedShots: [{index, summary, seconds}], hasCharacters? }',
+      '                       hasCharacters defaults to true when the plan omits it',
       '                       without it, every shot-scoped question is skipped',
       '  --via <transport>    typesafe | openrouter   (default: whichever key is set)',
       '  --repeat <N>         re-send the same request N times to measure spread',
@@ -111,6 +114,10 @@ function arg(name: string): string | undefined {
 interface Plan {
   clipSeconds?: number
   approvedShots?: JudgeShot[]
+  /** Defaults to `true` when the plan omits it — most clips have people in
+   * them, so a caller opts OUT deliberately (a landscape flythrough, a
+   * product shot with no hands) rather than opting in. */
+  hasCharacters?: boolean
 }
 
 async function main() {
@@ -154,6 +161,7 @@ async function main() {
     approvedShots: plan.approvedShots ?? [],
     clipSeconds: plan.clipSeconds ?? 0,
     hasDialogue: /<d>/.test(promptText),
+    hasCharacters: plan.hasCharacters ?? true,
   }
 
   const rubric = buildFullRubric(ctx)

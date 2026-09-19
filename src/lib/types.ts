@@ -103,6 +103,11 @@ export type StageId =
    * document instead of deciding the shots and the performance itself. See
    * `lib/pipeline.ts`'s module comment. */
   | 'draftDirected'
+  /** Preset C's writer — one call, like `draft`, but the GEPA-optimised
+   * instruction (`probe/gepa/runs/2026-09-19T13-37-05-426Z/preset-c.txt`)
+   * in place of the hand-written one. See `lib/pipeline.ts`'s module
+   * comment. */
+  | 'draftOptimised'
 
 export interface Version {
   id: string

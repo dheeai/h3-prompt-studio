@@ -1,0 +1,28 @@
+subject_definitions: subject_definitions:
+<Subject 1> is Rahul, a serious young man with short dark hair, wearing a plain dark shirt, holding a black smartphone in his right hand.
+<Subject 2> is Sameer, a calm young man with short dark hair, wearing a muted grey shirt, seated across from Rahul.
+<Subject 3> is the living-room interior, with a softly blurred sofa, a low wooden table, a warm practical lamp, and neutral walls.
+<Subject 4> is the black smartphone in Rahul's right hand, its screen facing away from the camera and its edge catching warm indoor light.
+
+summary: summary:
+[reference generation] The target video shows <Subject 1> holding <Subject 4> steady in <Subject 3>, then turning his gaze to <Subject 2> to ask about hidden costs beyond money. <Subject 2> remains silent, listening, while the pressure of the question stays on the visible phone and the unbroken eye contact.
+
+retention_analysis: retention_analysis:
+<Subject 1> (appears in [Shot 1], [Shot 2], [Shot 3]): fully_preserved - Rahul's serious expression, dark shirt, right-hand phone grip, and questioning intent are retained.
+<Subject 2> (appears in [Shot 2], [Shot 3]): fully_preserved - Sameer's silent listening posture, grey shirt, and fixed gaze toward Rahul are retained.
+<Subject 3> (appears in [Shot 1], [Shot 2], [Shot 3]): fully_preserved - the blurred living-room sofa, low table, warm practical lamp, and neutral walls are retained.
+<Subject 4> (appears in [Shot 1], [Shot 2], [Shot 3]): fully_preserved - the black smartphone remains steady in Rahul's right hand, with its screen turned away from the camera.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+detailed_description:
+The target video is a restrained observational dialogue scene, built from close coverage and a slow pressure build.
+[Shot 1] A medium close-up frames <Subject 1> from the chest up, slightly right of center, with <Subject 3> softly blurred behind him. <Subject 4> is held steady in his right hand at chest level, its black edge catching the warm practical lamp light. The camera begins as a Static Shot, then Push In with small amplitude at slow speed as Rahul's eyes drop from the phone to <Subject 2> off-screen right. His jaw tightens, his thumb stops moving, and he says in a low, measured Hindi voice: <d>[Hindi] यानी असली सवाल सिर्फ़ ये नहीं कि पैसे मिलेंगे या नहीं…</d>
+[Shot 2] At 00:03.290, the shot cuts to a medium shot of <Subject 2> from the chest up, slightly left of center, facing right toward <Subject 1>. The camera holds a Static Shot, then Tilt Down with small amplitude at slow speed as Sameer's eyes remain fixed on Rahul, his shoulders lowering by a few millimeters. His lips stay closed, his hand rests on the low wooden table, and the edge of <Subject 4> enters the lower right of frame, reminding the audience that the phone has not been put down.
+[Shot 3] At 00:06.800, the shot cuts to a tighter close-up of <Subject 1>'s face and the top of <Subject 4>, with <Subject 3> reduced to a soft warm blur. The camera Push In with small amplitude at slow speed as Rahul's gaze locks back onto <Subject 2>, his brow drawing down and his mouth closing after the line. The phone remains perfectly still in his right hand, its screen turned away, and the final frame holds on his unblinking stare, leaving the question hanging in the room.
+
+overall_soundscape: overall_soundscape:
+A low indoor room tone from the living-room walls continues throughout. The smartphone's plastic casing gives one soft click when Rahul's thumb stops moving, and Sameer's shirt fabric shifts once as his shoulders lower. A faint lamp hum comes from the practical lamp in the background, and the low wooden table transmits a small tap when Sameer's hand settles.
+
+non_diegetic_music: non_diegetic_music:
+N/A

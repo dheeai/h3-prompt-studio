@@ -1,0 +1,23 @@
+subject_definitions: subject_definitions:
+<Subject 1> is Sameer, a South Asian man in his early thirties with short dark hair, a trimmed beard, a plain charcoal T-shirt, and a direct, persuasive speaking manner.
+<Subject 2> is Rahul, a South Asian man in his late twenties with short black hair, a light stubble, a navy polo shirt, and an attentive listening posture.
+<Subject 3> is the living-room environment, a small domestic interior with a muted grey sofa, a low wooden coffee table, a closed window with daylight falling across the seat, and a neutral wall behind the speakers.
+
+summary: summary:
+[reference generation] The target video presents <Subject 1> and <Subject 2> in <Subject 3>, where <Subject 1> lists three trust criteria with his fingers while <Subject 2> listens, interjects with the review point, and <Subject 1> confirms it, making transparency the visible core of the exchange.
+
+retention_analysis: retention_analysis:
+<Subject 1> (appears in [Shot 1], [Shot 3]): fully_preserved - Sameer's appearance, charcoal T-shirt, direct posture, and finger-counting action are retained.
+<Subject 2> (appears in [Shot 2]): fully_preserved - Rahul's appearance, navy polo shirt, attentive posture, and interjection are retained.
+<Subject 3> (appears in [Shot 1], [Shot 2], [Shot 3]): fully_preserved - the living-room sofa, coffee table, window light, and neutral wall are retained.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+detailed_description:
+[Shot 1] A medium shot frames <Subject 1> from the chest up, slightly right of center, seated on the edge of <Subject 3>'s muted grey sofa with his right forearm lifted and three fingers extended toward <Subject 2>. The camera holds a Static Shot at eye level, with a small handheld drift that follows the raised hand as pressure builds. <Subject 1> (S2), with a steady mid-range voice and deliberate pace, says: <d>[Hindi] तीन चीज़ें देखो Payment का तरीका, Withdrawal की शर्तें और Privacy Policy।</d> His eyes stay fixed on Rahul, his jaw tightens after each item, and his fingers remain open until the last word lands. The daylight from the window catches the edge of his raised hand while the sofa fabric shifts as he leans forward.
+[Shot 2] At 00:04.320, the shot cuts to a medium close-up of <Subject 2> from the chest up, positioned on the left side of the frame, facing right toward <Subject 1>. The camera holds a Static Shot at eye level, with a small handheld drift that follows Rahul's nod. <Subject 2> (S1), with a quicker, brighter male voice, says: <d>[Hindi] और Reviews?</d> His eyebrows lift, his eyes widen, and his free hand moves once near his chest, palm open, as if adding the missing point. The wooden coffee table edge enters the lower foreground, and the daylight on his shoulder stays consistent with <Subject 3>.
+[Shot 3] At 00:08.640, the shot cuts back to a medium shot of <Subject 1> from the chest up, again slightly right of center, his hand lowered and his body settling back against the sofa. The camera holds a Static Shot at eye level, with a small handheld drift that follows his conclusive nod. <Subject 1> (S2), in the same steady mid-range voice, says: <d>[Hindi] वो भी! क्योंकि सिर्फ़ "पैसे कमाओ" देखकर भरोसा करना सही नहीं।</d> His nod is short and final, his eyes remain on Rahul, and his lowered hand rests on his knee. The window light stays fixed on the sofa, and the neutral wall behind him keeps the frame contained.
+
+overall_soundscape: overall_soundscape: The sofa fabric creaks softly when <Subject 1> leans forward and settles back. A small wooden coffee table edge shifts once when <Subject 2> moves his hand near his chest. Daylight remains steady across the room, with only the faint rustle of clothing and the low domestic room tone of the living space.
+
+non_diegetic_music: non_diegetic_music: N/A

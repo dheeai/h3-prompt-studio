@@ -106,6 +106,13 @@ test('selectionForStage: direction gets only h3-direction', () => {
   assert.deepStrictEqual(namesFor('direction'), ['h3-direction', 'my-own-notes'])
 })
 
+test('selectionForStage: draftOptimised (preset C) gets only h3-prompting, and NOTHING else — not draft\'s five', () => {
+  const names = namesFor('draftOptimised')
+  assert.deepStrictEqual(names, ['h3-prompting', 'my-own-notes'])
+  assert.ok(!names.includes('h3-direction'), 'preset C was optimised against h3-prompting alone — h3-direction is an untested payload')
+  assert.ok(!names.includes('h3-acting'), 'preset C was optimised against h3-prompting alone — h3-acting is an untested payload')
+})
+
 test('selectionForStage: acting gets only h3-acting', () => {
   assert.deepStrictEqual(namesFor('acting'), ['h3-acting', 'my-own-notes'])
 })

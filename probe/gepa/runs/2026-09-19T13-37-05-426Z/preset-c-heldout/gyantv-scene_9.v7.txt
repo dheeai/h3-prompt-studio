@@ -1,0 +1,22 @@
+subject_definitions: subject_definitions:
+<Subject 1> is Sameer, the man in the living room shown in <Picture 1>, with a short dark beard, a dark collared shirt, and a forward-leaning conversational posture.
+<Subject 2> is Rahul, the man seated beside Sameer in <Picture 1>, with short dark hair, a light shirt, and a steady hand holding a smartphone.
+<Subject 3> is the living-room environment in <Picture 1>, with warm practical indoor lighting, a softly blurred domestic background, muted amber-and-slate tones, and a neutral domestic set dressing.
+<Picture 1> is the first frame of [Shot 1], establishing the two men in the living room, the smartphone in Rahul's hand, and the observational framing of the conversation.
+
+summary: summary:
+[keyframe completion + reference generation] The target video is a single observational living-room conversation in which <Subject 1> leans forward from the position established by <Picture 1> and lowers his voice to stress the data-privacy cost, while <Subject 2> listens intently and keeps the smartphone steady. <Subject 3> supplies the warm, muted domestic environment, and <Picture 1> anchors the opening composition, subject placement, and frame geometry.
+
+retention_analysis: retention_analysis:
+<Subject 1> (appears in [Shot 1]): fully_preserved - Sameer's identity, short dark beard, dark collared shirt, and forward-leaning posture are retained.
+<Subject 2> (appears in [Shot 1]): fully_preserved - Rahul's identity, short dark hair, light shirt, and steady smartphone-holding posture are retained.
+<Subject 3> (appears in [Shot 1]): fully_preserved - the warm practical living-room lighting, muted amber-and-slate palette, and softly blurred domestic background are retained.
+<Picture 1> ([Shot 1] first frame): fully_preserved - the opening framing, subject placement, and living-room composition are retained.
+
+detailed_description: detailed_description:
+The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+[Shot 1] The shot begins from <Picture 1>, a medium observational frame of <Subject 3>, the warm living room with its softly blurred domestic background and muted amber-and-slate grade. <Subject 1>, Sameer, is slightly left of center, facing right, while <Subject 2>, Rahul, is right of center, holding a smartphone steady in both hands. The camera holds a static shot for the first beat, then, as Sameer's shoulders drop forward and his chin lowers, it pushes in with small amplitude at slow speed toward his face, following the forward lean and the pressure of the lowered voice. Sameer's eyes stay fixed on Rahul, his mouth opens wider on the first syllable, and his hand makes a small inward gesture near his chest. Rahul's gaze does not leave Sameer's face; his thumb rests on the smartphone's edge, his jaw tightens slightly, and his breathing stays shallow. Sameer (S1) says in a lowered, urgent male voice with a measured Hindi cadence: <d>[Hindi] बल्कि ये भी कि बदले में आपका Data कितना Safe है!</d> As the line lands, Sameer's eyebrows lift once, his mouth closes, and his forward weight remains fixed; Rahul's fingers press the phone a little firmer against his palm, and the frame ends on the two men locked in the same composition, with the smartphone screen visible but not readable.
+
+overall_soundscape: overall_soundscape: A low domestic room tone from the living room continues beneath the conversation. Sameer's forward lean makes his shirt fabric shift once, Rahul's fingers press the smartphone against his palm with a soft plastic contact, and a quiet breath is audible before the line.
+
+non_diegetic_music: non_diegetic_music: N/A

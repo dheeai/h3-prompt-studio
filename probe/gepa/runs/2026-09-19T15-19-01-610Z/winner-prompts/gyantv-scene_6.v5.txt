@@ -1,0 +1,28 @@
+subject_definitions: subject_definitions:
+<Subject 1> is Rahul from <Video 1>, a young man with short dark hair, a neutral indoor shirt, and a focused, questioning expression, holding a smartphone in his right hand.
+<Subject 2> is Sameer from <Video 1>, a young man with short dark hair, a calm listening expression, and a plain indoor top, seated beside Rahul.
+<Subject 3> is the smartphone from <Video 1>, a dark rectangular phone with a lit screen showing a simple app interface, held upright in Rahul's hand.
+<Subject 4> is the living-room environment from <Video 1>, a warm domestic interior with soft practical lighting, a muted amber-and-slate palette, and shallow depth of field.
+<Video 1> is the reference video providing the single-shot observational structure, framing, and timing for the target video.
+<Audio 1> is the voice-timbre reference for <Subject 1> (S1), containing Rahul's spoken Hindi line.
+
+summary: summary:
+[reference generation + audio reference] The target video shows <Subject 1> holding <Subject 3> steady in <Subject 4>, tapping the screen once while looking up at <Subject 2> with an expectant expression. <Subject 2> watches the phone and Rahul's face while listening. <Video 1> supplies the single-shot observational structure and timing, and <Audio 1> guides Rahul's vocal timbre for the fixed Hindi question.
+
+retention_analysis: retention_analysis:
+<Subject 1> (appears in [Shot 1]): fully_preserved - Rahul's appearance, seated position, hand-held phone, and questioning expression are retained.
+<Subject 2> (appears in [Shot 1]): fully_preserved - Sameer's appearance, seated position, and attentive listening posture are retained.
+<Subject 3> (appears in [Shot 1]): fully_preserved - the smartphone's dark rectangular body, lit screen, and upright hand-held position are retained.
+<Subject 4> (appears in [Shot 1]): fully_preserved - the warm domestic living-room environment, practical lighting, and muted amber-and-slate palette are retained.
+<Video 1> (single-shot framing and timing): reference - the target follows its observational medium two-shot structure and single-shot pacing without editing the source video.
+<Audio 1>: reference - Rahul's delivery follows the referenced vocal timbre without copying the full source audio track.
+
+detailed_description: detailed_description:
+The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+[Shot 1] A handheld medium two-shot frames <Subject 4>, the warm living-room interior, with <Subject 1> Rahul on the left from the chest up and <Subject 2> Sameer on the right, both seated close enough that their faces and hands occupy the central frame. Rahul's right hand holds <Subject 3>, the dark smartphone, upright in front of his chest; its lit screen faces partly toward Sameer and partly toward the camera. The camera opens with a small handheld drift, then locks into a Static Shot as Rahul's thumb moves toward the screen. At the first beat, Rahul's eyes stay on the phone, his brow lifts slightly, and his thumb taps the screen once, making the app interface flicker briefly. As the tap lands, he raises his gaze to Sameer, his mouth opening into a questioning shape, and says in a measured young male Hindi voice with a slightly raised pitch, using the vocal timbre referenced from <Audio 1>: <d>[Hindi] तो पता कैसे चलेगा कि ये App सही है?</d> Sameer's head turns a few degrees toward Rahul, his eyes shift from Rahul's face to the phone screen, then back to Rahul's eyes; his lips stay closed, his chin lowers slightly, and his hands remain still in his lap. The camera follows Rahul's upward look with a tiny handheld settle, then holds the two-shot as the line ends. Rahul's thumb rests on the phone's edge, the screen remains lit, and Sameer's gaze stays fixed on Rahul's face.
+
+overall_soundscape: overall_soundscape:
+Rahul's thumb makes one short tap against the smartphone screen, followed by the faint fabric shift of his shirt as he lifts his gaze. Sameer's chair gives one low creak when his head turns, and the room carries only the soft click of the phone's internal speaker and the quiet movement of their breathing.
+
+non_diegetic_music: non_diegetic_music:
+N/A

@@ -260,6 +260,68 @@ test('draftDirected has its own label and stage info, distinct from draft', () =
   assert.ok(STAGE_INFO.draftDirected.blurb.length > 0)
 })
 
+// ── preset C's draftOptimised template — the GEPA-optimised instruction ────
+
+test('draftOptimised is a NEW template, not a rename or edit of draft or draftDirected', () => {
+  assert.notEqual(DEFAULT_TEMPLATES.draftOptimised, DEFAULT_TEMPLATES.draft)
+  assert.notEqual(DEFAULT_TEMPLATES.draftOptimised, DEFAULT_TEMPLATES.draftDirected)
+  assert.ok(!Object.values(FROZEN_TEMPLATE_HASHES).includes(sha256(DEFAULT_TEMPLATES.draftOptimised)))
+})
+
+test('draftOptimised carries all seven placeholders draft carries — none dropped', () => {
+  const t = DEFAULT_TEMPLATES.draftOptimised
+  for (const ph of ['{{story}}', '{{mode}}', '{{film}}', '{{previous}}', '{{continuationFrame}}', '{{standing}}', '{{plates}}']) {
+    assert.ok(t.includes(ph), `draftOptimised must keep ${ph}`)
+  }
+})
+
+test('draftOptimised has no direction/acting placeholders — it is a one-call preset, like draft', () => {
+  assert.ok(!DEFAULT_TEMPLATES.draftOptimised.includes('{{direction}}'))
+  assert.ok(!DEFAULT_TEMPLATES.draftOptimised.includes('{{acting}}'))
+})
+
+test('draftOptimised keeps the same <<<PROMPT>>> output contract as draft', () => {
+  assert.match(DEFAULT_TEMPLATES.draftOptimised, /<<<PROMPT>>>/)
+  assert.match(DEFAULT_TEMPLATES.draftOptimised, /no preamble, no explanation, no\nfences/)
+})
+
+test('draftOptimised fills end to end', () => {
+  const filled = fillTemplateWithDuration(DEFAULT_TEMPLATES.draftOptimised, {
+    duration: 'DURATION — 124 frames',
+    story: 'a woman enters a shop',
+    mode: 'Ref2VA',
+    film: 'FILM-WIDE LOOK\nsome look',
+    standing: 'a plain idea',
+    previous: '',
+    plates: '',
+    continuationFrame: '',
+  })
+  assert.match(filled, /a woman enters a shop/)
+  assert.match(filled, /<<<PROMPT>>>/)
+})
+
+test('draftOptimised is schema-constrained and counts as a canonical prompt stage, same as draft', () => {
+  assert.ok(SCHEMA_STAGES.has('draftOptimised'))
+  assert.ok(PROMPT_STAGES.has('draftOptimised'))
+})
+
+test('draftOptimised is off the manual chain — an action a preset invokes, not a button to click through', () => {
+  assert.ok(OFF_CHAIN.includes('draftOptimised'))
+})
+
+test('draftOptimised has its own label and stage info, distinct from draft and draftDirected', () => {
+  assert.equal(STAGE_LABEL.draftOptimised, 'Draft (optimised)')
+  assert.notEqual(STAGE_LABEL.draftOptimised, STAGE_LABEL.draft)
+  assert.notEqual(STAGE_LABEL.draftOptimised, STAGE_LABEL.draftDirected)
+  assert.ok(STAGE_INFO.draftOptimised.blurb.length > 0)
+})
+
+test('preset C runs one call, and writes via draftOptimised', () => {
+  const c = pipelinePreset('optimised')
+  assert.deepStrictEqual(c.extraStages, [])
+  assert.equal(c.writerStage, 'draftOptimised')
+})
+
 // ── plates cite the slot the render actually resolves (2026-09-18) ──────
 
 test('an image plate is offered as <Picture N> — the slot refs_json wires it to', () => {

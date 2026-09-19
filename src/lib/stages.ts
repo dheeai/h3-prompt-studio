@@ -8,7 +8,7 @@ export const STAGE_ORDER: StageId[] = ['direct', 'draft', 'critique', 'revise']
  * schema-constrained reply when the provider supports one. Direct and Critique
  * return one undivided document; Handoff and Breakdown have their own shapes.
  */
-export const SCHEMA_STAGES = new Set<StageId>(['draft', 'revise', 'rebuild', 'draftDirected'])
+export const SCHEMA_STAGES = new Set<StageId>(['draft', 'revise', 'rebuild', 'draftDirected', 'draftOptimised'])
 
 /**
  * Stages whose output is a canonical prompt, as opposed to a direction sheet,
@@ -18,7 +18,7 @@ export const SCHEMA_STAGES = new Set<StageId>(['draft', 'revise', 'rebuild', 'dr
  * 2026-09-16) and "Generate the rest" (Task 2), so they can never quietly
  * disagree about what counts as authored.
  */
-export const PROMPT_STAGES = new Set<StageId>(['draft', 'revise', 'rebuild', 'freeform', 'draftDirected'])
+export const PROMPT_STAGES = new Set<StageId>(['draft', 'revise', 'rebuild', 'freeform', 'draftDirected', 'draftOptimised'])
 
 /** The latest canonical prompt version authored for one plan clip, or
  * undefined if it has none yet. */
@@ -27,7 +27,7 @@ export function latestPromptForClip(versions: readonly Version[], clipIndex: num
 }
 
 /** Stages that are actions rather than steps in the chain. */
-export const OFF_CHAIN: StageId[] = ['rebuild', 'freeform', 'handoff', 'breakdown', 'draftDirected']
+export const OFF_CHAIN: StageId[] = ['rebuild', 'freeform', 'handoff', 'breakdown', 'draftDirected', 'draftOptimised']
 
 /**
  * What each pass consumes and produces.
@@ -85,6 +85,12 @@ export const STAGE_INFO: Record<StageId, { produces: string; needs: 'story' | 'a
     blurb:
       'Preset B\'s writer: writes the prompt from a Direction and an Acting document already decided by two earlier calls, instead of deciding the shots and the performance itself.',
   },
+  draftOptimised: {
+    produces: 'the prompt',
+    needs: 'anything',
+    blurb:
+      'Preset C\'s writer: one call, like Draft, but running the GEPA-optimised instruction measured against the judge rubric instead of the hand-written one.',
+  },
 }
 
 export const STAGE_LABEL: Record<StageId, string> = {
@@ -97,6 +103,7 @@ export const STAGE_LABEL: Record<StageId, string> = {
   handoff: 'Hand-off',
   breakdown: 'Break down',
   draftDirected: 'Draft (directed)',
+  draftOptimised: 'Draft (optimised)',
 }
 
 /**
@@ -463,6 +470,104 @@ DIRECTION — already decided
 
 ACTING — already decided
 {{acting}}
+
+PREVIOUS CLIP PROMPT (continuity reference only — do not recreate its action)
+{{previous}}
+
+{{continuationFrame}}
+A DETERMINISTIC READ OF THE SOURCE, computed before you looked at it — treat
+it as context, not as something to reproduce:
+{{standing}}
+
+{{plates}}
+SOURCE
+{{story}}
+
+Now write your reply. Output exactly one block, with no heading of your own
+before or after it:
+
+<<<PROMPT>>>
+the complete prompt — and nothing else in it: no preamble, no explanation, no
+fences
+
+Write the prompt and stop.`,
+
+  /**
+   * Preset C's writer. GEPA-optimised from `draft`'s own template (the seed),
+   * measured against `judge.ts`'s Jev rubric on task model
+   * `swift-uncensored-27b`: 7 held-out cases, preset A 0.668, preset B 0.672
+   * (three calls), this ONE-call instruction 0.760 — beating both on 7 of 7.
+   * Copied verbatim from
+   * `probe/gepa/runs/2026-09-19T13-37-05-426Z/preset-c.txt` (4,502 chars). DO
+   * NOT reflow, reword or "tidy" this text — it is a measured artifact and
+   * any edit at all invalidates the 0.760. It carries the same placeholder
+   * set as `draft`: {{story}} {{mode}} {{film}} {{previous}}
+   * {{continuationFrame}} {{standing}} {{plates}}.
+   */
+  draftOptimised: `Direct this, then write the {{mode}} prompt. One pass, both jobs — but in
+that order, and the order is not optional.
+
+DECIDE FIRST, IN YOUR HEAD. Before a single line of prompt prose, work the
+loaded directing document's gates through: name the scene formula in a
+sentence each — desire, obstacle, geometry, gaze, rhythm. The obstacle must
+be a physical, on-screen thing that resists in this frame — a locked door, a
+person who will not look up, a phone that keeps showing the same screen, a
+hand that pulls back. "Doubt", "tension", "the past", "hesitation" are not
+obstacles; if that is all you have, find the object or body that makes the
+feeling visible and use that instead. Give every shot a job. Lay out the beat
+grid with a duration and a change per beat, and each beat must raise or
+invert the pressure of the one before it: something the audience can see gets
+worse, closer, louder, later, or reverses. If beat three could swap places
+with beat one and nothing is lost, the scene has no escalation — fix the
+grid, not the prose. If the formula cannot be named, say so in one line and
+direct the requested action anyway.
+
+Do NOT output that working. It is how you arrive at the prompt, not something
+to hand back.
+
+THEN WRITE. Follow the format document literally — field names, order and
+formatting exactly as specified there, not a paraphrase. Every section the
+format requires must be present and non-empty; if the format is JSON, emit
+valid parseable JSON and nothing outside it. If the format is a
+full-reference mode, every subject, picture, video and audio reference must
+be declared with its label and used in the prose — an undeclared reference
+means the mode is doing nothing. Apply every craft rule the format states
+about shot construction, camera, performance, sound and suppressed
+modalities, including any failure mode it records from real measurement. Five
+things the written prompt must carry, because they are the first to go
+missing:
+
+- CAMERA, PER SHOT, IN THE FORMAT'S OWN WORDS. Every shot names its size,
+  lens, height/angle, and move (or an explicit lock) using the format
+  document's controlled vocabulary verbatim — not a descriptive gloss of a
+  move. Every move, including the first shot's, is motivated by something in
+  the frame: it follows a named body, a look, an object, or a pressure
+  change, and the prompt says which one and at what moment. A move with no
+  cause is a move the render will smear.
+- SHOTS MATCH THE PLAN. The fragments you write are the shots you decided on
+  — same count, same order, same jobs. No shot appears in the prose that was
+  not in the grid, and none in the grid goes unwritten.
+- SOUND AS SOURCES, NOT MOOD. Every audio element names the physical object
+  or body that makes it, the action that makes it happen, and the moment in
+  the beat it lands. A source is a thing you could point at on screen or just
+  off it. "Tense atmosphere", "quiet room tone", "ambient hum", "warm air", a
+  lamp that "hums faintly" with nobody touching it — these are mood dressed
+  as sources; cut them. Prefer foley caused by a visible action, and cover
+  every beat: no stretch of the clip should be left with nothing named.
+- PERFORMANCE IN OBSERVABLE PARTS. Say what the body does — eyes, mouth,
+  hands, breath, weight, the beat it changes on. Not "looks worried."
+- NEVER NAME AN ABSENT MODALITY. Do not write that there is no dialogue, no
+  music, no sound — naming it summons it. Omit the line entirely or use the
+  format's sentinel. Likewise keep rendered on-screen text minimal and
+  decomposed across beats; never repeat a whole string.
+
+WHAT YOU MAY NOT CHANGE. The people, the place, the action and its outcome,
+the named objects, and any dialogue are fixed exactly as the brief asked for
+them. You are deciding HOW that is shot and performed, never WHAT happens. "A
+woman enters a shop" does not become a woman on a lane because a lane is more
+interesting — that is a different film.
+
+{{film}}
 
 PREVIOUS CLIP PROMPT (continuity reference only — do not recreate its action)
 {{previous}}

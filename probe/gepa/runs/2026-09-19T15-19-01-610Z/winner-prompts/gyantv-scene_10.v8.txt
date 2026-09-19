@@ -1,0 +1,21 @@
+subject_definitions: <Subject 1> is Rahul, the man on the left of the two-shot, wearing a plain dark shirt, holding a black smartphone in his right hand, with a direct, questioning expression.
+  <Subject 2> is Sameer, the man on the right of the two-shot, wearing a muted olive shirt, with a skeptical, raised-eyebrow expression and a slightly tilted head.
+  <Subject 3> is the black smartphone held by <Subject 1>, its screen dark and facing inward toward his palm.
+  <Subject 4> is the softly blurred living-room interior behind the two men, with warm practical lamp light, a muted green plant edge, and neutral grey wall tone.
+
+summary: [reference generation] The target video is a two-shot fourth-wall break in which <Subject 1> and <Subject 2> turn from each other to face the camera, with <Subject 1> asking the final question about the Cool Survey App while holding <Subject 3>, and <Subject 2> following with a skeptical question while maintaining eye contact with the viewer.
+
+retention_analysis: <Subject 1> (appears in [Shot 1], [Shot 2]): fully_preserved - Rahul remains on the left, holding <Subject 3>, and turns from <Subject 2> to face the camera.
+  <Subject 2> (appears in [Shot 1], [Shot 2]): fully_preserved - Sameer remains on the right, turns from <Subject 1> to face the camera, and keeps a skeptical direct gaze.
+  <Subject 3> (appears in [Shot 1], [Shot 2]): fully_preserved - the black smartphone remains in <Subject 1>'s right hand, steady and inward-facing.
+  <Subject 4> (appears in [Shot 1], [Shot 2]): fully_preserved - the blurred living-room background remains behind the two men with warm practical light and neutral tones.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+The target video is an observational indoor two-shot with warm practical light and a neutral, true-to-life image.
+[Shot 1] A medium two-shot frames <Subject 1> on the left and <Subject 2> on the right inside <Subject 4>, with the camera at eye level and a slight handheld drift. <Subject 1> begins facing slightly right toward <Subject 2>, his right hand holding <Subject 3> steady at chest height, his left hand relaxed at his side. <Subject 2> begins facing slightly left, his head level, his eyes on <Subject 1>. As <Subject 1>'s gaze shifts forward, the camera makes a small Push In with small amplitude at slow speed, following the change in his eye line. <Subject 1> (S1) turns his head to face the lens, his eyebrows lifting slightly, his mouth opening as he says: <d>[Hindi] तो Cool Survey App की Reality क्या है?</d> His lips close after the line, and his hand keeps <Subject 3> steady.
+[Shot 2] At 00:04.360, the shot cuts to a tighter medium two-shot of <Subject 1> and <Subject 2>, still side by side in <Subject 4>, with the camera at eye level and a small handheld drift. <Subject 1> remains on the left, his face forward, his eyes fixed on the lens, his mouth closed, his right hand holding <Subject 3> without moving it. <Subject 2> remains on the right, his face forward, his head tilted slightly, his eyebrows raised, his eyes fixed on the lens. The camera holds a Static Shot as <Subject 2> (S2) opens his mouth and says: <d>[Hindi] Real… Fake… या मामला कुछ और?</d> His lips close, his raised eyebrows stay up, and both men hold their direct gaze toward the viewer.
+
+overall_soundscape: A low indoor room tone from the living-room space continues beneath the two men. The soft fabric of <Subject 1>'s dark shirt shifts once as he turns his head, and the black smartphone in his hand makes a small, dry contact sound against his palm when he steadies it.
+
+non_diegetic_music: N/A

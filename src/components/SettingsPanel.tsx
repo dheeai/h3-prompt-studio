@@ -13,7 +13,7 @@ const MODES: { id: H3Mode; note: string }[] = [
   { id: 'MoGr', note: 'motion graphics' },
 ]
 
-const EDITABLE: StageId[] = ['direct', 'draft', 'draftDirected', 'critique', 'revise', 'rebuild', 'freeform']
+const EDITABLE: StageId[] = ['direct', 'draft', 'draftDirected', 'draftOptimised', 'critique', 'revise', 'rebuild', 'freeform']
 
 export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const { settings, providers, patchSettings, reset, versions } = useApp()

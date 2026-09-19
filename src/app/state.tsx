@@ -1532,18 +1532,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
         working = ''
       } else if (override?.current !== undefined) {
         working = override.current
-      } else if (stage === 'draft' || stage === 'draftDirected') {
+      } else if (stage === 'draft' || stage === 'draftDirected' || stage === 'draftOptimised') {
         // Prefer a direction sheet — the one you are reading, else the latest.
         //
-        // `draftDirected` belongs HERE, with `draft`, not in the `else` below.
-        // Both CREATE the prompt; the `else` branch is for the passes that
-        // EDIT one that already exists (Critique, Revise, Rebuild, a freeform
-        // note). Omitting it sent preset B down the editing path, where
-        // `working` came back empty because no prompt existed yet, and the
-        // guard below then refused with "Draft (directed) works on a prompt,
-        // and there isn't one yet" — after both the Direction and Acting calls
-        // had already been spent. That is the founder's "it's not finishing
-        // writing the prompt and its not telling me what happened either."
+        // `draftDirected` and `draftOptimised` belong HERE, with `draft`, not
+        // in the `else` below. All three CREATE the prompt; the `else` branch
+        // is for the passes that EDIT one that already exists (Critique,
+        // Revise, Rebuild, a freeform note). Omitting `draftDirected` sent
+        // preset B down the editing path, where `working` came back empty
+        // because no prompt existed yet, and the guard below then refused
+        // with "Draft (directed) works on a prompt, and there isn't one yet"
+        // — after both the Direction and Acting calls had already been
+        // spent. That is the founder's "it's not finishing writing the
+        // prompt and its not telling me what happened either." `draftOptimised`
+        // (preset C) is the same case as `draft` — one call, decides
+        // everything itself — so it gets the same treatment.
         working = (cur?.stage === 'direct' ? cur.text : lastOf('direct')?.text) ?? snap.story
       } else {
         // Critique, Revise, Rebuild and a freeform note all operate on the prompt.
@@ -1562,7 +1565,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       if (stage !== 'direct' && stage !== 'breakdown' && !working.trim()) {
         setError(
-          stage === 'draft' || stage === 'draftDirected'
+          stage === 'draft' || stage === 'draftDirected' || stage === 'draftOptimised'
             ? 'Nothing to draft from yet.'
             : `${STAGE_LABEL[stage]} works on a prompt, and there isn’t one yet. Paste one, or run Draft first.`,
         )
@@ -1777,7 +1780,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const schemaResult =
           result.schemaHonoured && SCHEMA_STAGES.has(stage) ? joinH3Sections(result.text, settings.mode) : null
 
-        const wantsSplit = stage === 'draft' || stage === 'revise' || stage === 'rebuild' || stage === 'freeform' || stage === 'draftDirected'
+        const wantsSplit =
+          stage === 'draft' ||
+          stage === 'revise' ||
+          stage === 'rebuild' ||
+          stage === 'freeform' ||
+          stage === 'draftDirected' ||
+          stage === 'draftOptimised'
         const strictReplacement = stage === 'revise' || stage === 'rebuild'
         const splitResult = schemaResult
           ? { ...schemaResult, changelog: [] as string[] }
@@ -1798,8 +1807,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         // The film-wide look is baked into the prompt TEXT itself, not left
         // to the model to restate — see `filmLookInject.ts`'s module comment.
         // Applied here, after the split but before the Version is built, so
-        // BOTH presets' writers (`draft` and `draftDirected`) get it exactly
-        // the same way and neither can become the confound.
+        // ALL THREE presets' writers (`draft`, `draftDirected`,
+        // `draftOptimised`) get it exactly the same way and none can become
+        // the confound.
         const styledBody = wantsSplit && bodyText
           ? injectFilmLookIntoPromptText(bodyText, settings.mode, (override?.film ?? snap.film)?.look)
           : bodyText

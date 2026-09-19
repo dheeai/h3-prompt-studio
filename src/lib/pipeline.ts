@@ -23,8 +23,17 @@ import type { StageId } from './types'
  * performance decisions down as documents, then a DIFFERENT writer stage
  * (`draftDirected`, `stages.ts`) that is given those documents rather than
  * asked to invent them in its head.
+ *
+ * Preset C ("Optimised") is preset A's shape — one call, no extra stages —
+ * with a DIFFERENT instruction: GEPA optimised it from preset A's own
+ * `draft` template (`probe/gepa/runs/2026-09-19T13-37-05-426Z/preset-c.txt`),
+ * against `judge.ts`'s Jev rubric, task model `swift-uncensored-27b`. On 7
+ * held-out cases the optimiser never saw: A 0.668, B 0.672 (three calls), C
+ * 0.760 (one call) — C beat both on 7 of 7. Its writer stage is
+ * `draftOptimised`, a NEW template (`stages.ts`) carrying that instruction
+ * verbatim; it is not an edit of `draft`.
  */
-export type PipelinePresetId = 'direct-write' | 'directed'
+export type PipelinePresetId = 'direct-write' | 'directed' | 'optimised'
 
 /** The two per-clip calls a preset may run before its writer — always in
  * this order, always sequential (never parallel; see `state.tsx`'s
@@ -64,6 +73,15 @@ export const PIPELINE_PRESETS: readonly PipelinePreset[] = [
     cost: 'three model calls per clip — two more than Direct and write',
     extraStages: ['direction', 'acting'],
     writerStage: 'draftDirected',
+  },
+  {
+    id: 'optimised',
+    name: 'Optimised',
+    description:
+      'One call per clip, like Direct and write — but the instruction was rewritten by GEPA against measured judge scores rather than by hand.',
+    cost: 'one model call per clip — measured 0.760 vs Direct and write’s 0.668 on 7 held-out cases',
+    extraStages: [],
+    writerStage: 'draftOptimised',
   },
 ] as const
 

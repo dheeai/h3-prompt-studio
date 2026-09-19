@@ -1,0 +1,31 @@
+subject_definitions: subject_definitions:
+<Subject 1> is the elderly hunched fisherwoman in a green sari, appearing as a small, weathered woman with deep wrinkles and a cane basket on her head, tasked with receiving the fish.
+<Subject 2> is the middle-aged auction worker with a hennaed beard, appearing as a lean man in a white skullcap and light cotton clothing, tasked with gifting the crate.
+<Subject 4> is the silver pomfret fish, appearing as gleaming, oval-shaped fish with reflective scales and bright eyes, tasked as the central subject of the exchange.
+<Subject 5> is the fish crate, appearing as a weathered, rectangular wooden container stained with salt and water, tasked as the vessel for transport.
+<Subject 6> is the cane basket, appearing as a wide, shallow woven basket with visible natural fibers, tasked as the personal carrier for the woman.
+<Subject 3> is the Sassoon Dock auction shed, appearing as an industrial space with corrugated metal roofs and wet concrete floors, tasked as the setting.
+
+summary: summary:
+[reference generation] The target video depicts a tender exchange between <Subject 1> and <Subject 2> inside <Subject 3>. The scene begins with <Subject 2> pushing a wooden crate of silver <Subject 4> toward <Subject 1>, who accepts it with a grateful nod, concluding with the transfer of the fish into her cane basket.
+
+retention_analysis: retention_analysis:
+<Subject 1> (appears in [Shot 1], [Shot 2], [Shot 3]): fully_preserved - the elderly hunched fisherwoman's green sari, deep wrinkles, cane basket, and receiving role are retained.
+<Subject 2> (appears in [Shot 1], [Shot 2], [Shot 3]): fully_preserved - the middle-aged auction worker's hennaed beard, white skullcap, light cotton clothing, and gifting role are retained.
+<Subject 4> (appears in [Shot 1], [Shot 2], [Shot 3]): fully_preserved - the silver pomfret fish's gleaming oval shape, reflective scales, and bright eyes are retained.
+<Subject 5> (appears in [Shot 1], [Shot 2], [Shot 3]): fully_preserved - the weathered rectangular wooden crate's salt- and water-stained surface is retained.
+<Subject 6> (appears in [Shot 1], [Shot 2], [Shot 3]): fully_preserved - the wide shallow woven cane basket's natural fibers and carrier role are retained.
+<Subject 3> (appears in [Shot 1], [Shot 2], [Shot 3]): weak_reference - the Sassoon Dock auction shed's corrugated metal roof, wet concrete floor, and industrial dock atmosphere are retained as a soft-focus environment.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+detailed_description:
+[Shot 1] A medium shot at eye level, framed on the wide end of the zoom, opens on the damp wooden counter inside <Subject 3>, with corrugated metal roof ribs and wet concrete floor blurred behind it. <Subject 2>, the lean man with a henna-stained reddish beard and a white skullcap, leans forward from the right side of the frame, both palms flat on <Subject 5>, the salt-stained wooden crate filled with silver <Subject 4>. He pushes the crate leftward across the wet counter; the crate's wooden base scrapes against the surface, and the silver fish shift inside, their scales catching the muted daylight. <Subject 1>, the small bent 68-year-old woman in a dark green nauvari sari, stands at the left edge of the counter, her heavily lined hands reaching out to steady the crate's near corner. Her weight shifts forward, her spine curved under <Subject 6>, the cane basket balanced on her head. The camera holds a Static Shot with small handheld Shake Slightly, motivated by the crate's sliding pressure toward her hands. <Subject 2> (S2) says with a warm, resigned, and affectionate tone: <d>[Hindi] Le ja, buddhi... Tera bharosa hi mera munafa hai.</d> His mouth closes after the line, and his hands remain on the crate.
+[Shot 2] At 00:03.200, the shot cuts to a close shot at chest height, framed tighter on the wide-to-mid zoom, showing <Subject 1>'s face and hands from the front-left. Her eyes lift to <Subject 2>'s face just out of frame, then lower to the crate. Her brow relaxes, her lips press together, and she gives one slow nod. Her right hand grips the crate's edge while her left hand supports the rim of <Subject 6>, keeping the basket level on her head. The camera Pushes In with small amplitude at slow speed as her fingers close around the first silver <Subject 4>, following the pressure of her grip. The fish's scales glint as she lifts it, and water drips from its body onto the counter.
+[Shot 3] At 00:06.800, the shot cuts to a close-up at counter height, framed on the tighter 90mm-equivalent end of the zoom, centered on the transfer. <Subject 1>'s weathered hands lower the first <Subject 4> into <Subject 6>, its body sliding against the woven fibers. Her fingers release slowly, then reach back for a second fish. <Subject 2>'s hand enters from the right and steadies the crate's far corner, preventing it from tipping as the contents shift. The camera holds a Static Shot with small handheld Shake Slightly, motivated by the crate's settling weight. The wet fish make a soft slapping sound against the basket's fibers, and the crate's wooden slats creak once as the load lightens. <Subject 1>'s eyes remain on the fish, her mouth closed, her breath shallow and steady.
+
+overall_soundscape: overall_soundscape:
+The wooden crate scrapes across the damp counter, then creaks as its weight shifts. Wet fish slap against the woven cane basket, and water drips from the fish onto the counter. Distant dock activity remains low and indistinct behind the close foley.
+
+non_diegetic_music: non_diegetic_music:
+N/A

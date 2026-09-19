@@ -40,8 +40,73 @@
  * LLM_URL=... LLM_JUDGE_API_KEY=... \
  *   npx tsx probe/gepa/optimise.ts [--iterations 10] [--minibatch 4] \
  *     [--seed 42] [--trainset probe/gepa/trainset.json] [--out DIR] \
- *     [--concurrency 4] [--dry]
+ *     [--concurrency 4] [--seed-instruction FILE] [--dry]
  * ```
+ *
+ * --seed-instruction FILE starts the run from that file's text instead of
+ * preset A's `DEFAULT_TEMPLATES.draft` (still never mutated — this only
+ * changes what GEPA treats as candidate zero). `REQUIRED_PLACEHOLDERS` is
+ * derived from WHICHEVER seed is actually loaded (see `extractPlaceholders`),
+ * never hardcoded to the default template, so the placeholder guard keeps
+ * working against a seed that already dropped a placeholder preset A always
+ * had, or that introduces one preset A never did.
+ *
+ * FOUR DEFECTS FIXED 2026-09-19, evidence in
+ * `runs/2026-09-19T13-37-05-426Z/{report.md,candidates.jsonl}`:
+ *
+ *   1. ACCEPTANCE GATE ADMITTED EVERYTHING (10/10). A child bred from its
+ *      parent's 3 worst cases was scored on those SAME 3 cases — scoring low
+ *      is partly noise, so re-sampling them after a targeted rewrite improves
+ *      almost regardless of whether the rewrite generalises (c1 accepted at
+ *      minibatch Δ+0.058 with a full-train mean of 0.672, BELOW the 0.698
+ *      seed). Fixed by `pickIndependentMinibatch`: breed from the worst 3
+ *      (still the right reflection signal) but SCORE the child on a random
+ *      sample drawn only from the cases NOT bred from, compared against the
+ *      parent's own score on that same sample (a lookup — every pool member
+ *      already carries full-train results for every case).
+ *   2. PARENT SELECTION WAS CONSTANT FOR 7/10 ATTEMPTS. `computeFront` sorts
+ *      by `id.localeCompare`, so `'seed'` always sorts after every `'c<n>'`
+ *      id; a pointer incremented once per ATTEMPT against a front that grows
+ *      once per ACCEPTED CHILD desyncs the modulus onto the front's last
+ *      (fixed) slot. Fixed by `selectLeastUsedParent`: track how many times
+ *      each id has served as a parent and always pick the least-used current
+ *      front member (ties -> higher train mean) — correct regardless of the
+ *      front's size or ordering, because it is keyed by identity, not
+ *      position.
+ *   3. CACHE HIT RATE WAS 0.0% (0/188). Not a caching bug: every candidate's
+ *      instruction is unique text freshly written by the reflection model, so
+ *      no two `evaluate()` calls in an entire run share an (instruction,
+ *      story) key EXCEPT the minibatch cases re-appearing in the post-accept
+ *      full-train pass — and `evaluateFullSplit`'s `reuse` map already
+ *      short-circuits exactly those before they ever reach
+ *      `authorWithCache`/the disk cache, more cheaply (no hash, no disk
+ *      read). So the disk cache had nothing left to hit inside this run by
+ *      construction, independent of whether the cache directory started
+ *      empty. Its real payoff is CROSS-RUN: a second run with the same
+ *      `--trainset`/`--seed`/`--seed-instruction` hits on the seed's own
+ *      baseline authoring (train + held-out, a fixed minority of total
+ *      calls); every child instruction is fresh text each run and will not
+ *      hit either time. No code change makes this number climb inside a
+ *      single run — see the brief's own "do not paper over it with a bigger
+ *      cache."
+ *   4. THE WINNER'S PROMPTS WERE NEARLY LOST. `candidates.jsonl` recorded
+ *      scores/feedback but not the authored prompt text; only recomputing
+ *      `sha256(instruction + '\0' + story)` by hand recovered preset C's
+ *      held-out prompts. Fixed two ways: every `CaseEvalResult` now carries
+ *      its own `cacheKey` (so any candidate's prompt, not just the winner's,
+ *      is a `.cache/<key>.json` lookup away, no recomputation), and on
+ *      completion the winner's authored prompts (train + held-out) are
+ *      written out as plain files under `<out>/winner-prompts/<label>.txt`.
+ *
+ * ADDITION — SIZE AS A SECOND OBJECTIVE. `computeFront` already admits a
+ * candidate that is best on at least one train case; it now ALSO admits a
+ * candidate that is smaller (fewer characters) than every OTHER candidate
+ * that scores at least as well on train mean (`qualifiesBySize`) — a
+ * candidate need not win any single case to earn a front slot this way. This
+ * stops a run winning by getting longer, the most likely way to game
+ * `camera.five-elements`. Size is a FRONT-MEMBERSHIP criterion only — the
+ * winner is still picked by score exactly as before; size is never a
+ * tiebreak on the winner.
  *
  * CONCURRENCY. Evaluating one candidate over the train split is N independent
  * (author, judge) rollouts with no ordering requirement, so they run through
@@ -131,9 +196,23 @@ function dedupeInFlight<T>(inFlight: Map<string, Promise<T>>, key: string, work:
 
 const MODE: H3Mode = 'Ref2VA'
 const LOOK = { preset: FILM_LOOK_PRESETS[3].id }
-const SEED_INSTRUCTION = DEFAULT_TEMPLATES.draft
+
+/**
+ * The seed instruction — preset A's `DEFAULT_TEMPLATES.draft` by default, or
+ * whatever `--seed-instruction FILE` points at (set in `main()`, before
+ * anything else reads it — `--dry`'s self-checks included). `let`, not
+ * `const`, for exactly that reason: this is the one piece of "fixed context"
+ * that a CLI flag is allowed to override.
+ */
+let SEED_INSTRUCTION = DEFAULT_TEMPLATES.draft
 
 const SKILL_DIR = 'public/skills'
+
+/** Which skill documents the authoring call gets as its system prompt.
+ * `--skills` overrides; the default matches what every run in this file's
+ * history used, so old numbers stay reproducible. The app's own draft payload
+ * is the five in `src/lib/context.ts`'s STAGE_SKILLS. */
+let SKILLS: string[] = ['h3-prompting']
 /** Byte-identical to reauthor.ts's `corpus()` — duplicated because that file
  * is off-limits to edit and does not export it. */
 function corpus(dirs: string[]): string {
@@ -170,11 +249,20 @@ function fillTemplate(template: string, story: string): string {
 
 // ── placeholder guard ───────────────────────────────────────────────────────
 
-/** Extracted from the SEED, never hardcoded — see the brief's "this is
- * load-bearing" note. Order is first-appearance order in the template. */
-const REQUIRED_PLACEHOLDERS: string[] = Array.from(
-  new Set(Array.from(SEED_INSTRUCTION.matchAll(/\{\{(\w+)\}\}/g)).map((m) => m[1])),
-)
+/** Every `{{word}}` placeholder in `template`, deduped, in first-appearance
+ * order (a `Set`'s iteration order is insertion order, and `matchAll` yields
+ * matches left-to-right, so `Array.from(new Set(...))` preserves it for free).
+ * Pulled out as its own function so it can be re-run against WHATEVER seed is
+ * actually loaded — see the header's `--seed-instruction` note — rather than
+ * baked in once against `DEFAULT_TEMPLATES.draft`. */
+function extractPlaceholders(template: string): string[] {
+  return Array.from(new Set(Array.from(template.matchAll(/\{\{(\w+)\}\}/g)).map((m) => m[1])))
+}
+
+/** Extracted from whichever SEED is loaded, never hardcoded — see the
+ * brief's "this is load-bearing" note. Recomputed in `main()` if
+ * `--seed-instruction` swaps `SEED_INSTRUCTION` out. */
+let REQUIRED_PLACEHOLDERS: string[] = extractPlaceholders(SEED_INSTRUCTION)
 
 /** Placeholders the seed had that `candidate` dropped. Empty = passes. */
 function missingPlaceholders(candidate: string): string[] {
@@ -188,7 +276,14 @@ function missingPlaceholders(candidate: string): string[] {
 async function author(prompt: string): Promise<{ text: string; ms: number }> {
   const url = taskEndpoint()
   const t0 = Date.now()
-  const system = corpus(['h3-prompting'])
+  // `--skills` exists because a measurement error made it matter. Every run
+  // so far sent ONE skill, copied from `reauthor.ts`, while the app's
+  // `STAGE_SKILLS` gives `draft` FIVE — 33,674 tokens against 12,777. So
+  // preset C was optimised without the directing corpus it is written to
+  // assume, and inlined that craft itself. Whether handing the corpus back
+  // helps (more knowledge) or hurts (redundancy plus 3x the context) is
+  // untested, and this flag is how it gets tested rather than argued about.
+  const system = corpus(SKILLS)
   const messages = system
     ? [{ role: 'system', content: system }, { role: 'user', content: prompt }]
     : [{ role: 'user', content: prompt }]
@@ -284,12 +379,16 @@ async function doAuthor(instruction: string, story: string, key: string): Promis
  * time), so `stats.authorMs` always reflects only real, unique authoring
  * calls regardless of how many callers shared the result.
  */
-async function authorWithCache(instruction: string, story: string, stats: RunStats): Promise<{ promptText: string | null; failure?: string; cacheHit: boolean; authorMs: number }> {
+async function authorWithCache(
+  instruction: string,
+  story: string,
+  stats: RunStats,
+): Promise<{ promptText: string | null; failure?: string; cacheHit: boolean; authorMs: number; cacheKey: string }> {
   const key = cacheKeyFor(instruction, story)
   const cached = readCache(CACHE_DIR, key)
   if (cached !== null) {
     stats.cacheHits++
-    return { promptText: cached, cacheHit: true, authorMs: 0 }
+    return { promptText: cached, cacheHit: true, authorMs: 0, cacheKey: key }
   }
 
   const isCreator = !inFlightAuth.has(key)
@@ -297,10 +396,10 @@ async function authorWithCache(instruction: string, story: string, stats: RunSta
   if (isCreator) {
     stats.cacheMisses++
     stats.authorMs += result.authorMs
-    return { promptText: result.promptText, failure: result.failure, cacheHit: false, authorMs: result.authorMs }
+    return { promptText: result.promptText, failure: result.failure, cacheHit: false, authorMs: result.authorMs, cacheKey: key }
   }
   stats.cacheHits++
-  return { promptText: result.promptText, failure: result.failure, cacheHit: true, authorMs: 0 }
+  return { promptText: result.promptText, failure: result.failure, cacheHit: true, authorMs: 0, cacheKey: key }
 }
 
 // ── judge — reuses src/lib/judge.ts's pure functions directly ─────────────
@@ -374,6 +473,15 @@ export interface CaseEvalResult {
   judgeMs: number
   /** Set only when authoring/parsing failed — the case was scored 0, not skipped. */
   failure?: string
+  /**
+   * `sha256(instruction + '\0' + story)` for THIS (candidate, case) pair —
+   * the exact key its authored prompt is (or would be) stored under in
+   * `probe/gepa/.cache/<cacheKey>.json`. Defect 4: this is what makes any
+   * candidate's prompts recoverable from `candidates.jsonl` without
+   * recomputing the hash by hand — every case result carries it, not just
+   * the winner's.
+   */
+  cacheKey: string
 }
 
 /**
@@ -387,11 +495,11 @@ export interface CaseEvalResult {
  * being silently scored.
  */
 export async function evaluate(instruction: string, tcase: TrainCase, stats: RunStats): Promise<CaseEvalResult> {
-  const { promptText, failure, cacheHit, authorMs } = await authorWithCache(instruction, tcase.story, stats)
+  const { promptText, failure, cacheHit, authorMs, cacheKey } = await authorWithCache(instruction, tcase.story, stats)
 
   const zeroDims = Object.fromEntries(JUDGE_DIMENSIONS.map((d) => [d, null])) as Record<JudgeDimension, number | null>
   if (failure || promptText === null) {
-    return { label: tcase.label, score: 0, feedback: `SCORED 0 — ${failure}`, perDimension: zeroDims, cacheHit, authorMs, judgeMs: 0, failure }
+    return { label: tcase.label, score: 0, feedback: `SCORED 0 — ${failure}`, perDimension: zeroDims, cacheHit, authorMs, judgeMs: 0, failure, cacheKey }
   }
 
   const ctx: JudgeContext = {
@@ -404,7 +512,7 @@ export async function evaluate(instruction: string, tcase: TrainCase, stats: Run
   }
   const { score, feedback, perDimension, ms: judgeMs } = await judgeCall(ctx)
   stats.judgeMs += judgeMs
-  return { label: tcase.label, score, feedback, perDimension, cacheHit, authorMs, judgeMs }
+  return { label: tcase.label, score, feedback, perDimension, cacheHit, authorMs, judgeMs, cacheKey }
 }
 
 // ── deterministic seeded split ──────────────────────────────────────────────
@@ -435,6 +543,27 @@ function seededShuffle<T>(arr: readonly T[], rng: () => number): T[] {
 
 function seededSample<T>(arr: readonly T[], n: number, rng: () => number): T[] {
   return seededShuffle(arr, rng).slice(0, Math.max(0, n))
+}
+
+/**
+ * Defect 1 fix. The child is BRED from the parent's worst 3 cases
+ * (`excludeLabels` — that failure signal is exactly what makes a reflection
+ * rewrite useful) but must be SCORED on cases it was not bred from, or
+ * accepting it conflates genuine improvement with regression to the mean:
+ * those 3 cases scored low partly from noise (an unlucky authoring roll, a
+ * harsh judge pass), so re-sampling them right after a targeted rewrite
+ * improves almost regardless of whether the rewrite generalises. See the
+ * evidence: c8/c9 accepted at Δ+0.218/+0.295 on the very cases they were bred
+ * to fix, and c1 was accepted at Δ+0.058 with a full-train mean (0.672) BELOW
+ * the 0.698 seed — its minibatch was measuring the wrong thing.
+ *
+ * `size` is capped at the number of eligible cases so a `--minibatch` larger
+ * than `train.length - excludeLabels.size` degrades to "all eligible cases"
+ * instead of throwing or silently duplicating one.
+ */
+function pickIndependentMinibatch(train: readonly TrainCase[], excludeLabels: ReadonlySet<string>, size: number, rng: () => number): TrainCase[] {
+  const eligible = train.filter((c) => !excludeLabels.has(c.label))
+  return seededSample(eligible, Math.min(size, eligible.length), rng)
 }
 
 function isMultiShot(c: TrainCase): boolean {
@@ -511,7 +640,8 @@ interface RejectedChild {
   id: string
   instruction: string
   parentId: string
-  /** Minibatch-only — a rejected child is never fully evaluated. */
+  /** The INDEPENDENT minibatch only (see `pickIndependentMinibatch`) — a
+   * rejected child is never fully evaluated. */
   results: Map<string, CaseEvalResult>
   minibatchDelta: number
 }
@@ -535,8 +665,26 @@ function mean(xs: readonly number[]): number {
   return xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : 0
 }
 
-/** A candidate is on the front if it is the best on at least one train case.
- * Only pool members are considered (rejected children never enter the pool). */
+/**
+ * SIZE OBJECTIVE (the addition). `x` joins the front if it is smaller
+ * (fewer characters in `instruction`) than EVERY OTHER candidate that scores
+ * at least as well as it on train mean — read literally from the brief: for
+ * every `y` that scores `>= x`, `x` must be strictly smaller than `y`. A `y`
+ * that scores worse than `x` is irrelevant and skipped (the `y.trainMean <
+ * x.trainMean` short-circuit). This is deliberately NOT "smallest overall" —
+ * a tiny candidate that also scores badly does not get a free pass; it only
+ * has to be small relative to whoever is at least as good.
+ */
+function qualifiesBySize(x: Candidate, pool: readonly Candidate[]): boolean {
+  return pool.every((y) => y.id === x.id || y.trainMean < x.trainMean || x.instruction.length < y.instruction.length)
+}
+
+/**
+ * A candidate is on the front if EITHER it is the best on at least one train
+ * case, OR it qualifies on the size objective (see `qualifiesBySize`) — two
+ * independent ways onto the same front, unioned. Only pool members are
+ * considered (rejected children never enter the pool).
+ */
 function computeFront(pool: readonly Candidate[]): Candidate[] {
   const bestForCase = new Map<string, { id: string; score: number }>()
   for (const c of pool) {
@@ -546,7 +694,37 @@ function computeFront(pool: readonly Candidate[]): Candidate[] {
     }
   }
   const frontIds = new Set([...bestForCase.values()].map((v) => v.id))
+  for (const x of pool) {
+    if (qualifiesBySize(x, pool)) frontIds.add(x.id)
+  }
   return pool.filter((c) => frontIds.has(c.id)).sort((a, b) => a.id.localeCompare(b.id))
+}
+
+/**
+ * Defect 2 fix — true round-robin parent selection over the CURRENT front,
+ * regardless of the front's size or `id.localeCompare` ordering.
+ *
+ * The old code picked `front[frontPointer % front.length]` with a pointer
+ * incremented once per ATTEMPT, against a front whose length changes once
+ * per ACCEPTED CHILD. Those two counters desync the moment the front grows,
+ * and because `computeFront` sorts ids lexically, `'seed'` (`'s' > 'c'`)
+ * always lands last — so the modulus kept landing on `'seed'` for 7 of 10
+ * attempts in the evidence run, making parent selection a constant function
+ * in practice.
+ *
+ * The fix tracks usage COUNTS keyed by candidate id (identity, not
+ * position), so it is correct no matter how the front is ordered or how
+ * often it changes size: always hand out the parent slot to whichever
+ * current front member has been used least, breaking ties by higher train
+ * mean (prefer reflecting off the stronger of two equally-rested parents).
+ */
+function selectLeastUsedParent(front: readonly Candidate[], useCount: ReadonlyMap<string, number>): Candidate {
+  return front.reduce((best, c) => {
+    const cUses = useCount.get(c.id) ?? 0
+    const bestUses = useCount.get(best.id) ?? 0
+    if (cUses !== bestUses) return cUses < bestUses ? c : best
+    return c.trainMean > best.trainMean ? c : best
+  })
 }
 
 /**
@@ -673,8 +851,17 @@ async function selfCheck(cases: readonly TrainCase[]): Promise<{ name: string; p
     const b = stratifiedSplit(cases, mulberry32(7))
     assert.deepEqual(a.train.map((c) => c.label), b.train.map((c) => c.label))
   })
-  await check('REQUIRED_PLACEHOLDERS matches the seed template', () => {
-    assert.ok(REQUIRED_PLACEHOLDERS.length >= 7, `expected at least 7, got ${REQUIRED_PLACEHOLDERS.length}`)
+  await check('extractPlaceholders: dedups, preserves first-appearance order, independent of which template is loaded', () => {
+    // A fixed literal, not SEED_INSTRUCTION — this must hold whether the seed
+    // is preset A's default or a `--seed-instruction FILE` with a totally
+    // different placeholder set.
+    assert.deepEqual(extractPlaceholders('{{b}} text {{a}} more {{b}} end {{c}}'), ['b', 'a', 'c'])
+  })
+  await check('REQUIRED_PLACEHOLDERS matches whichever seed is currently loaded', () => {
+    // No hardcoded count here — a custom `--seed-instruction` can legitimately
+    // have a different placeholder set than preset A's default.
+    assert.ok(REQUIRED_PLACEHOLDERS.length >= 1, 'the loaded seed has no {{placeholders}} at all')
+    assert.deepEqual(REQUIRED_PLACEHOLDERS, extractPlaceholders(SEED_INSTRUCTION))
     for (const p of REQUIRED_PLACEHOLDERS) assert.ok(SEED_INSTRUCTION.includes(`{{${p}}}`))
   })
   await check('missingPlaceholders: a full instruction has none missing', () => {
@@ -698,10 +885,52 @@ async function selfCheck(cases: readonly TrainCase[]): Promise<{ name: string; p
     assert.equal(/\{\{\w+\}\}/.test(filled), false, 'a placeholder survived fillTemplate')
   })
   await check('computeFront: every case winner is represented, ties broken deterministically', () => {
-    const a: Candidate = { id: 'a', instruction: '', parentId: null, results: new Map([['x', { label: 'x', score: 0.9, feedback: '', perDimension: {} as any, cacheHit: false, authorMs: 0, judgeMs: 0 }]]), trainMean: 0.9 }
-    const b: Candidate = { id: 'b', instruction: '', parentId: null, results: new Map([['x', { label: 'x', score: 0.5, feedback: '', perDimension: {} as any, cacheHit: false, authorMs: 0, judgeMs: 0 }], ['y', { label: 'y', score: 0.8, feedback: '', perDimension: {} as any, cacheHit: false, authorMs: 0, judgeMs: 0 }]]), trainMean: 0.65 }
+    const a: Candidate = { id: 'a', instruction: '', parentId: null, results: new Map([['x', { label: 'x', score: 0.9, feedback: '', perDimension: {} as any, cacheHit: false, authorMs: 0, judgeMs: 0, cacheKey: 'x' }]]), trainMean: 0.9 }
+    const b: Candidate = { id: 'b', instruction: '', parentId: null, results: new Map([['x', { label: 'x', score: 0.5, feedback: '', perDimension: {} as any, cacheHit: false, authorMs: 0, judgeMs: 0, cacheKey: 'x' }], ['y', { label: 'y', score: 0.8, feedback: '', perDimension: {} as any, cacheHit: false, authorMs: 0, judgeMs: 0, cacheKey: 'y' }]]), trainMean: 0.65 }
     const front = computeFront([a, b])
     assert.deepEqual(front.map((c) => c.id), ['a', 'b'])
+  })
+  await check('computeFront: size objective admits an equal-score-but-smaller candidate, rejects a worse-and-larger one', () => {
+    const mkResult = (label: string, score: number): CaseEvalResult => ({ label, score, feedback: '', perDimension: {} as any, cacheHit: false, authorMs: 0, judgeMs: 0, cacheKey: label })
+    // 'big' wins case 'x' outright (case-best rule) — deliberate, so 'small'
+    // below has to prove the SIZE rule rather than accidentally winning a case.
+    const big: Candidate = { id: 'big', instruction: 'x'.repeat(100), parentId: null, results: new Map([['x', mkResult('x', 0.9)]]), trainMean: 0.9 }
+    // 'small' ties 'big' everywhere on score but has a shorter instruction —
+    // it wins no case outright, so it can only join via the size objective.
+    const small: Candidate = { id: 'small', instruction: 'x'.repeat(10), parentId: null, results: new Map([['x', mkResult('x', 0.9)]]), trainMean: 0.9 }
+    // 'bloated' scores WORSE than both and is LARGER than 'small' — 'small'
+    // scores at least as well (equal) and is smaller, so 'bloated' fails
+    // "smaller than every candidate that scores at least as well."
+    const bloated: Candidate = { id: 'bloated', instruction: 'x'.repeat(200), parentId: null, results: new Map([['x', mkResult('x', 0.5)]]), trainMean: 0.5 }
+    const ids = computeFront([big, small, bloated]).map((c) => c.id)
+    assert.ok(ids.includes('small'), 'a smaller candidate tied on score must join via the size objective')
+    assert.ok(!ids.includes('bloated'), 'a worse-scoring, larger candidate must not join')
+  })
+  await check('pickIndependentMinibatch: excludes the bred-from cases and stays within train', () => {
+    const excludeLabels = new Set([cases[0].label, cases[1].label])
+    const sample = pickIndependentMinibatch(cases, excludeLabels, 4, mulberry32(1))
+    assert.ok(sample.every((c) => !excludeLabels.has(c.label)), 'sample must exclude every bred-from label')
+    assert.ok(sample.every((c) => cases.includes(c)), 'sample must be drawn from the given case list')
+  })
+  await check('pickIndependentMinibatch: caps at the available eligible cases rather than duplicating', () => {
+    const excludeLabels = new Set(cases.slice(1).map((c) => c.label)) // exclude all but one
+    const sample = pickIndependentMinibatch(cases, excludeLabels, 4, mulberry32(2))
+    assert.equal(sample.length, 1)
+  })
+  await check('selectLeastUsedParent: true round-robin as an ever-growing front (the desync scenario from evidence)', () => {
+    const mk = (id: string): Candidate => ({ id, instruction: '', parentId: null, results: new Map(), trainMean: 0.5 })
+    const useCount = new Map<string, number>()
+    let front: Candidate[] = [mk('seed')]
+    const picks: string[] = []
+    for (let i = 0; i < 6; i++) {
+      const p = selectLeastUsedParent(front, useCount)
+      picks.push(p.id)
+      useCount.set(p.id, (useCount.get(p.id) ?? 0) + 1)
+      front = [...front, mk(`c${i + 1}`)] // one accepted child grows the front by exactly one, every attempt — the pathological case from the evidence
+    }
+    assert.equal(new Set(picks).size, picks.length, 'no id should repeat while an unused id is still on the front')
+    const counts = [...useCount.values()]
+    assert.ok(Math.max(...counts) - Math.min(...counts) <= 1, `usage should stay balanced, got ${JSON.stringify([...useCount])}`)
   })
 
   return results
@@ -761,6 +990,38 @@ function timestampedOutDir(): string {
   return join('probe/gepa/runs', new Date().toISOString().replace(/[:.]/g, '-'))
 }
 
+/**
+ * Defect 4 fix, part two. `candidates.jsonl` now carries every case's
+ * `cacheKey` (see `CaseEvalResult`), which is enough to recover ANY
+ * candidate's prompts from `.cache/` without recomputing the hash by hand —
+ * but the founder directive is stronger than "recoverable": "every prompt we
+ * produce is kept." So the WINNER's prompts (the ones that actually matter —
+ * preset C) are written out as plain, directly-readable files, one per case,
+ * across both splits, rather than left one indirection away in a hash-named
+ * cache file.
+ *
+ * A case whose authoring failed for this instruction has no successful
+ * parse and therefore no cache entry (see the CACHE header note: only a
+ * successful parse is ever cached) — those are skipped and named in the
+ * returned list rather than silently producing an empty file.
+ */
+function writeWinnerPrompts(outDir: string, winner: Candidate, train: readonly TrainCase[], held: readonly TrainCase[]): { written: number; missing: string[] } {
+  const dir = join(outDir, 'winner-prompts')
+  mkdirSync(dir, { recursive: true })
+  const missing: string[] = []
+  let written = 0
+  for (const c of [...train, ...held]) {
+    const prompt = readCache(CACHE_DIR, cacheKeyFor(winner.instruction, c.story))
+    if (prompt === null) {
+      missing.push(c.label)
+      continue
+    }
+    writeFileSync(join(dir, `${c.label}.txt`), prompt, 'utf8')
+    written++
+  }
+  return { written, missing }
+}
+
 async function main() {
   const iterations = Number(arg('iterations', '10'))
   const minibatch = Number(arg('minibatch', '4'))
@@ -775,6 +1036,27 @@ async function main() {
     process.exit(1)
   }
   CONCURRENCY = concurrency
+
+  // --seed-instruction: swap the seed BEFORE anything downstream reads it —
+  // REQUIRED_PLACEHOLDERS (the placeholder guard), the self-checks under
+  // --dry, and the baseline eval all close over these two `let`s.
+  const skillsArg = arg('skills')
+  if (skillsArg) {
+    SKILLS = skillsArg.split(',').map((x) => x.trim()).filter(Boolean)
+    if (!SKILLS.length) { console.error('--skills was empty'); process.exit(1) }
+  }
+
+  const seedInstructionPath = arg('seed-instruction')
+  const seedInstructionSource = seedInstructionPath ?? 'DEFAULT_TEMPLATES.draft (preset A)'
+  if (seedInstructionPath) {
+    if (!existsSync(seedInstructionPath)) {
+      console.error(`--seed-instruction file not found: ${seedInstructionPath}`)
+      process.exit(1)
+    }
+    SEED_INSTRUCTION = readFileSync(seedInstructionPath, 'utf8')
+    REQUIRED_PLACEHOLDERS = extractPlaceholders(SEED_INSTRUCTION)
+  }
+  console.log(`seed instruction: ${seedInstructionSource}`)
 
   if (!existsSync(trainsetPath)) {
     console.error(`trainset not found: ${trainsetPath} (build it with: npx tsx probe/gepa/trainset.ts)`)
@@ -822,7 +1104,7 @@ async function main() {
   const guardRejections: GuardRejection[] = []
   const history: HistoryEntry[] = []
 
-  let frontPointer = 0
+  const parentUseCount = new Map<string, number>()
   let nextChildId = 1
   let counter = 0
   let attempts = 0
@@ -831,8 +1113,8 @@ async function main() {
   while (counter < iterations && attempts < maxAttempts) {
     attempts++
     const front = computeFront(pool)
-    const parent = front[frontPointer % front.length]
-    frontPointer++
+    const parent = selectLeastUsedParent(front, parentUseCount)
+    parentUseCount.set(parent.id, (parentUseCount.get(parent.id) ?? 0) + 1)
 
     const worst3 = [...parent.results.values()].sort((a, b) => a.score - b.score).slice(0, 3)
     const failures = worst3.map((r) => ({ label: r.label, score: r.score, feedback: r.feedback }))
@@ -854,11 +1136,10 @@ async function main() {
     counter++
     const childId = `c${nextChildId++}`
 
+    // Defect 1 fix — score on an INDEPENDENT sample, never on the cases just
+    // bred from. `worst3` above stays purely a reflection input.
     const worstLabels = new Set(worst3.map((r) => r.label))
-    const others = train.filter((c) => !worstLabels.has(c.label))
-    const extraCount = Math.max(0, minibatch - 3)
-    const randomOthers = seededSample(others, extraCount, rng)
-    const minibatchCases = [...worst3.map((r) => train.find((c) => c.label === r.label)!), ...randomOthers]
+    const minibatchCases = pickIndependentMinibatch(train, worstLabels, minibatch, rng)
 
     const minibatchT0 = Date.now()
     const minibatchResults = await poolMap(minibatchCases, CONCURRENCY, (c) => evaluate(childInstruction, c, stats))
@@ -867,6 +1148,8 @@ async function main() {
     minibatchCases.forEach((c, i) => childMinibatch.set(c.label, minibatchResults[i]))
 
     const childMinibatchMean = mean([...childMinibatch.values()].map((r) => r.score))
+    // The parent's score on this SAME independent sample needs no extra call
+    // — every pool member already carries full-train results for every case.
     const parentMinibatchMean = mean(minibatchCases.map((c) => parent.results.get(c.label)!.score))
     const delta = childMinibatchMean - parentMinibatchMean
     const accepted = childMinibatchMean > parentMinibatchMean
@@ -896,6 +1179,9 @@ async function main() {
 
   const finalFront = computeFront(pool)
   console.log(`final Pareto front: ${finalFront.map((c) => c.id).join(', ')}`)
+  console.log('  (score, size) — the knee is where train mean stops climbing but size keeps growing:')
+  console.log('  id       train mean   size (chars)')
+  for (const c of finalFront) console.log(`  ${c.id.padEnd(8)} ${c.trainMean.toFixed(3).padStart(10)}   ${String(c.instruction.length).padStart(6)}`)
   for (const c of finalFront) {
     if (c.id === 'seed') continue
     console.log(`evaluating '${c.id}' on ${held.length} held-out cases...`)
@@ -913,6 +1199,12 @@ async function main() {
   // ── output ──────────────────────────────────────────────────────────────
   writeFileSync(join(outDir, 'preset-c.txt'), winner.instruction, 'utf8')
 
+  const { written: winnerPromptsWritten, missing: winnerPromptsMissing } = writeWinnerPrompts(outDir, winner, train, held)
+  console.log(
+    `wrote ${winnerPromptsWritten} winner prompt(s) to ${outDir}/winner-prompts/` +
+      (winnerPromptsMissing.length ? ` (missing — authoring failed for this instruction on: ${winnerPromptsMissing.join(', ')})` : ''),
+  )
+
   const lines: string[] = []
   const pushCandidate = (c: Candidate, evaluatedOn: 'full-train') => {
     lines.push(
@@ -920,6 +1212,7 @@ async function main() {
         id: c.id,
         parentId: c.parentId,
         instruction: c.instruction,
+        size: c.instruction.length,
         evaluatedOn,
         trainMean: c.trainMean,
         train: [...c.results.values()],
@@ -935,6 +1228,7 @@ async function main() {
         id: r.id,
         parentId: r.parentId,
         instruction: r.instruction,
+        size: r.instruction.length,
         evaluatedOn: 'minibatch',
         minibatchDelta: r.minibatchDelta,
         minibatch: [...r.results.values()],
@@ -951,6 +1245,7 @@ async function main() {
   report.push(`# GEPA run — ${new Date().toISOString()}`)
   report.push('')
   report.push(`task model: ${TASK_MODEL} · judge: ${JUDGE_MODEL} · seed: ${seed} · iterations requested: ${iterations} · minibatch: ${minibatch}`)
+  report.push(`seed instruction: ${seedInstructionSource}`)
   report.push('')
   report.push('## Split')
   report.push(`Train (${train.length}): ${train.map((c) => c.label).join(', ')}`)
@@ -973,9 +1268,13 @@ async function main() {
   }
   report.push('')
   report.push('## Final Pareto front (held-out evaluated)')
-  report.push('| candidate | parent | train mean | held-out mean |')
-  report.push('|---|---|---|---|')
-  for (const c of finalFront) report.push(`| ${c.id} | ${c.parentId ?? '—'} | ${c.trainMean.toFixed(3)} | ${(c.heldOutMean ?? 0).toFixed(3)} |`)
+  report.push('A candidate is on this front for winning at least one train case OUTRIGHT, or for being')
+  report.push('smaller than every candidate that scores at least as well (the size objective) — see')
+  report.push('`qualifiesBySize`. The (train mean, size) columns are what make the knee visible: where')
+  report.push('mean stops climbing but size keeps growing is the point a longer instruction stopped paying for itself.')
+  report.push('| candidate | parent | train mean | held-out mean | size (chars) |')
+  report.push('|---|---|---|---|---|')
+  for (const c of finalFront) report.push(`| ${c.id} | ${c.parentId ?? '—'} | ${c.trainMean.toFixed(3)} | ${(c.heldOutMean ?? 0).toFixed(3)} | ${c.instruction.length} |`)
   report.push('')
   report.push('## Iteration history')
   report.push('| iter | parent | child | outcome | minibatch Δ | child train mean |')
@@ -996,6 +1295,18 @@ async function main() {
   report.push(`Judge wall-clock (network, not GPU): ${(stats.judgeMs / 1000 / 60).toFixed(1)} min`)
   report.push(`Reflection: ${stats.reflectCalls} calls, ${(stats.reflectMs / 1000 / 60).toFixed(1)} min, $${stats.reflectCostUsd.toFixed(4)}`)
   report.push(`Cache hit rate: ${(cacheHitRate * 100).toFixed(1)}% (${stats.cacheHits}/${cacheTotal})`)
+  if (cacheHitRate === 0) {
+    report.push(
+      '0% is expected here, not a caching bug (defect 3): every candidate instruction is unique text ' +
+        "freshly written by the reflection model, so no two evaluate() calls in a run share an " +
+        "(instruction, story) key — except the minibatch cases reappearing in a child's post-accept " +
+        "full-train pass, and those are already short-circuited by evaluateFullSplit's in-memory " +
+        '`reuse` map before they ever reach the disk cache. See the header note in optimise.ts for the ' +
+        "full argument; the cache's real payoff is a second run reusing the seed's own baseline authoring, " +
+        'not repeats inside one run.',
+    )
+  }
+  report.push(`Winner prompts saved: ${winnerPromptsWritten}/${train.length + held.length} to ${outDir}/winner-prompts/${winnerPromptsMissing.length ? ` (missing: ${winnerPromptsMissing.join(', ')})` : ''}`)
   report.push('')
   const summedCallMs = stats.authorMs + stats.judgeMs
   const parallelism = stats.poolWallMs > 0 ? summedCallMs / stats.poolWallMs : 1

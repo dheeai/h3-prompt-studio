@@ -1,0 +1,27 @@
+subject_definitions: subject_definitions:
+<Subject 1> is Maya Rao, a 27-year-old Bengaluru creator with warm medium-brown skin, shoulder-length softly curled black hair, an ivory ribbed tank, small gold hoop earrings, minimal makeup, and slightly dry natural lips.
+<Subject 2> is the Veyra CloudSilk Lip Colour tube, a slim cylindrical frosted dusty-mauve tube with a brushed champagne cap, shown capped on the vanity counter.
+<Subject 3> is the warm vanity-mirror bedroom environment, with a round champagne-rim mirror, dusty-mauve soft furnishings, porcelain items, and late-afternoon natural light.
+
+summary: summary:
+[reference generation] The target video shows <Subject 1> noticing her dry-looking lips in <Subject 3>, then turning her attention to <Subject 2> on the counter. The scene uses a handheld observational style, moving from her reflective face to the capped product and back to her hand hovering over it, ending with her spoken line while the tube remains untouched.
+
+retention_analysis: retention_analysis:
+<Subject 1> (appears in [Shot 1], [Shot 2], [Shot 4]): fully_preserved - Maya Rao’s age, warm medium-brown skin, shoulder-length softly curled black hair, ivory ribbed tank, small gold hoop earrings, minimal makeup, and slightly dry natural lips are retained.
+<Subject 2> (appears in [Shot 3], [Shot 4]): fully_preserved - the Veyra CloudSilk Lip Colour tube’s slim cylindrical form, frosted dusty-mauve body, brushed champagne cap, and capped state are retained.
+<Subject 3> (appears in [Shot 1], [Shot 2], [Shot 3]): fully_preserved - the round champagne-rim mirror, dusty-mauve soft furnishings, porcelain counter items, and warm late-afternoon light are retained.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+detailed_description:
+The target video is live-action and cinematic, with observational documentary immediacy, neutral true-to-life color, and light natural video-sensor grain.
+[Shot 1] A close-up at eye level, wide-end 19mm-equivalent coverage, frames <Subject 1> facing the round champagne-rim mirror in <Subject 3>. Maya’s dark-brown eyes catch her reflection; her lower lip parts slightly, her thumb brushes the corner of her mouth once, then stops. The camera performs a Shake Slightly with small amplitude at slow speed, following the small shift of her head as her gaze drops from her eyes to her lips. Her breath is shallow and audible as she notices the dry texture. The warm late-afternoon light catches the ivory ribbing of her tank and the small gold hoop earrings.
+[Shot 2] At 00:04.500, the shot cuts to a medium close-up from a slightly low angle, 35mm-equivalent framing, showing Maya’s profile as she turns away from the mirror. Her chin lowers, her eyes track downward, and her right hand begins to leave the mirror’s edge. The camera performs a Truck Right with small amplitude at slow speed, following her hand as it moves toward the vanity surface. The ivory ribbed tank rustles against her shoulder, and a small porcelain dish taps once when her fingertips brush its rim. Her gaze remains fixed on the counter, not on the mirror.
+[Shot 3] At 00:08.000, the shot cuts to a top-down detail view, 50mm-equivalent framing, of the vanity surface in <Subject 3>. <Subject 2>, the capped Veyra CloudSilk Lip Colour tube, rests among porcelain items, its frosted dusty-mauve body and brushed champagne cap sharp against the softly blurred background. The camera performs a Push In with small amplitude at slow speed toward the cap as Maya’s right hand enters from the lower edge of the frame. Her thumb presses the cap’s edge once, producing a soft metallic click, but the cap does not lift. The hand stops, fingers hovering above the tube.
+[Shot 4] At 00:12.000, the shot cuts back to a close-up at eye level, 90mm-equivalent tight framing, of Maya’s face in the mirror. Her right hand remains visible at the bottom of the frame, hovering just above <Subject 2>. Her eyes lift to her reflection, her mouth closes, then opens as she speaks directly to the lens. Maya Rao (S1) says in a conversational young female voice with a light, self-aware tone: <d>[English] Why does my lip colour always look tired before I do?</d> Her lips stay closed after the line. The camera performs a Static Shot with small handheld breathing, holding on her face while the capped tube remains untouched below the frame edge. A final soft fabric rustle from the ivory tank ends the beat.
+
+overall_soundscape: overall_soundscape:
+Maya’s shallow breath is audible as her thumb brushes her lower lip. The ivory ribbed tank rustles against her shoulder, a small porcelain dish taps once under her fingertips, and the brushed champagne cap makes a soft metallic click when her thumb presses its edge.
+
+non_diegetic_music: non_diegetic_music:
+N/A

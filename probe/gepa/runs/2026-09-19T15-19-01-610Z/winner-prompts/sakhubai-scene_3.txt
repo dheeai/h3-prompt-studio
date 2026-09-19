@@ -1,0 +1,28 @@
+subject_definitions: subject_definitions:
+<Subject 1> is the weathered elderly woman in the green sari, with a dark green nauvari sari, bent posture, lively hands, and a wide humorous grin revealing four remaining teeth.
+<Subject 2> is the young woman in the bright yellow kurti, standing before the stall, inspecting the fish and preparing to pay.
+<Subject 3> is the silver pomfret fish, with firm wet flesh, shimmering scales, and a clear bright eye.
+<Subject 4> is the market lane environment, with a stone seating surface, blurred morning market activity, and warm golden daylight.
+<Subject 5> is the empty fish container beside <Subject 1> on the stone, present after the sale is complete.
+
+summary: summary:
+[reference generation] The target video shows <Subject 1> selling <Subject 3> to <Subject 2> in <Subject 4>. <Subject 1> proves the fish is fresh by pressing its belly and raising it into the sunlight, then <Subject 2> pays cash and turns away, leaving <Subject 1> with <Subject 5> beside her.
+
+retention_analysis: retention_analysis:
+<Subject 1> (appears in [Shot 1], [Shot 2], [Shot 3]): fully_preserved - the weathered elderly woman, dark green nauvari sari, bent posture, lively hands, and humorous grin are retained.
+<Subject 2> (appears in [Shot 1], [Shot 2], [Shot 3]): fully_preserved - the young woman, bright yellow kurti, inspecting stance, and cash payment are retained.
+<Subject 3> (appears in [Shot 1], [Shot 2]): fully_preserved - the silver pomfret fish, firm wet flesh, shimmering scales, and clear bright eye are retained.
+<Subject 4> (appears in [Shot 1], [Shot 2], [Shot 3]): fully_preserved - the market lane, stone seating surface, blurred morning activity, and golden daylight are retained.
+<Subject 5> (appears in [Shot 3]): fully_preserved - the empty fish container beside <Subject 1> on the stone is retained.
+
+detailed_description: detailed_description:
+The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+[Shot 1] A handheld medium two-shot at eye level frames <Subject 1>, the weathered elderly woman in the dark green nauvari sari, seated on the stone in <Subject 4>, the market lane, with rows of <Subject 3>, the silver pomfret fish, spread before her. <Subject 2>, the young woman in the bright yellow kurti, stands in the right foreground, leaning slightly forward, her eyes fixed on the fish. The camera holds a Static Shot while <Subject 1> reaches down, lifts one <Subject 3>, and presses its firm belly with her thumb. The fish's wet skin stretches and rebounds under her thumb. As <Subject 2>'s fingers tighten around her bag strap, the camera Pushes In with small amplitude at slow speed toward the fish, following <Subject 1>'s hand as she raises it into the golden morning light. <Subject 1> tilts the fish so its clear bright eye catches the sun. <Subject 1> (S1) turns her head toward <Subject 2> and says with a wide, humorous grin that reveals her four remaining teeth: <d>[Hindi] Paplet lo! Taaza paplet! ... Beta, ye subah samundar mein tha... Isse taaza toh main bhi nahi hun.</d>
+[Shot 2] At 00:04.200, the shot cuts to a tighter 90mm-equivalent close-up of <Subject 3> held between <Subject 1>'s weathered fingers, the bright eye and wet scales filling the frame. The camera holds a Static Shot as the fish's surface glistens and a thin line of water runs down its side. <Subject 2>'s hand enters from the right, opens her bag, and withdraws folded cash. The camera Pulls Out with small amplitude at slow speed as <Subject 2> extends the money toward <Subject 1>. <Subject 1> takes the cash, her thumb releasing the fish's belly, and nods once with satisfaction.
+[Shot 3] At 00:08.600, the shot cuts back to a handheld medium two-shot at eye level, wider than Shot 2, showing <Subject 1> seated on the stone with <Subject 5>, the empty fish container, beside her. <Subject 2> begins to turn away, her yellow kurti swinging slightly as she steps out of the immediate foreground. The camera Trucks Right with small amplitude at slow speed, following <Subject 2>'s departing shoulder while keeping <Subject 1> in the left frame. <Subject 1> lowers her hand to the stone, her grin softening into a closed-mouth smile, her weight shifting forward on the stone as she watches <Subject 2> leave. The golden light continues across the wet stone and the remaining fish.
+
+overall_soundscape: overall_soundscape:
+Wet fish scales slap softly against the stone as <Subject 1> lifts and presses <Subject 3>. The coarse fabric of the green sari rustles when she leans forward, and the young woman's bag strap creaks as she opens it. Folded cash slides between hands with a dry papery sound, while distant market footsteps and blurred vendor calls remain low behind the exchange.
+
+non_diegetic_music: non_diegetic_music:
+N/A

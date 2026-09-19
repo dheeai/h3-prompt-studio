@@ -1,0 +1,26 @@
+subject_definitions: subject_definitions:
+<Subject 1> is Rahul, the young man shown in <Picture 1>, with warm brown skin, short dark hair, a plain dark shirt, and a focused questioning expression.
+<Subject 2> is the smartphone in <Picture 1>, held at chest height, with a bright app interface visible on its screen.
+<Subject 3> is the indoor room in <Picture 1>, with warm practical lighting, muted amber and slate tones, and a shallow-depth-of-field background.
+<Picture 1> is the first frame of [Shot 1], showing Rahul centered from the chest up while holding the smartphone steady.
+
+summary: summary:
+[keyframe completion + reference generation] The target video begins from <Picture 1> and shows <Subject 1> presenting <Subject 2> to an off-screen listener in <Subject 3>. <Subject 1> asks whether the app is real or fake while the phone screen stays fixed on the same interface, keeping the question unresolved.
+
+retention_analysis: retention_analysis:
+<Subject 1> (appears in [Shot 1], [Shot 2]): fully_preserved - Rahul's warm brown skin, short dark hair, plain dark shirt, centered chest-up framing, and questioning expression are retained.
+<Subject 2> (appears in [Shot 1], [Shot 2]): fully_preserved - the smartphone's bright app interface, chest-height position, and steady presentation are retained.
+<Subject 3> (appears in [Shot 1], [Shot 2]): fully_preserved - the warm practical indoor room, muted amber-and-slate palette, and shallow depth of field are retained.
+<Picture 1> ([Shot 1] first frame): fully_preserved - the opening composition, subject placement, phone position, and lighting are retained.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+detailed_description:
+The scene is staged as an observational indoor exchange.
+[Shot 1] The shot begins from <Picture 1>. A medium shot frames <Subject 1>, Rahul, from the chest up, centered in the frame, holding <Subject 2>, the smartphone, steady at chest height. The bright app interface on the phone screen casts a cool blue-white glow across his face and upper torso, while <Subject 3>, the indoor room, remains warm and softly out of focus behind him. The camera holds a Static Shot, locked on Rahul's chest-up framing as his eyes move slightly toward the off-screen right, his brows lift, and his mouth opens into a careful question. His right hand keeps the phone level, his left hand stays low and still, and his weight remains centered. He says in a measured young male voice with a slight pause before the final question: <d>[Hindi] हाँ… लेकिन सवाल है—Real है या Fake?</d> The phone screen does not change; the same app interface stays visible while his gaze remains fixed off-screen right.
+[Shot 2] At 00:02.500, the shot cuts to a closer insert of <Subject 2> and <Subject 1>'s hand. The camera pushes in with small amplitude at slow speed, following the phone screen as the only changing pressure in the frame. The app interface remains on the same screen, its bright text and icons unchanged, while Rahul's thumb rests on the phone's edge and his knuckles tighten slightly. The cool screen light reflects on his skin and the phone's glass surface. His lips close after the question, his jaw sets, and his eyes stay off-screen right, waiting for an answer that does not arrive. The camera stops on the unchanged screen, leaving the app's legitimacy visually unresolved.
+
+overall_soundscape: overall_soundscape: A low indoor room tone continues beneath the scene. The smartphone's screen emits a faint electronic hum, and Rahul's breath moves softly as he speaks. His shirt fabric shifts once when he tightens his grip on the phone.
+
+non_diegetic_music: non_diegetic_music:
+N/A

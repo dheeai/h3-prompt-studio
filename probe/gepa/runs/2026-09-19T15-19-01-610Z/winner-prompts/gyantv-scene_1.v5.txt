@@ -1,0 +1,41 @@
+subject_definitions: subject_definitions:
+<Subject 1> is Rahul, a young man in his early twenties with short dark hair, a trimmed beard, and a plain charcoal T-shirt, shown from the chest up in a warm indoor room.
+<Subject 2> is Sameer, a young man in his early twenties with short black hair and a muted olive overshirt over a white T-shirt, seated on a sofa beside Rahul.
+<Subject 3> is the smartphone in Rahul’s right hand, with a black front, a visible notification banner, and the “Cool Survey App” interface on its screen.
+
+summary:
+[reference generation] The target video shows <Subject 1> receiving a phone notification, looking down at <Subject 3>, and turning the phone toward <Subject 2> so that both men see the “Cool Survey App” screen. The scene is silent except for the notification chime, the tap, and the small physical sounds of the phone and bodies shifting.
+
+retention_analysis:
+<Subject 1> (appears in [Shot 1], [Shot 2], [Shot 3]): fully_preserved - Rahul’s appearance, seated position, right-hand phone grip, and mid-afternoon indoor setting are retained.
+<Subject 2> (appears in [Shot 2], [Shot 3]): fully_preserved - Sameer’s appearance, sofa position, and movement toward the phone are retained.
+<Subject 3> (appears in [Shot 1], [Shot 2], [Shot 3]): fully_preserved - the smartphone, notification, and “Cool Survey App” interface are retained.
+
+detailed_description:
+Observational live-action scene with neutral true-to-life color, natural indoor light, and handheld immediacy.
+[Shot 1] Medium close-up, 50mm-equivalent framing, eye-level, handheld with small amplitude, frames <Subject 1> from the chest up, centered, in a warm room with a soft daylight window edge at the left. <Subject 3> is in his right hand, screen facing him. A notification banner slides down the top of the screen, and the phone emits a short bright chime. Rahul’s eyes drop from the room to the screen, his thumb taps the banner, and the screen brightens into the “Cool Survey App” interface. The camera follows the downward tilt of his head with a small handheld drift, then holds as his thumb lifts off the glass.
+[Shot 2] At 00:02.000, the shot cuts to a medium two-shot, 35mm-equivalent framing, slightly low angle, handheld with small amplitude. <Subject 1> is left of center, <Subject 2> is right of center on the sofa, his body initially angled away and his gaze on his own lap. Rahul rotates his wrist and extends <Subject 3> toward the center of the frame. The phone’s blue-white screen light crosses the gap between them. Sameer’s eyes move from his lap to the screen, his shoulders square forward, and his left hand leaves the sofa cushion. The camera trucks right with small amplitude at slow speed, following the phone as it enters Sameer’s line of sight.
+[Shot 3] At 00:05.000, the shot cuts to a close insert, 90mm-equivalent framing, over Sameer’s shoulder, handheld locked with minimal drift. <Subject 3> fills the lower center of the frame, its screen showing the “Cool Survey App” title and one survey prompt. Sameer’s right hand enters from the right and hovers over the screen; his fingertip taps the first option. Rahul’s thumb remains near the phone’s edge, and both men’s eyes stay on the screen. The camera pushes in with small amplitude at slow speed as the tap lands and the screen registers the selection.
+
+overall_soundscape:
+A short phone notification chime sounds from <Subject 3>, followed by the dry tap of Rahul’s thumb on the glass. The sofa fabric shifts as Sameer leans forward, and a fingertip taps the phone screen at the end.
+
+non_diegetic_music:
+N/A
+
+summary: [reference generation] The target video shows <Subject 1> receiving a phone notification, looking down at <Subject 3>, and turning the phone toward <Subject 2> so that both men see the “Cool Survey App” screen. The scene is silent except for the notification chime, the tap, and the small physical sounds of the phone and bodies shifting.
+
+retention_analysis: <Subject 1> (appears in [Shot 1], [Shot 2], [Shot 3]): fully_preserved - Rahul’s appearance, seated position, right-hand phone grip, and mid-afternoon indoor setting are retained.
+<Subject 2> (appears in [Shot 2], [Shot 3]): fully_preserved - Sameer’s appearance, sofa position, and movement toward the phone are retained.
+<Subject 3> (appears in [Shot 1], [Shot 2], [Shot 3]): fully_preserved - the smartphone, notification, and “Cool Survey App” interface are retained.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+Observational live-action scene with neutral true-to-life color, natural indoor light, and handheld immediacy.
+[Shot 1] Medium close-up, 50mm-equivalent framing, eye-level, handheld with small amplitude, frames <Subject 1> from the chest up, centered, in a warm room with a soft daylight window edge at the left. <Subject 3> is in his right hand, screen facing him. A notification banner slides down the top of the screen, and the phone emits a short bright chime. Rahul’s eyes drop from the room to the screen, his thumb taps the banner, and the screen brightens into the “Cool Survey App” interface. The camera follows the downward tilt of his head with a small handheld drift, then holds as his thumb lifts off the glass.
+[Shot 2] At 00:02.000, the shot cuts to a medium two-shot, 35mm-equivalent framing, slightly low angle, handheld with small amplitude. <Subject 1> is left of center, <Subject 2> is right of center on the sofa, his body initially angled away and his gaze on his own lap. Rahul rotates his wrist and extends <Subject 3> toward the center of the frame. The phone’s blue-white screen light crosses the gap between them. Sameer’s eyes move from his lap to the screen, his shoulders square forward, and his left hand leaves the sofa cushion. The camera trucks right with small amplitude at slow speed, following the phone as it enters Sameer’s line of sight.
+[Shot 3] At 00:05.000, the shot cuts to a close insert, 90mm-equivalent framing, over Sameer’s shoulder, handheld locked with minimal drift. <Subject 3> fills the lower center of the frame, its screen showing the “Cool Survey App” title and one survey prompt. Sameer’s right hand enters from the right and hovers over the screen; his fingertip taps the first option. Rahul’s thumb remains near the phone’s edge, and both men’s eyes stay on the screen. The camera pushes in with small amplitude at slow speed as the tap lands and the screen registers the selection.
+
+overall_soundscape: A short phone notification chime sounds from <Subject 3>, followed by the dry tap of Rahul’s thumb on the glass. The sofa fabric shifts as Sameer leans forward, and a fingertip taps the phone screen at the end.
+
+non_diegetic_music: N/A

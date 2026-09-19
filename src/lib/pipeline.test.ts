@@ -2,9 +2,9 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { PIPELINE_PRESETS, clipAuthoringPlan, pipelinePreset, presetRunsActing, presetRunsDirection } from './pipeline'
 
-test('exactly two presets, the two the founder asked for', () => {
-  assert.equal(PIPELINE_PRESETS.length, 2)
-  assert.deepStrictEqual(PIPELINE_PRESETS.map((p) => p.id), ['direct-write', 'directed'])
+test('exactly three presets: the founder\'s A/B, plus the GEPA-optimised C', () => {
+  assert.equal(PIPELINE_PRESETS.length, 3)
+  assert.deepStrictEqual(PIPELINE_PRESETS.map((p) => p.id), ['direct-write', 'directed', 'optimised'])
 })
 
 test('pipelinePreset(undefined) is preset A — an operator who never touches the switch sees no change', () => {
@@ -37,6 +37,18 @@ test('clipAuthoringPlan: preset A is one call', () => {
 
 test('clipAuthoringPlan: preset B is direction, then acting, then the directed writer — never reordered', () => {
   assert.deepStrictEqual(clipAuthoringPlan(pipelinePreset('directed')), ['direction', 'acting', 'draftDirected'])
+})
+
+test('preset C runs neither direction nor acting, and writes via draftOptimised — one call, like preset A', () => {
+  const c = pipelinePreset('optimised')
+  assert.equal(presetRunsDirection(c), false)
+  assert.equal(presetRunsActing(c), false)
+  assert.equal(c.writerStage, 'draftOptimised')
+  assert.deepStrictEqual(c.extraStages, [])
+})
+
+test('clipAuthoringPlan: preset C is one call', () => {
+  assert.deepStrictEqual(clipAuthoringPlan(pipelinePreset('optimised')), ['draftOptimised'])
 })
 
 test('every preset name and description is operator-facing prose, not an id', () => {

@@ -268,6 +268,18 @@ const STAGE_SKILLS: Partial<Record<StageSkillKey, readonly string[]>> = {
   draftDirected: ['h3-prompting'],
   direction: ['h3-direction'],
   acting: ['h3-acting'],
+
+  // ── preset C (`lib/pipeline.ts`) ───────────────────────────────────────
+  // MUST be `['h3-prompting']` ALONE — never `draft`'s five. GEPA optimised
+  // this instruction against exactly `h3-prompting` (12,777 tokens), and its
+  // text inlines the directing/acting craft itself precisely BECAUSE that
+  // corpus was absent during optimisation (see the "DECIDE FIRST, IN YOUR
+  // HEAD" section of `stages.ts`'s `draftOptimised` template — it restates
+  // the scene-formula/beat-grid reasoning `h3-direction` would otherwise
+  // supply). Handing it `draft`'s five skills is an UNTESTED configuration:
+  // it was never measured with that payload, so it would invalidate the
+  // measured 0.760. Do not "fix" this to match `draft`.
+  draftOptimised: ['h3-prompting'],
 }
 
 /** Narrow a selection to the documents a stage needs — see `STAGE_SKILLS`. */

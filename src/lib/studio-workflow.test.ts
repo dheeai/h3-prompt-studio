@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { clipsNeedingPrompt } from './studio-workflow'
+import { clipsNeedingPrompt, isCanonicalPromptStage } from './studio-workflow'
 import type { Breakdown, BreakdownClip, Version } from './types'
 
 function planClip(index: number, over: Partial<BreakdownClip> = {}): BreakdownClip {
@@ -39,4 +39,22 @@ test('clipsNeedingPrompt: a non-prompt pass (e.g. critique) for a clip does not 
   const critiqueOnly: Version = { id: 'v1', stage: 'critique', label: 'Critique', text: 'notes', model: 'm', providerId: 'p', at: 0, ms: 0, clipIndex: 1 }
   const remaining = clipsNeedingPrompt(breakdown, [critiqueOnly])
   assert.deepEqual(remaining.map((c) => c.index), [1])
+})
+
+// ── isCanonicalPromptStage — every writer stage, across all three presets ──
+
+test('isCanonicalPromptStage: draft, draftDirected and draftOptimised (the three presets\' writers) all count', () => {
+  assert.ok(isCanonicalPromptStage('draft'))
+  assert.ok(isCanonicalPromptStage('draftDirected'))
+  assert.ok(isCanonicalPromptStage('draftOptimised'))
+})
+
+test('isCanonicalPromptStage: revise, rebuild and freeform also count; direct, critique, handoff and breakdown do not', () => {
+  assert.ok(isCanonicalPromptStage('revise'))
+  assert.ok(isCanonicalPromptStage('rebuild'))
+  assert.ok(isCanonicalPromptStage('freeform'))
+  assert.ok(!isCanonicalPromptStage('direct'))
+  assert.ok(!isCanonicalPromptStage('critique'))
+  assert.ok(!isCanonicalPromptStage('handoff'))
+  assert.ok(!isCanonicalPromptStage('breakdown'))
 })

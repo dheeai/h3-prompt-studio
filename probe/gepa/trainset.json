@@ -1,0 +1,406 @@
+[
+  {
+    "label": "sakhubai-scene_1",
+    "story": "PURPOSE: Establish the protagonist's routine, physical resilience, and the gritty, atmospheric setting of the dock at dawn.\n\nSUMMARY: [reference generation] A continuous wide shot of <Subject 1>, the elderly fisherwoman, as she navigates the misty, crowded <Subject 2> jetty at dawn, balancing a heavy <Subject 3> on her head and pushing through a landscape of weathered <Subject 4> and blurred workers.\n\nWHAT HAPPENS IN THIS CLIP:\nThe scene is captured with a tactile, documentary aesthetic, emphasizing the gritty textures of the wet dock and the weathered features of the protagonist under a soft, slate-grey dawn light. [Shot 1] A wide, eye-level Static Shot captures <Subject 1>, a small, bent 68-year-old woman in a dark green nauvari sari, as she enters the frame from the left. She balances a wide, shallow <Subject 3> on her head with practiced poise. The environment is the industrial <Subject 2>, filled with thick mist, diesel smoke, and the cool, diffused light of early morning. She moves steadily across the wet, brine-stained concrete, her bare, heavily cracked heels slapping against the ground, while her thin silver anklets catch the dim light. She navigates a cluttered path of stacked, weathered <Subject 4>, occasionally using her elbows to gently push through the blurred, shouting silhouettes of dock workers passing in the background. The state changes from her entry into the frame to her steady progress through the obstacle course of crates, maintaining her balance despite the heavy load and the bustling, chaotic environment of the jetty. The camera remains fixed, letting her movement and the background activity define the scale of the port. The sound of her rhythmic footfalls, the distant shouting of men, and the low hum of boat engines fill the space. cinematic photoreal film still, 50mm lens, shallow depth of field, natural dawn-to-dusk lighting, slate and warm orange grade, fine grain, 3:2 aspect ratio. \n\n<Subject 1> is the elderly hunched fisherwoman in a green sari. appearsAs: bent posture, weathered sun-darkened skin, dark green nauvari sari, thin silver anklets. job: balancing a cane basket. retention: fully_preserved\n<Subject 2> is the bustling, gritty fishing port at dawn. appearsAs: low-slung auction sheds, corrugated metal roofs, wet concrete stained with brine. job: setting the industrial atmosphere. retention: fully_preserved\n<Subject 3> is the wide, shallow woven basket. appearsAs: rustic, weathered natural cane fibers. job: carried on the woman's head. retention: fully_preserved\n<Subject 4> is the weathered wooden fish crates. appearsAs: rectangular, salt-stained, stacked haphazardly. job: creating obstacles on the jetty. retention: fully_preserved",
+    "plan": {
+      "clipSeconds": 10,
+      "hasCharacters": true,
+      "hasDialogue": false,
+      "approvedShots": [
+        {
+          "index": 1,
+          "summary": "A wide, eye-level Static Shot captures <Subject 1>, a small, bent 68-year-old woman in a dark green nauvari sari, as she enters the frame from the left.",
+          "seconds": 10
+        }
+      ]
+    }
+  },
+  {
+    "label": "sakhubai-scene_2",
+    "story": "PURPOSE: To depict the silent, generous exchange of fish between two long-time acquaintances, establishing their bond through a small act of kindness.\n\nSUMMARY: [reference generation] The target video depicts a tender exchange between <Subject 1> and <Subject 2> inside <Subject 3>. The scene begins with <Subject 2> pushing a wooden crate of silver <Subject 4> toward <Subject 1>, who accepts it with a grateful nod, concluding with the transfer of the fish into her cane basket.\n\nWHAT HAPPENS IN THIS CLIP:\nThe scene captures a quiet, intimate moment of mutual respect within the dim, industrial atmosphere of the fish auction shed, rendered with tactile textures and soft, diffused light. [Shot 1] A Static Shot at eye-level centers on the weathered wooden counter of <Subject 3>, where <Subject 2>, a lean man with a henna-stained reddish beard and a white skullcap, leans forward. He uses both hands to push a wooden <Subject 5> overflowing with gleaming, silver <Subject 4> across the damp surface toward <Subject 1>. The camera holds steady as the crate slides, its silver scales catching the muted light. <Subject 1>, a small, bent 68-year-old woman in a dark green nauvari sari, reaches out with her heavily lined, weathered hands to steady the crate. She meets <Subject 2>'s gaze with a subtle, knowing nod of gratitude, her posture slightly hunched under the weight of the <Subject 6> already balanced on her head. <Subject 2> (S2) says with a warm, resigned, and affectionate tone: <d>[Hindi] Le ja, buddhi... Tera bharosa hi mera munafa hai.</d> The shot continues as <Subject 1> begins the practiced motion of transferring the silver fish from the crate into her woven basket, the wet scales glistening against the natural fibers. The background remains a soft-focus blur of the bustling, misty dock, emphasizing the quiet connection between the two workers amidst the surrounding chaos of the morning auction.\n\n<Subject 1> is the elderly hunched fisherwoman in a green sari, appearing as a small, weathered woman with deep wrinkles and a cane basket on her head, tasked with receiving the fish. fully_preserved\n<Subject 2> is the middle-aged auction worker with a hennaed beard, appearing as a lean man in a white skullcap and light cotton clothing, tasked with gifting the crate. fully_preserved\n<Subject 4> is the silver pomfret fish, appearing as gleaming, oval-shaped fish with reflective scales and bright eyes, tasked as the central subject of the exchange. fully_preserved\n<Subject 5> is the fish crate, appearing as a weathered, rectangular wooden container stained with salt and water, tasked as the vessel for transport. fully_preserved\n<Subject 6> is the cane basket, appearing as a wide, shallow woven basket with visible natural fibers, tasked as the personal carrier for the woman. fully_preserved\n<Subject 3> is the Sassoon Dock auction shed, appearing as an industrial space with corrugated metal roofs and wet concrete floors, tasked as the setting. weak_reference <d>[English] <d>[Hindi] Le ja, buddhi... Tera bharosa hi mera munafa hai.</d></d>",
+    "plan": {
+      "clipSeconds": 10,
+      "hasCharacters": true,
+      "hasDialogue": true,
+      "approvedShots": [
+        {
+          "index": 1,
+          "summary": "A Static Shot at eye-level centers on the weathered wooden counter of <Subject 3>, where <Subject 2>, a lean man with a henna-stained reddish beard and a white ",
+          "seconds": 10
+        }
+      ]
+    }
+  },
+  {
+    "label": "sakhubai-scene_3",
+    "story": "PURPOSE: To showcase Sakhubai's charm and resilience through a successful, humorous interaction with a customer in the vibrant morning market.\n\nSUMMARY: [reference generation] The target video depicts an interaction in a golden-lit market between <Subject 1>, a weathered elderly woman in a green sari, and <Subject 2>, a young woman in a yellow kurti. The scene flows through a medium two-shot where <Subject 1> demonstrates the freshness of <Subject 3>, the silver fish, before a transaction occurs against the backdrop of <Subject 4>.\n\nWHAT HAPPENS IN THIS CLIP:\nThe scene is captured in a cinematic photoreal style, bathed in the warm, golden morning light of a bustling market. [Shot 1] A medium two-shot frames <Subject 1>, the weathered elderly woman in a dark green nauvari sari, seated on a stone in <Subject 4>, the market lane. She is surrounded by neat rows of <Subject 3>, the gleaming silver pomfret fish. Standing before her is <Subject 2>, the young woman in a bright yellow kurti, who leans in slightly to inspect the catch. <Subject 1> reaches down, picks up a single <Subject 3>, and with a practiced motion, presses its firm belly with her thumb. She then holds the fish up to the sunlight, tilting it so the clear, bright eye catches the light. The camera holds a Static Shot as <Subject 1> (S1) turns her head toward <Subject 2> and says with a wide, humorous grin that reveals her four remaining teeth: <d>[Hindi] Paplet lo! Taaza paplet! ... Beta, ye subah samundar mein tha... Isse taaza toh main bhi nahi hun.</d> <Subject 2> reacts by laughing, her expression shifting from doubt to amusement, and she reaches into her bag to hand over cash. <Subject 1> accepts the money with a satisfied nod, her posture remaining bent but her energy lively. The background remains a soft, blurred tapestry of the market lane's morning activity, with the golden light emphasizing the wet, shimmering scales of the fish and the tactile textures of the weathered stone and coarse fabric of their clothing. The camera remains steady, allowing the intimate, humorous exchange and the vibrant color contrast between the dark green sari and bright yellow kurti to drive the visual interest, concluding with the quiet satisfaction of a successful sale as the light continues to glow across the scene's wet surfaces. The shot ends as <Subject 2> begins to turn away, the transaction complete, leaving <Subject 1> with her empty <Subject 5> beside her on the stone, ready for the next customer in the warming morning air. <d>[English] Paplet lo! Taaza paplet! ... Beta, ye subah samundar mein tha... Isse taaza toh main bhi nahi hun.</d>",
+    "plan": {
+      "clipSeconds": 10,
+      "hasCharacters": true,
+      "hasDialogue": true,
+      "approvedShots": [
+        {
+          "index": 1,
+          "summary": "A medium two-shot frames <Subject 1>, the weathered elderly woman in a dark green nauvari sari, seated on a stone in <Subject 4>, the market lane.",
+          "seconds": 10
+        }
+      ]
+    }
+  },
+  {
+    "label": "sakhubai-scene_4",
+    "story": "PURPOSE: scene_4_shot_1\n\nSUMMARY: [reference generation] A continuous medium shot of <Subject 1>, the elderly fisherwoman in the dark green sari, resting on a corner stone in <Subject 2>, the market lane, as she counts cash, feeds <Subject 3>, the scruffy dock cat, and gazes out at the fading light.\n\nWHAT HAPPENS IN THIS CLIP:\nThe scene is captured in the warm, amber glow of a deep orange evening, with long shadows stretching across the textured ground. [Shot 1] A Static Shot at eye-level captures <Subject 1>, the elderly fisherwoman with her weathered complexion and dark green nauvari sari, sitting on a weathered corner stone in <Subject 2>, the market lane. Her posture is deeply bent and fatigued from the day's labor. Her weathered hands move with slow, deliberate care as she counts damp, crumpled currency notes, sliding them one by one into a small, worn cloth pouch. A thin, scruffy <Subject 3>, the dock cat with matted grey-brown fur and visible ribs, winds its lean body around her bare, cracked ankles. The cat's bright, alert eyes remain fixed on her hands. <Subject 1> reaches into her cloth pouch, pulls out a small, leftover silver pomfret fish, and drops it onto the ground. The cat immediately begins to eat the fish. <Subject 1> then shifts her gaze away from the cat, looking out toward the distant, hazy dock with an expression of quiet, peaceful satisfaction as the ambient light of the day fades into deep shadows. The camera holds the Static Shot throughout the entire ten-second duration, emphasizing the stillness and the cyclical nature of her evening routine in the golden-hour light of <Subject 2> .</detailedDescription> | references: [ { \"id\": \"sakhubai\", \"appearsAs\": \"elderly hunched fisherwoman in a dark green nauvari sari\", \"job\": \"counting damp cash notes and feeding a cat\", \"retention\": \"fully_preserved\" }, { \"id\": \"dock_cat\", \"appearsAs\": \"thin, scruffy grey-brown cat with matted fur\", \"job\": \"winding around ankles and eating a leftover fish\", \"retention\": \"fully_preserved\" }, { \"id\": \"market_lane\", \"appearsAs\": \"narrow street with weathered corner stones and fish-scale awnings\", \"job\": \"providing the setting for evening respite\", \"retention\": \"fully_preserved\" } ] | overallSoundscape: The distant, fading hum of the bustling market, the soft rustle of damp paper currency being counted, the gentle scuff of bare feet on stone, and the quiet, wet tearing sounds of the cat eating the fish. | nonDiegeticMusic: N/A | purpose: scene_4_shot_1",
+    "plan": {
+      "clipSeconds": 10,
+      "hasCharacters": true,
+      "hasDialogue": false,
+      "approvedShots": [
+        {
+          "index": 1,
+          "summary": "A Static Shot at eye-level captures <Subject 1>, the elderly fisherwoman with her weathered complexion and dark green nauvari sari, sitting on a weathered corne",
+          "seconds": 10
+        }
+      ]
+    }
+  },
+  {
+    "label": "veyra-application",
+    "story": "PURPOSE: application\n\nSUMMARY: [reference generation] Maya Rao applies one clean swipe of Veyra CloudSilk Lip Colour Afterglow 07. The shot transitions from vanity mirror to soft window daylight. She takes a coffee sip, verifying comfort and shade retention. The bullet is recapped, and her lips show the rosewood-brown finish. Natural handheld vertical framing, intimate creator style.\n\nWHAT HAPPENS IN THIS CLIP:\nVertical 9:16 smartphone aesthetic. Warm, intimate lighting transitions from vanity mirror reflection to soft, diffused window daylight. Maya Rao, 27, with warm medium-brown skin and shoulder-length softly curled black hair, wears an ivory ribbed tank and small gold hoop earrings. Her lips transition from natural/dry to a smooth rosewood-brown finish.\n\n[Shot 1] The shot opens with a close-up of Maya’s face at the vanity mirror. She holds the uncapped Veyra CloudSilk Lip Colour tube in her right hand. With a steady, deliberate motion, she performs one clean swipe of the rosewood-brown bullet across her lips. The camera `Push In` slightly to emphasize the texture and even coverage of the application. Her expression is focused and calm, ensuring the physical state change from bare to colored lips is legible and precise.\n\n[Shot 2] At 00:05.500, the shot cuts to a medium close-up as Maya moves away from the vanity toward a window. The lighting shifts to soft, natural daylight. She holds a ceramic coffee cup in her left hand and the now-recapped lipstick in her right. She takes a casual sip of coffee, then lowers the cup, looking directly at the camera with a relaxed, satisfied smile. The daylight highlights the smooth, non-dry finish of the shade on her lips.\n\n[Shot 3] At 00:10.000, the shot cuts to a tighter frame on her face as she speaks her impression. She tilts her head slightly, her dark-brown eyes conveying quiet confidence. The background shows the soft textures of the bedroom suite in daylight. Her delivery is conversational and grounded, emphasizing the comfort and wearability of the product without exaggeration.\n\n[Shot 4] At 00:13.500, the shot holds on her smiling face, the rosewood-brown shade looking natural and integrated with her complexion. The recapped tube remains visible in her hand, completing the application sequence. The scene ends with this moment of verified comfort and style, ready for the final payoff. <d>[English] (S1) One swipe. Coffee check, daylight check—and it still feels like my lips.</d>",
+    "plan": {
+      "clipSeconds": 15,
+      "hasCharacters": true,
+      "hasDialogue": true,
+      "approvedShots": [
+        {
+          "index": 1,
+          "summary": "The shot opens with a close-up of Maya’s face at the vanity mirror.",
+          "seconds": 3.75
+        },
+        {
+          "index": 2,
+          "summary": "the shot cuts to a medium close-up as Maya moves away from the vanity toward a window.",
+          "seconds": 3.75
+        },
+        {
+          "index": 3,
+          "summary": "the shot cuts to a tighter frame on her face as she speaks her impression.",
+          "seconds": 3.75
+        },
+        {
+          "index": 4,
+          "summary": "the shot holds on her smiling face, the rosewood-brown shade looking natural and integrated with her complexion.",
+          "seconds": 3.75
+        }
+      ]
+    }
+  },
+  {
+    "label": "veyra-discovery",
+    "story": "PURPOSE: discovery\n\nSUMMARY: [reference generation] Maya Rao picks up the Veyra CloudSilk tube from the vanity. She uncaps it, revealing the rosewood-brown bullet, and holds it toward the camera. An optional wrist swatch may appear, but no lip application occurs. The bullet is held beside her lower lip, ending the discovery beat.\n\nWHAT HAPPENS IN THIS CLIP:\nVertical 9:16 smartphone aesthetic. Warm, intimate lighting from the vanity mirror reflects off dusty-mauve soft furnishings. Maya Rao, 27, with warm medium-brown skin and shoulder-length softly curled black hair, wears an ivory ribbed tank and small gold hoop earrings. Her makeup is minimal; her lips remain natural and slightly dry.\n\n[Shot 1] The shot opens with a close-up of Maya’s hands as she picks up the slim cylindrical Veyra CloudSilk Lip Colour tube from the vanity surface. The frosted dusty-mauve tube and brushed champagne cap are clearly visible. She holds the product comfortably in her right hand, the scale compact and plausible. The camera `Tilt Up` smoothly from the product to Maya’s face as she looks at the tube with quiet recognition.\n\n[Shot 2] At 00:04.000, the shot cuts to a medium close-up of Maya’s face and upper torso. She uncaps the tube, extending the rosewood-brown bullet. The motion is deliberate and gentle. She turns the bullet slightly toward the camera lens, allowing the warm light to catch the texture of the pigment. Her expression is calm and focused, devoid of exaggerated excitement. The background remains the soft, textured bedroom suite.\n\n[Shot 3] At 00:08.500, the shot cuts to a detail view of Maya’s wrist. She may briefly swatch the color on her inner wrist to reveal the true shade, or simply hold the bullet steady. The focus is sharp on the product form, highlighting the contrast between the dusty-mauve packaging and the rich rosewood-brown bullet. The camera remains steady, emphasizing the product’s quality.\n\n[Shot 4] At 00:12.000, the shot cuts back to Maya’s face. She holds the uncapped tube with the bullet extended, positioning it just beside her lower lip without touching it. She looks directly into the lens, her dark-brown eyes conveying a sense of finding the right match. The scene holds this moment of product reveal, creating a visual bridge to the application section. The lighting remains consistent, maintaining the cozy bedroom ambience. <d>[English] (S1) This is Afterglow 07—that rosewood-brown I keep looking for.</d>",
+    "plan": {
+      "clipSeconds": 15,
+      "hasCharacters": true,
+      "hasDialogue": true,
+      "approvedShots": [
+        {
+          "index": 1,
+          "summary": "The shot opens with a close-up of Maya’s hands as she picks up the slim cylindrical Veyra CloudSilk Lip Colour tube from the vanity surface.",
+          "seconds": 3.75
+        },
+        {
+          "index": 2,
+          "summary": "the shot cuts to a medium close-up of Maya’s face and upper torso.",
+          "seconds": 3.75
+        },
+        {
+          "index": 3,
+          "summary": "the shot cuts to a detail view of Maya’s wrist.",
+          "seconds": 3.75
+        },
+        {
+          "index": 4,
+          "summary": "the shot cuts back to Maya’s face.",
+          "seconds": 3.75
+        }
+      ]
+    }
+  },
+  {
+    "label": "veyra-hook",
+    "story": "PURPOSE: hook\n\nSUMMARY: [reference generation] Maya Rao, 27, Bengaluru creator, stands at a warm vanity mirror. She notices her dry-looking lips, expressing mild self-aware frustration. The camera cuts between her reflective gaze and the capped Veyra CloudSilk tube on the counter, establishing the problem without resolving it. Natural handheld style, intimate vertical framing.\n\nWHAT HAPPENS IN THIS CLIP:\nVertical 9:16 smartphone aesthetic. Warm, intimate lighting from a vanity mirror reflects off dusty-mauve soft furnishings. Maya Rao, 27, with warm medium-brown skin and shoulder-length softly curled black hair, wears an ivory ribbed tank and small gold hoop earrings. Her makeup is minimal; her lips appear natural but slightly dry.\n\n[Shot 1] At 00:00.000, the shot opens with a close-up of Maya’s face in the round champagne-rim mirror. She catches her reflection, her expression turning lightly self-aware as she notices her dry-looking lips. <Subject 1> (Maya) tilts her head slightly, her dark-brown eyes softening with a familiar, everyday frustration. The camera performs a subtle `Shake Slightly` to mimic natural handheld breathing. She speaks directly to the lens, breaking the fourth wall with a conversational tone.\n\n[Shot 2] At 00:04.500, the shot cuts to a medium close-up of Maya’s profile as she turns slightly away from the mirror, her gaze drifting down toward the vanity surface. The warm late-afternoon light catches the texture of her skin and the ivory ribbing of her tank. Her right hand begins to lower, reaching toward the counter, creating a visual bridge to the product.\n\n[Shot 3] At 00:08.000, the shot cuts to a top-down detail view of the vanity surface. The slim cylindrical Veyra CloudSilk Lip Colour tube rests capped among porcelain items. It features a frosted dusty-mauve tube and brushed champagne cap. The camera `Push In` slowly on the capped tube, emphasizing its presence as the potential solution, though it remains untouched. The focus is sharp on the product form, while the background softly blurs.\n\n[Shot 4] At 00:12.000, the shot cuts back to Maya’s face. She looks back up at the mirror, her expression shifting from frustration to contemplation. Her right hand is now visible at the bottom of the frame, hovering just above the capped tube, ready to pick it up. The scene holds this moment of anticipation, leaving the resolution for the next section. The lighting remains consistent, maintaining the cozy bedroom ambience. <d>[English] (S1) Why does my lip colour always look tired before I do?</d>",
+    "plan": {
+      "clipSeconds": 15,
+      "hasCharacters": true,
+      "hasDialogue": true,
+      "approvedShots": [
+        {
+          "index": 1,
+          "summary": "the shot opens with a close-up of Maya’s face in the round champagne-rim mirror.",
+          "seconds": 3.75
+        },
+        {
+          "index": 2,
+          "summary": "the shot cuts to a medium close-up of Maya’s profile as she turns slightly away from the mirror, her gaze drifting down toward the vanity surface.",
+          "seconds": 3.75
+        },
+        {
+          "index": 3,
+          "summary": "the shot cuts to a top-down detail view of the vanity surface.",
+          "seconds": 3.75
+        },
+        {
+          "index": 4,
+          "summary": "the shot cuts back to Maya’s face.",
+          "seconds": 3.75
+        }
+      ]
+    }
+  },
+  {
+    "label": "veyra-proof-payoff",
+    "story": "PURPOSE: proof_payoff\n\nSUMMARY: [reference generation] Maya Rao finishes getting ready in golden hour light. She gives her rosewood-brown lips an approving look, slips the recapped Veyra CloudSilk tube into her bag, and exits with quiet confidence. The composition remains calm and simple at the end to allow for deterministic packshot overlay. Vertical smartphone aesthetic.\n\nWHAT HAPPENS IN THIS CLIP:\nVertical 9:16 smartphone aesthetic. Warm, intimate lighting transitions to rich golden hour sunlight streaming through the bedroom window. Maya Rao, 27, with warm medium-brown skin and shoulder-length softly curled black hair, wears an ivory ribbed tank and small gold hoop earrings. Her lips display a smooth, comfortable rosewood-brown finish.\n\n[Shot 1] The shot opens with a medium close-up of Maya standing near the bedroom doorway, bathed in warm golden hour light. She looks into the round champagne-rim mirror one last time, checking her reflection. Her expression is one of quiet satisfaction and main-character confidence. The light catches the texture of her skin and the soft curls of her hair. She speaks directly to the lens, her tone conversational and decisive.\n\n[Shot 2] At 00:04.000, the shot cuts to a detail view of Maya’s hands. She holds the slim cylindrical Veyra CloudSilk Lip Colour tube, now recapped with its brushed champagne cap. With a fluid motion, she slips the compact tube into the side pocket of her casual tote bag. The focus is sharp on the product form and the action of securing it, emphasizing its portability and importance to her routine. The background remains the soft, textured bedroom suite.\n\n[Shot 3] At 00:08.500, the shot cuts back to a medium shot of Maya. She turns away from the mirror and begins to walk toward the door, her posture relaxed and assured. The golden light creates a warm halo effect around her silhouette. She offers a final, subtle smile to the camera, acknowledging the successful look. The camera performs a gentle `Pull Back` to frame her full upper body as she prepares to exit.\n\n[Shot 4] At 00:11.000, the shot holds on a calm, static composition of the empty doorway or the soft focus of the room as Maya exits the frame. The lighting remains warm and inviting, with no essential visual information changing. This static hold provides a clean, uncluttered canvas for the deterministic packshot overlay, ensuring the final brand assets are the primary focus without visual competition from the generative footage. <d>[English] (S1) Okay, this is the one coming with me.</d>",
+    "plan": {
+      "clipSeconds": 15,
+      "hasCharacters": true,
+      "hasDialogue": true,
+      "approvedShots": [
+        {
+          "index": 1,
+          "summary": "The shot opens with a medium close-up of Maya standing near the bedroom doorway, bathed in warm golden hour light.",
+          "seconds": 3.75
+        },
+        {
+          "index": 2,
+          "summary": "the shot cuts to a detail view of Maya’s hands.",
+          "seconds": 3.75
+        },
+        {
+          "index": 3,
+          "summary": "the shot cuts back to a medium shot of Maya.",
+          "seconds": 3.75
+        },
+        {
+          "index": 4,
+          "summary": "the shot holds on a calm, static composition of the empty doorway or the soft focus of the room as Maya exits the frame.",
+          "seconds": 3.75
+        }
+      ]
+    }
+  },
+  {
+    "label": "gyantv-scene_1.v5",
+    "story": "PURPOSE: Rahul discovers and shares the Cool Survey App with Sameer.\n\nSUMMARY: [reference generation] A phone notification lands and Rahul, caught mid-afternoon, looks down at the screen and turns it toward Sameer. Nobody speaks; the beat plays on the chime and the turn of the phone.\n\nWHAT HAPPENS IN THIS CLIP:\nCinematic photoreal film still, 50mm lens, shallow depth of field, warm practical indoor lighting, muted amber-and-slate grade, fine grain, vertical 9:16 frame. [Shot 1] Medium close-up framing Rahul from the chest up, centered in the frame, holding the smartphone in his right hand. The cool blue-white glow from the screen illuminates his face and upper torso, contrasting with the warm ambient light of the room. Rahul taps the smartphone screen, illuminating his face with the glow. Camera: Static Shot. [Shot 2] At 00:04.500, Medium two-shot. Rahul is on the left, turned slightly right, extending the smartphone towards the center. Sameer is on the right, leaning in from the sofa to look at the screen. The phone is the focal point between them. Rahul holds the smartphone out toward Sameer, displaying the 'Cool Survey App' interface. Camera: Static Shot.",
+    "plan": {
+      "clipSeconds": 10.13,
+      "hasCharacters": true,
+      "hasDialogue": false,
+      "approvedShots": [
+        {
+          "index": 1,
+          "summary": "Rahul taps the smartphone screen, illuminating his face with the glow.",
+          "seconds": 4.5
+        },
+        {
+          "index": 2,
+          "summary": "Rahul holds the smartphone out toward Sameer, displaying the 'Cool Survey App' interface.",
+          "seconds": 5.63
+        }
+      ]
+    }
+  },
+  {
+    "label": "gyantv-scene_10.v8",
+    "story": "PURPOSE: Rahul and Sameer break the fourth wall to pose the final unresolved question about the Cool Survey App, inviting the audience to join them.\n\nSUMMARY: [dialogue execution] Rahul and Sameer break the fourth wall, turning from each other to look directly at the camera lens. Rahul poses the final question about the app's nature while holding the smartphone, and Sameer follows with a skeptical inquiry, maintaining eye contact with the viewer.\n\nWHAT HAPPENS IN THIS CLIP:\nCinematic photoreal film still, 50mm lens, shallow depth of field, warm practical indoor lighting, muted amber-and-slate grade, fine grain, vertical 9:16 frame. [Shot 1] Static medium two-shot framing Rahul and Sameer side-by-side. Rahul is positioned left, facing slightly right towards Sameer initially, then turning head to face forward. Sameer is positioned right, facing slightly left, turning head to face forward. The background is the softly blurred living room interior. The camera holds steady on their faces as they break the fourth wall. Rahul poses the question about the app's reality, turning to face the camera. Camera: Static Shot. (S1) <d>[Hindi] तो Cool Survey App की Reality क्या है?</d> [Shot 2] At 00:04.360, Static medium two-shot framing Rahul and Sameer side-by-side, holding their gaze directly at the camera lens. Rahul is positioned left, holding the smartphone steady. Sameer is positioned right, tilting his head slightly with eyebrows raised. The background remains softly blurred. The camera holds steady on their shared gaze toward the audience. Sameer poses the final question about the app's nature, looking directly at the camera. Camera: Static Shot. (S2) <d>[Hindi] Real… Fake… या मामला कुछ और?</d>",
+    "plan": {
+      "clipSeconds": 8.71,
+      "hasCharacters": true,
+      "hasDialogue": true,
+      "approvedShots": [
+        {
+          "index": 1,
+          "summary": "Rahul poses the question about the app's reality, turning to face the camera.",
+          "seconds": 4.36
+        },
+        {
+          "index": 2,
+          "summary": "Sameer poses the final question about the app's nature, looking directly at the camera.",
+          "seconds": 4.35
+        }
+      ]
+    }
+  },
+  {
+    "label": "gyantv-scene_11.v8",
+    "story": "PURPOSE: Rahul and Sameer deliver the final call to action, inviting the audience to download the app with a confident, welcoming tone.\n\nSUMMARY: [reference generation] Rahul and Sameer hold the smartphone between them and settle into a confident look at camera for the closing frame. Nobody speaks; the beat plays on their held posture, a rising score and one impact hit.\n\nWHAT HAPPENS IN THIS CLIP:\nCinematic photoreal film stills with a digital-cinema finish, emphasizing naturalistic texture in skin and fabric. The look features subtle film grain and moderate contrast to maintain a grounded, documentary-style authenticity without stylization. [Shot 1] Medium two-shot. Rahul is on the left, Sameer on the right. Both look directly forward at the camera lens. They hold the smartphone together between them at chest height. The background shows the softly blurred beige walls of the living room, brighter than before. Rahul and Sameer hold the phone between them and settle into a steady look at the camera, both with their lips closed. Camera: Static Shot. (S3) <d>[Hindi] पूरा Reality Check जानने के लिए देखिए वीडियो।</d> [Shot 2] At 00:04.000, Medium two-shot. Rahul and Sameer remain side-by-side, looking directly at the camera. Rahul gestures slightly with his free hand while holding the phone. Sameer nods subtly. The background remains softly blurred and bright. The two hold their position, lips closed and still, the phone screen angled toward the lens. Camera: Static Shot. (S3) <d>[Hindi] Apps, AI और Online Earning की ऐसी ही काम की जानकारी के लिए GYAN TV डाउनलोड करें।</d> [Shot 3] At 00:11.300, Medium two-shot. Rahul and Sameer hold their pose, looking steadily at the camera. The smartphone is held centrally between them. The lighting remains bright and clear. The background is softly blurred. They hold the final frame, lips closed, gaze level at the camera as the light settles. Camera: Static Shot. (S3) <d>[Hindi] GYAN TV दावा नहीं, सही जानकारी!</d>",
+    "plan": {
+      "clipSeconds": 15.08,
+      "hasCharacters": true,
+      "hasDialogue": true,
+      "approvedShots": [
+        {
+          "index": 1,
+          "summary": "Rahul and Sameer hold the phone between them and settle into a steady look at the camera, both with their lips closed.",
+          "seconds": 4
+        },
+        {
+          "index": 2,
+          "summary": "The two hold their position, lips closed and still, the phone screen angled toward the lens.",
+          "seconds": 7.3
+        },
+        {
+          "index": 3,
+          "summary": "They hold the final frame, lips closed, gaze level at the camera as the light settles.",
+          "seconds": 3.78
+        }
+      ]
+    }
+  },
+  {
+    "label": "gyantv-scene_2.v5",
+    "story": "PURPOSE: Rahul pitches the Cool Survey App to Sameer, emphasizing its earning potential.\n\nSUMMARY: [reference generation] Rahul presents the smartphone to Sameer, illuminating his face with the cool blue UI glow while emphasizing the app's earning potential.\n\nWHAT HAPPENS IN THIS CLIP:\nCinematic photoreal film still, 50mm lens, shallow depth of field, warm practical indoor lighting, muted amber-and-slate grade, fine grain, vertical 9:16 frame. [Shot 1] Medium close-up framing Rahul from the chest up, centered in the frame, holding the smartphone out toward the right. Sameer is on the right edge of the frame, leaning in. The cool blue-white glow from the phone screen illuminates Rahul's face and upper torso, contrasting with the warm ambient light of the room. Rahul extends the smartphone toward Sameer, displaying the 'Cool Survey App' interface while speaking. Camera: Static Shot. (S1) <d>[Hindi] समीर! भाई, ये देख… Cool Survey App पर Survey भरो और पैसे कमाओ!</d>",
+    "plan": {
+      "clipSeconds": 7.29,
+      "hasCharacters": true,
+      "hasDialogue": true,
+      "approvedShots": [
+        {
+          "index": 1,
+          "summary": "Rahul extends the smartphone toward Sameer, displaying the 'Cool Survey App' interface while speaking.",
+          "seconds": 7.29
+        }
+      ]
+    }
+  },
+  {
+    "label": "gyantv-scene_3.v5",
+    "story": "PURPOSE: Sameer questions the validity of the app's earnings promise, displaying skepticism.\n\nSUMMARY: [reference generation] Sameer scrutinizes the smartphone screen held by Rahul, his face illuminated by the cool blue UI glow, then looks up to question the earnings promise.\n\nWHAT HAPPENS IN THIS CLIP:\nCinematic photoreal film still, 50mm lens, shallow depth of field, warm practical indoor lighting, muted amber-and-slate grade, fine grain, vertical 9:16 frame. [Shot 1] Medium close-up framing Sameer from the chest up, leaning in from the right side of the frame. Rahul is partially visible on the left, holding the smartphone steady. The cool blue-white glow from the phone screen illuminates Sameer's face and upper torso, contrasting with the warm ambient light of the room. Sameer leans in to scrutinize the smartphone screen held by Rahul while asking about the earnings. Camera: Static Shot. (S2) <d>[Hindi] सच में? सिर्फ़ Survey भरने के पैसे?</d> [Shot 2] At 00:04.500, Medium shot framing Rahul from the chest up, centered in the frame, holding the smartphone out toward the right. Sameer is on the right edge of the frame, pulling back slightly. The cool blue-white glow from the phone screen illuminates Rahul's face and upper torso, contrasting with the warm ambient light of the room. Sameer pulls back from the screen and looks up at Rahul with a doubtful expression. Camera: Static Shot.",
+    "plan": {
+      "clipSeconds": 8.71,
+      "hasCharacters": true,
+      "hasDialogue": true,
+      "approvedShots": [
+        {
+          "index": 1,
+          "summary": "Sameer leans in to scrutinize the smartphone screen held by Rahul while asking about the earnings.",
+          "seconds": 4.5
+        },
+        {
+          "index": 2,
+          "summary": "Sameer pulls back from the screen and looks up at Rahul with a doubtful expression.",
+          "seconds": 4.21
+        }
+      ]
+    }
+  },
+  {
+    "label": "gyantv-scene_4.v5",
+    "story": "PURPOSE: Rahul poses the central question of the app's legitimacy, establishing the core conflict of the scene.\n\nSUMMARY: [reference generation] Rahul holds the smartphone steady, the screen's bright interface casting a cool glow on his warm brown skin, framing the central mystery of the app’s legitimacy with a curious expression.\n\nWHAT HAPPENS IN THIS CLIP:\nCinematic photoreal film still, 50mm lens, shallow depth of field, warm practical indoor lighting, muted amber-and-slate grade, fine grain, vertical 9:16 frame. [Shot 1] Medium shot framing Rahul from the chest up, centered in the frame, holding the smartphone steady at chest height. The cool blue-white glow from the phone screen illuminates Rahul's face and upper torso, contrasting with the warm ambient light of the room. Sameer is implied to be off-screen right, receiving the gaze. Rahul holds the smartphone steady, presenting the app interface to Sameer while asking if it is real or fake. Camera: Static Shot. (S1) <d>[Hindi] हाँ… लेकिन सवाल है—Real है या Fake?</d>",
+    "plan": {
+      "clipSeconds": 5.88,
+      "hasCharacters": true,
+      "hasDialogue": true,
+      "approvedShots": [
+        {
+          "index": 1,
+          "summary": "Rahul holds the smartphone steady, presenting the app interface to Sameer while asking if it is real or fake.",
+          "seconds": 5.88
+        }
+      ]
+    }
+  },
+  {
+    "label": "gyantv-scene_5.v5",
+    "story": "PURPOSE: Rahul lowers the phone to invite shared contemplation, prompting Sameer to question the reliability of survey apps.\n\nSUMMARY: [reference generation] Rahul lowers the smartphone to his chest, breaking eye contact with the screen to look at Sameer. Sameer watches the gesture, his expression shifting from skepticism to quiet reflection as the late afternoon light highlights his thoughtful demeanor.\n\nWHAT HAPPENS IN THIS CLIP:\nCinematic photoreal film still, 50mm lens, shallow depth of field, warm practical indoor lighting, muted amber-and-slate grade, fine grain, vertical 9:16 frame. [Shot 1] Static medium two-shot framing Rahul and Sameer from the chest up. Rahul is on the left, slowly lowering the smartphone to his chest. Sameer is on the right, watching Rahul's face and the phone. Rahul lowers the phone; Sameer watches and reflects. Camera: Static Shot. (S2) <d>[Hindi] अगर सच में कमाई है, तो फिर… हर Survey App भरोसेमंद क्यों नहीं होता?</d>",
+    "plan": {
+      "clipSeconds": 7.29,
+      "hasCharacters": true,
+      "hasDialogue": true,
+      "approvedShots": [
+        {
+          "index": 1,
+          "summary": "Rahul lowers the phone; Sameer watches and reflects.",
+          "seconds": 7.29
+        }
+      ]
+    }
+  },
+  {
+    "label": "gyantv-scene_6.v5",
+    "story": "PURPOSE: Rahul taps the screen to emphasize his question, inviting Sameer to consider how to verify the app's legitimacy.\n\nSUMMARY: [reference generation] Rahul holds the smartphone steady, tapping the screen once while looking up at Sameer with an expectant expression. The cool glow of the screen illuminates his face against the warm ambient light of the living room.\n\nWHAT HAPPENS IN THIS CLIP:\nCinematic photoreal film still, 50mm lens, shallow depth of field, warm practical indoor lighting, muted amber-and-slate grade, fine grain, vertical 9:16 frame. [Shot 1] Static medium two-shot framing Rahul and Sameer from the chest up. Rahul is on the left, holding the smartphone steady in front of him. Sameer is on the right, watching Rahul's face and the phone. Rahul taps the phone screen once and looks up to ask the question; Sameer watches and listens. Camera: Static Shot. (S1) <d>[Hindi] तो पता कैसे चलेगा कि ये App सही है?</d>",
+    "plan": {
+      "clipSeconds": 5.88,
+      "hasCharacters": true,
+      "hasDialogue": true,
+      "approvedShots": [
+        {
+          "index": 1,
+          "summary": "Rahul taps the phone screen once and looks up to ask the question; Sameer watches and listens.",
+          "seconds": 5.88
+        }
+      ]
+    }
+  },
+  {
+    "label": "gyantv-scene_7.v5",
+    "story": "PURPOSE: Sameer lists the three pillars of trust while Rahul adds the final point on reviews, establishing transparency as the core requirement.\n\nSUMMARY: [dialogue execution] Sameer enumerates three criteria for trust using three fingers while Rahul listens and interjects with the final point on reviews, establishing the importance of transparency.\n\nWHAT HAPPENS IN THIS CLIP:\nCinematic photoreal film still, 50mm lens, shallow depth of field, warm practical indoor lighting, muted amber-and-slate grade, fine grain, vertical 9:16 frame. [Shot 1] Static medium shot framing Sameer from the chest up. He is positioned slightly right of center, leaning forward with his right hand raised, holding up three fingers. The background is softly blurred living room interior. Sameer raises three fingers to list payment, withdrawal, and privacy criteria. Camera: Static Shot. (S2) <d>[Hindi] तीन चीज़ें देखो Payment का तरीका, Withdrawal की शर्तें और Privacy Policy।</d> [Shot 2] At 00:04.320, Static medium close-up framing Rahul from the chest up. He is positioned on the left side of the frame, nodding vigorously with his eyes widening. His free hand gestures subtly near his chest. Rahul nods and interjects with the point about reviews. Camera: Static Shot. (S1) <d>[Hindi] और Reviews?</d> [Shot 3] At 00:08.640, Static medium shot framing Sameer from the chest up. He is positioned slightly right of center, hand lowered, settling back. He looks directly at Rahul with a conclusive nod. Sameer lowers his hand, nods conclusively, and validates the review point. Camera: Static Shot. (S2) <d>[Hindi] वो भी! क्योंकि सिर्फ़ \"पैसे कमाओ\" देखकर भरोसा करना सही नहीं।</d>",
+    "plan": {
+      "clipSeconds": 12.96,
+      "hasCharacters": true,
+      "hasDialogue": true,
+      "approvedShots": [
+        {
+          "index": 1,
+          "summary": "Sameer raises three fingers to list payment, withdrawal, and privacy criteria.",
+          "seconds": 4.32
+        },
+        {
+          "index": 2,
+          "summary": "Rahul nods and interjects with the point about reviews.",
+          "seconds": 4.32
+        },
+        {
+          "index": 3,
+          "summary": "Sameer lowers his hand, nods conclusively, and validates the review point.",
+          "seconds": 4.32
+        }
+      ]
+    }
+  },
+  {
+    "label": "gyantv-scene_8.v7",
+    "story": "PURPOSE: Rahul questions the hidden costs of the app beyond just monetary earnings, shifting the focus to data privacy.\n\nSUMMARY: [dialogue execution] Rahul holds the smartphone steady, shifting his gaze to Sameer with a serious inquiry about hidden costs, while Sameer listens intently, establishing the tension around data privacy.\n\nWHAT HAPPENS IN THIS CLIP:\nCinematic photoreal film still, 50mm lens, shallow depth of field, warm practical indoor lighting, muted amber-and-slate grade, fine grain, vertical 9:16 frame. [Shot 1] Static medium close-up framing Rahul from the chest up. He is positioned slightly right of center, holding the smartphone steady in his right hand at chest level. The background is the softly blurred living room interior. The camera performs a slow push-in on his face. Rahul holds the phone steady and poses the first part of his question about money. Camera: Static Shot. (S1) <d>[Hindi] यानी असली सवाल सिर्फ़ ये नहीं कि पैसे मिलेंगे या नहीं…</d> [Shot 2] At 00:03.290, Static medium shot framing Sameer from the chest up. He is positioned slightly left of center, facing right towards Rahul. The background is the softly blurred living room interior. Sameer holds Rahul's gaze without a word, weighing what he has just heard. Neither man speaks for the rest of the beat. Camera: Static Shot.",
+    "plan": {
+      "clipSeconds": 8.71,
+      "hasCharacters": true,
+      "hasDialogue": true,
+      "approvedShots": [
+        {
+          "index": 1,
+          "summary": "Rahul holds the phone steady and poses the first part of his question about money.",
+          "seconds": 3.29
+        },
+        {
+          "index": 2,
+          "summary": "Sameer holds Rahul's gaze without a word, weighing what he has just heard. Neither man speaks for the rest of the beat.",
+          "seconds": 5.42
+        }
+      ]
+    }
+  },
+  {
+    "label": "gyantv-scene_9.v7",
+    "story": "PURPOSE: Sameer reveals the hidden cost of data privacy, shifting the focus from monetary earnings to digital security.\n\nSUMMARY: [dialogue execution] Sameer leans forward from his position in the living room, lowering his voice to emphasize the data privacy cost, while Rahul listens intently, holding the smartphone steady.\n\nWHAT HAPPENS IN THIS CLIP:\nCinematic photoreal film still, 50mm lens, shallow depth of field, warm practical indoor lighting, muted amber-and-slate grade, fine grain, vertical 9:16 frame. [Shot 1] Static medium shot framing Sameer from the chest up. He is positioned slightly left of center, facing right towards Rahul. The background is the softly blurred living room interior. The camera holds steady on his face as he leans forward. Sameer leans forward and speaks the final part of his thought about data safety, while Rahul listens intently. Camera: Static Shot. (S2) <d>[Hindi] बल्कि ये भी कि बदले में आपका Data कितना Safe है!</d>",
+    "plan": {
+      "clipSeconds": 6.58,
+      "hasCharacters": true,
+      "hasDialogue": true,
+      "approvedShots": [
+        {
+          "index": 1,
+          "summary": "Sameer leans forward and speaks the final part of his thought about data safety, while Rahul listens intently.",
+          "seconds": 6.58
+        }
+      ]
+    }
+  }
+]

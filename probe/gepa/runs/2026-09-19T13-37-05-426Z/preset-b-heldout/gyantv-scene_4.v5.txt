@@ -1,0 +1,17 @@
+subject_definitions: <Subject 1> is Rahul, a young man with warm brown skin, dark hair, and a neutral indoor outfit, holding a smartphone at chest height.
+<Subject 2> is the smartphone, with a lit app interface, a cool blue-white screen glow, and a steady horizontal orientation.
+<Subject 3> is the indoor room, with warm practical lighting, a constant practical lamp glow, and a still background.
+
+summary: [reference generation] The target video shows <Subject 1> holding <Subject 2> steady at chest height in <Subject 3>, presenting the app interface toward off-screen right while asking a single Hindi question. The camera remains a frontal medium shot, slightly left of center, with no cut.
+
+retention_analysis: <Subject 1> (appears in [Shot 1]): fully_preserved - Rahul remains centered in the medium frame, chest-up, with the phone held level at chest height.
+<Subject 2> (appears in [Shot 1]): fully_preserved - the smartphone remains steady, screen lit, and the app interface remains the brightest object in the frame.
+<Subject 3> (appears in [Shot 1]): fully_preserved - the room remains still, with constant warm practical light and no background movement.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+[Shot 1] A frontal medium shot frames <Subject 1> from the chest up, slightly left of center, with <Subject 2> held steady at chest height and the lit app interface facing off-screen right. <Subject 1> keeps his shoulders squared toward off-screen right, his thumb braced under the phone, and his hand fixed beneath it so the screen stays level. The cool glow from <Subject 2> presses against the warm indoor light of <Subject 3>, illuminating his face and upper torso while the practical lamp glow remains constant and the background stays still. His eyes remain fixed on off-screen right, not on the phone, and his head tilts forward a half-inch as he asks, then he holds the pose without shifting his weight. The camera holds a Static Shot, unchanged, with the wide end of the zoom maintaining a medium framing that keeps both <Subject 1> and <Subject 2> readable. <Subject 1> (S1) says in a steady, direct Hindi voice: <d>[Hindi] हाँ… लेकिन सवाल है—Real है या Fake?</d> His lips close after the line, and the phone remains level at chest height as the question completes.
+
+overall_soundscape: Quiet indoor room tone continues throughout the shot, with a faint constant hum from the practical lamp and no background movement.
+
+non_diegetic_music: N/A

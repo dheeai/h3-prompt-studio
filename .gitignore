@@ -21,3 +21,9 @@ dist/
 # them (~2.5 MB of editor code each). Re-seed rather than version them. The
 # sources (.dc.html + canvas.json) ARE tracked; only the built canvas is not.
 design/**/*-redesign.html
+
+# GEPA's authored-prompt cache — content-addressed, regenerable, and would
+# otherwise dump one JSON file per (instruction, story) pair into the repo.
+# probe/gepa/runs/ is deliberately NOT ignored: every prompt GEPA produces is
+# kept (founder directive).
+probe/gepa/.cache/

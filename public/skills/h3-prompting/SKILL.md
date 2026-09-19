@@ -148,6 +148,52 @@ To suppress invented speech in a silent scene, avoid every speech verb
 in a denial like "she does not speak", which still trips the check. Write
 "her lips stay closed and the call is silent."
 
+## Props steal attention — say where the eyes are NOT
+
+Measured 2026-09-19, four A/B pairs rendered at the same seed. Two prompts
+both placed a speaker's gaze on the listener's face. Only one added *where it
+is not*, and only that one rendered correctly:
+
+- **rendered wrong** — "Sameer's eyes stay fixed on Rahul"
+- **rendered right** — "Sameer's eyes stay fixed on Rahul's face, **not the
+  phone**" … "his eyes remain on Sameer's face, not the screen, and do not
+  drop to the phone"
+
+The losing prompt was not vaguer. It stated the gaze once, positively, then
+named the phone three more times as business — thumb on its edge, fingers
+pressing it, screen visible. H3 resolved the competition toward the object
+that was mentioned most.
+
+**So when a character speaks while holding something, put their gaze on the
+person addressed AND exclude the object by name.** Count your mentions: an
+object named more often than the face will win the frame.
+
+This is NOT the same as the N/A sentinel rule, and the two must not be
+confused. **Suppressing a MODALITY** — music, speech — fails under negation,
+because naming it is what conjures it. **Directing ATTENTION** between two
+things already in frame succeeds under negation, because the competing target
+is present either way and the only question is which one wins. Negate a
+target that is in the shot; never negate a modality you do not want at all.
+
+## A screen is a light source, not a document
+
+A lit screen pointed at camera is dead frame: it demands the eye and gives it
+nothing to read. Across the same four pairs, every prompt that described
+screen CONTENT rendered the phone turned toward the audience; every prompt
+that described screen LIGHT kept it where a hand naturally holds it.
+
+- **turns to camera** — "a lit screen showing a simple earnings interface, a
+  large number, a progress bar, and a small button"
+- **turns to camera** — "the smartphone screen visible but not readable"
+  (visible and unreadable is the definition of dead frame)
+- **stays in hand** — "the smartphone screen providing a cool hard glow on
+  Rahul's face"
+
+**Describe what the screen DOES to the light on a face, not what is on it —
+unless reading it is the point of the shot.** When the content genuinely
+matters, say so once and frame for it deliberately; otherwise the glow is the
+whole job.
+
 ## Mechanics that are not the prompt's job
 
 Our runner (`comfy.minimax_h3_r2v`, `~/.kshana/runners/dhee-runner-minimax-h3`)

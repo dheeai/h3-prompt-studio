@@ -1,0 +1,29 @@
+subject_definitions: subject_definitions:
+<Subject 1> is Rahul, a young Indian man with warm brown skin, short dark hair, a light stubble, and a plain dark T-shirt, holding a black smartphone steady at chest height.
+<Subject 2> is the dim indoor room environment, with a soft grey wall, a muted green curtain edge at frame left, and warm practical lamp light from off-screen left.
+<Subject 3> is the black smartphone in Rahul's hand, its screen bright enough to cast a cool blue-white glow on his face and upper torso.
+<Subject 4> is Sameer, present only as an off-screen presence at frame right, indicated by Rahul's fixed gaze and a faint shoulder edge entering the right margin.
+<Audio 1> is the voice-timbre reference for <Subject 1> (S1), a young male Hindi voice with a careful, questioning delivery.
+
+summary: summary:
+[reference generation + audio reference] The target video shows <Subject 1> holding <Subject 3> steady in <Subject 2>, presenting the app interface to <Subject 4> while asking whether it is real or fake. <Audio 1> guides the vocal delivery of <Subject 1> (S1).
+
+retention_analysis: retention_analysis:
+<Subject 1> (appears in [Shot 1], [Shot 2], [Shot 3]): fully_preserved - Rahul's warm brown skin, short dark hair, light stubble, plain dark T-shirt, and steady chest-height smartphone hold are retained.
+<Subject 2> (appears in [Shot 1], [Shot 2], [Shot 3]): fully_preserved - the dim indoor room, soft grey wall, muted green curtain edge, and warm practical lamp light are retained.
+<Subject 3> (appears in [Shot 1], [Shot 2], [Shot 3]): fully_preserved - the black smartphone remains steady at chest height, with its screen producing a cool blue-white glow on Rahul's face and upper torso.
+<Subject 4> (appears in [Shot 1], [Shot 2], [Shot 3]): partially_preserved - Sameer remains off-screen right, indicated only by Rahul's fixed gaze and a faint shoulder edge at the right margin.
+<Audio 1>: reference - its young male Hindi timbre and careful questioning delivery guide <Subject 1> (S1) without copying the original signal.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+detailed_description:
+[Shot 1] A medium shot frames <Subject 1> from the chest up, centered in <Subject 2>, with the soft grey wall behind him and the muted green curtain edge at frame left. <Subject 1> holds <Subject 3> steady at chest height, his fingers gripping the lower edge, while the screen provides a cool blue-white glow on his face and upper torso, not readable. His eyes stay fixed on <Subject 4> off-screen right, not the phone. The camera holds a static shot with small handheld drift as warm practical lamp light from off-screen left catches the side of his jaw. <Subject 1> (S1), using the careful young male Hindi timbre referenced from <Audio 1>, says: <d>[Hindi] हाँ… लेकिन सवाल है—Real है या Fake?</d> His lips move on the first word, then close briefly before the question, and his breath stays shallow.
+[Shot 2] At 00:02.200, the shot cuts to a tighter medium close-up of <Subject 1>'s face and the top of <Subject 3>, preserving the same chest-height position. The cool screen glow hardens under his lower eyelids while the warm lamp light remains on his left cheek. His eyebrows lift a small amount, his mouth opens slightly, and his gaze remains on <Subject 4> off-screen right, not the phone. The camera pushes in with small amplitude at slow speed, following the pressure of his unblinking stare. A faint shoulder edge of <Subject 4> enters the right margin, then stays still.
+[Shot 3] At 00:04.800, the shot cuts to a close-up of <Subject 3> in <Subject 1>'s hand, with his face blurred above it. The screen's cool blue-white glow stays constant, not readable, and his thumb rests on the lower edge without tapping. The camera pulls out with small amplitude at slow speed as <Subject 1>'s jaw tightens and his eyes remain fixed on <Subject 4> off-screen right, not the phone. The faint shoulder edge of <Subject 4> remains at the right margin, and the warm lamp light flickers once from a nearby switch contact.
+
+overall_soundscape: overall_soundscape:
+A low indoor room tone continues under the scene. The smartphone makes a soft fabric brush against the T-shirt when it is held steady, the curtain edge gives one faint rustle, and a nearby lamp switch contact clicks once near the end.
+
+non_diegetic_music: non_diegetic_music:
+N/A

@@ -1,0 +1,25 @@
+subject_definitions: subject_definitions:
+<Subject 1> is Rahul in the source image, a young man with short dark hair, a plain dark T-shirt, and a calm, watchful face, holding the smartphone in his right hand.
+<Subject 2> is Sameer in the source image, a young man with short black hair, a light grey shirt, and a still, listening posture, seated to Rahul's right.
+<Subject 3> is the living-room environment in the source image, with a warm practical lamp out of focus behind them, a muted amber wall, a dark sofa edge, and soft daylight from the left.
+<Subject 4> is the smartphone in the source image, a dark rectangular phone held upright in Rahul's right hand, its screen facing Rahul and Sameer and acting as a cool light source on Rahul's face.
+
+summary: summary:
+[reference generation] The target video shows <Subject 1> holding <Subject 4> steady in <Subject 3>, tapping the screen once, then looking up at <Subject 2> to ask how the app's legitimacy can be verified. <Subject 2> watches <Subject 1>'s face and listens. The shot uses the source image's two-shot geometry, warm ambient living-room light, and the phone's cool screen glow on <Subject 1>'s face.
+
+retention_analysis: retention_analysis:
+<Subject 1> (appears in [Shot 1]): fully_preserved - Rahul's identity, short dark hair, dark T-shirt, right-hand phone grip, and expectant upward look are retained.
+<Subject 2> (appears in [Shot 1]): fully_preserved - Sameer's identity, short black hair, light grey shirt, seated position, and listening posture are retained.
+<Subject 3> (appears in [Shot 1]): fully_preserved - the warm practical living-room light, muted amber wall, dark sofa edge, and soft left-side daylight are retained.
+<Subject 4> (appears in [Shot 1]): fully_preserved - the dark smartphone is retained as a handheld object and cool light source, with its screen not described as readable content.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+detailed_description:
+[Shot 1] Medium two-shot at 50mm-equivalent, eye-level, handheld with small natural sway, framing <Subject 1> and <Subject 2> from the chest up in <Subject 3>. <Subject 1> is on the left, <Subject 2> on the right, and <Subject 4> sits between them at chest height, its screen angled toward both faces. The camera holds a Static Shot with only a faint handheld breath, motivated by the fixed two-face geometry: <Subject 1>'s face, <Subject 2>'s face, and the phone's glow form a triangle that must not drift. <Subject 1> keeps <Subject 4> steady in his right hand, thumb resting near the lower edge, while his eyes stay fixed on <Subject 2>'s face, not the phone. <Subject 2> leans slightly forward, his eyes fixed on <Subject 1>'s face, not the screen, and his lips stay closed. The phone's screen provides a cool hard glow on the left side of <Subject 1>'s face, while the warm practical lamp behind them gives a soft amber rim on both shoulders. At the first beat, <Subject 1>'s right index finger moves down and taps the screen once; the tap is the only phone motion. At the second beat, his finger lifts, his chin rises, and his gaze locks onto <Subject 2>'s eyes. <Subject 1> (S1), a young man with a steady mid-range Hindi voice, unhurried and direct, says: <d>[Hindi] तो पता कैसे चलेगा कि ये App सही है?</d> As he speaks, his mouth opens and closes naturally, his eyebrows lift slightly, and his right hand remains still. At the third beat, <Subject 2>'s head tilts a few degrees toward <Subject 1>, his eyes remain on <Subject 1>'s face, not the screen, and his jaw tightens as he processes the question. The camera stays locked on the two faces, letting the pressure move from the tap, to the question, to the listener's stillness. The phone remains in the same position, its glow unchanged, and the frame ends with <Subject 1> still looking at <Subject 2> and <Subject 2> still listening.
+
+overall_soundscape: overall_soundscape:
+A single fingertip tap strikes the phone's glass, followed by the soft shift of <Subject 1>'s cotton sleeve, a shallow breath from <Subject 1>, and the faint creak of <Subject 2>'s chair leg as he leans forward.
+
+non_diegetic_music: non_diegetic_music:
+N/A

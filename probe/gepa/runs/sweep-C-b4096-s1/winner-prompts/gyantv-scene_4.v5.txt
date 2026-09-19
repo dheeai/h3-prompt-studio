@@ -1,0 +1,18 @@
+subject_definitions: <Subject 1> is Rahul in <Picture 1>, a young man with warm brown skin, short dark hair, and a plain dark shirt, shown from the chest up and holding a smartphone steady at chest height.
+  <Subject 2> is the smartphone and app interface in <Picture 1>, a dark rectangular phone held upright, its screen bright enough to cast a cool blue-white glow on Rahul’s face and upper torso.
+  <Subject 3> is the indoor room in <Picture 1>, a small practical space with warm ambient light, soft grey walls, and muted amber shadow tones.
+
+summary: [reference generation] The target video shows <Subject 1> holding <Subject 2> steady in <Subject 3>, presenting the app interface to an off-screen right listener and asking whether it is real or fake.
+
+retention_analysis: <Subject 1> (appears in [Shot 1]): fully_preserved - Rahul’s identity, warm brown skin, chest-up framing, and steady phone-holding posture are retained.
+<Subject 2> (appears in [Shot 1]): fully_preserved - the smartphone and app interface are retained as the object of the question, with the screen used as a cool light source.
+<Subject 3> (appears in [Shot 1]): fully_preserved - the warm practical indoor room and muted amber-and-slate environment are retained.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+The scene is a tight observational confrontation, built from a single held question and a phone that stays at chest height.
+[Shot 1] A medium shot, 50mm-equivalent, eye-level, frames <Subject 1> from the chest up, centered in the frame, inside <Subject 3>. The camera holds a Static Shot, locked to the phone’s chest height because the pressure is in <Subject 1>’s unblinking gaze toward the off-screen right listener. <Subject 1> holds <Subject 2> steady with both hands, the phone’s screen providing a cool blue-white glow on his face and upper torso while the room’s warm practical light keeps his skin ochre and the background muted. His eyes stay fixed on the off-screen right listener’s face, not the phone, and do not drop to the screen. His eyebrows lift slightly as he inhales through his nose, his jaw tightens, and his thumb presses the phone’s side button once, making the device click faintly. <Subject 1> (S1), a young man with a low, careful Hindi voice and a slow, deliberate pace, looks toward the off-screen right listener and says: <d>[Hindi] हाँ… लेकिन सवाल है—Real है या Fake?</d> As the line lands, his mouth closes, his breath stops for a beat, and his weight shifts slightly forward, his shirt fabric shifting against the chair. The phone remains at chest height, its glow steady on his face, while his eyes remain on the off-screen right listener’s face, not the screen, and do not drop to the phone.
+
+overall_soundscape: Rahul’s breath stops briefly before the question, then his shirt fabric shifts as his weight moves forward. The phone’s side button clicks once under his thumb, and a chair leg scrapes softly against the floor as he leans.
+
+non_diegetic_music: N/A

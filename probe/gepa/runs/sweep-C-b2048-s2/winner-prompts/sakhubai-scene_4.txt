@@ -1,0 +1,18 @@
+subject_definitions: <Subject 1> is the elderly fisherwoman in the dark green nauvari sari, with a weathered complexion, deeply bent posture, bare cracked feet, and slow deliberate hands.
+  <Subject 2> is the market lane, a narrow street with weathered corner stones, fish-scale awnings, textured ground, and fading amber evening light.
+  <Subject 3> is the thin scruffy dock cat with matted grey-brown fur, visible ribs, bright alert eyes, and a lean body.
+
+summary: [reference generation] The target video shows <Subject 1> resting on a corner stone in <Subject 2>, counting damp cash, feeding <Subject 3>, and gazing out at the fading light.
+
+retention_analysis: <Subject 1> (appears in [Shot 1]): fully_preserved - the elderly fisherwoman's dark green nauvari sari, weathered complexion, hunched posture, bare cracked feet, and slow deliberate hands are retained.
+  <Subject 2> (appears in [Shot 1]): fully_preserved - the market lane's weathered corner stones, fish-scale awnings, textured ground, and fading amber evening light are retained.
+  <Subject 3> (appears in [Shot 1]): fully_preserved - the dock cat's matted grey-brown fur, visible ribs, bright alert eyes, and lean body are retained.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+  The target video is a quiet observational evening scene in natural fading light.
+  [Shot 1] A medium shot at eye level, framed on the wide end of the zoom, holds a Static Shot as <Subject 1>'s hands begin counting damp crumpled notes, because the counting is the first pressure source in the frame. <Subject 1> sits on a weathered corner stone in <Subject 2>, her body bent forward, her bare cracked feet flat on the textured ground, and her dark green nauvari sari folded heavily around her legs. Her fingers separate the damp notes one by one, sliding each into a small worn cloth pouch; the notes stick together, so her thumb presses and peels them apart. <Subject 3> winds its lean body around her ankles, its matted grey-brown fur brushing the stone, its visible ribs moving under its skin, and its bright eyes fixed on her hands, not the pouch. As the count slows, <Subject 1>'s breath becomes shallow and her shoulders drop a small amount. She reaches into the pouch, pulls out a small leftover silver pomfret fish, and drops it onto the ground in front of her feet. <Subject 3> snaps the fish open, its jaws making wet tearing sounds as it eats. After the first bite, <Subject 1>'s gaze leaves the cat, moves past the fish-scale awnings, and settles on the distant hazy dock; her mouth stays closed, her hands stop moving, and her weight shifts slightly back against the stone. The amber light fades deeper across <Subject 2> while the camera remains locked on the same medium framing.
+
+overall_soundscape: Damp paper notes slide, stick, and peel apart as <Subject 1> counts them. Bare cracked feet scuff the stone, the cat's fur brushes the ground, and its jaws make wet tearing sounds as it eats the fish. A low murmur of the closing market fades beneath these sounds.
+
+non_diegetic_music: N/A

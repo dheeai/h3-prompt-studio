@@ -1,0 +1,21 @@
+subject_definitions: <Subject 1> is Rahul, the man on the left in the reference image, wearing a dark casual shirt, with a short beard and a calm, watchful face.
+  <Subject 2> is Sameer, the man on the right in the reference image, wearing a light collared shirt, with a skeptical face that softens into reflection.
+  <Subject 3> is the smartphone in Rahul's hand, a dark rectangular device with a lit screen that is not readable.
+  <Subject 4> is the indoor room in the reference image, a plain domestic interior with a muted wall, a soft window light from the left, and a shallow depth of field.
+  <Subject 5> is the observational cinematic style in the reference image, with warm practical indoor light, neutral true-to-life color, and fine video-sensor grain.
+
+summary: [reference generation] The target video shows <Subject 1> lowering <Subject 3> from eye level to his chest inside <Subject 4>, breaking the screen's hold on the frame and turning his attention to <Subject 2>. <Subject 2> watches the phone fall, then looks at <Subject 1>'s face and asks the fixed Hindi question about survey apps. The scene uses <Subject 5> as the visual reference for the live-action, observational, handheld cinematic look.
+
+retention_analysis: <Subject 1> (appears in [Shot 1]): fully_preserved - Rahul's identity, dark casual shirt, short beard, and left-side position are retained.
+  <Subject 2> (appears in [Shot 1]): fully_preserved - Sameer's identity, light collared shirt, right-side position, and skeptical-to-reflective expression are retained.
+  <Subject 3> (appears in [Shot 1]): fully_preserved - the smartphone's dark rectangular body and lit, unreadable screen are retained.
+  <Subject 4> (appears in [Shot 1]): fully_preserved - the plain domestic interior, muted wall, left-side window light, and shallow depth of field are retained.
+  <Subject 5> (appears in [Shot 1]): fully_preserved - the observational cinematic style, warm practical indoor light, neutral true-to-life color, and fine video-sensor grain are retained.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+  [Shot 1] Medium two-shot, 50mm-equivalent, eye-level, Static Shot. The camera locks off as <Subject 1>'s hand begins to lower <Subject 3>, keeping both men's faces and the phone in the same plane. <Subject 1> is on the left, <Subject 2> on the right, inside <Subject 4>. <Subject 1>'s thumb leaves the phone's edge, his wrist rotates, and the device drops from eye level to his chest. The lit screen of <Subject 3> casts a small cool rectangle on his chin, then the plastic edge presses against his shirt and the fabric folds once. <Subject 2>'s eyes follow the phone down, then lift to <Subject 1>'s face, not the screen. His brow lowers, his mouth parts, and his weight shifts forward as his sleeve brushes the chair arm. <Subject 2> (S2) says in a low, measured male voice with a skeptical pause before the question: <d>[Hindi] अगर सच में कमाई है, तो फिर… हर Survey App भरोसेमंद क्यों नहीं होता?</d> As the line ends, <Subject 1>'s jaw tightens, his eyes stay on <Subject 2>'s face, and his hand remains closed around the phone at his chest. The camera remains a Static Shot, letting the two faces and the lowered phone hold the frame.
+
+overall_soundscape: The smartphone's plastic edge presses against Rahul's shirt, then the fabric folds once. Sameer's sleeve brushes the chair arm as his weight shifts forward. A ceiling fan blade passes overhead in a slow, even tick.
+
+non_diegetic_music: N/A

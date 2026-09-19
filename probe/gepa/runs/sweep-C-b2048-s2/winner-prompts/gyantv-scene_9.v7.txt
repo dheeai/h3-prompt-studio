@@ -1,0 +1,20 @@
+subject_definitions: <Subject 1> is Sameer, the man speaking in the living room, with short dark hair, a plain shirt, a forward-leaning posture, and a lowered speaking voice.
+  <Subject 2> is Rahul, the listener beside Sameer, holding a smartphone steady, with a neutral face, a steady hand, and a phone screen providing a cool glow on his face.
+  <Subject 3> is the living room environment, with a softly blurred sofa, a warm practical lamp, and muted amber-and-slate tones.
+  <Subject 4> is the smartphone in Rahul's hand, held vertically, its lit screen angled toward Rahul's face and not toward the camera.
+
+summary: [reference generation] The target video shows <Subject 1> leaning forward in <Subject 3> and lowering his voice while <Subject 2> listens with <Subject 4> held steady. <Subject 1>'s gaze stays on <Subject 2>'s face, not the phone, and the single handheld medium shot keeps the conversation close and observational.
+
+retention_analysis: <Subject 1> (appears in [Shot 1]): fully_preserved - Sameer's forward lean, lowered voice, and direct address are retained.
+<Subject 2> (appears in [Shot 1]): fully_preserved - Rahul's steady listening posture and phone grip are retained.
+<Subject 3> (appears in [Shot 1]): fully_preserved - the blurred living room, warm practical lamp light, and muted amber-and-slate palette are retained.
+<Subject 4> (appears in [Shot 1]): fully_preserved - the smartphone remains in Rahul's hand, with its screen acting as a light source on his face.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+The scene is a single continuous conversational beat, observed from a handheld documentary position.
+[Shot 1] A medium shot at the 50mm-equivalent position of the zoom, eye-level, frames <Subject 1> from the chest up, slightly left of center, facing right toward <Subject 2>. The camera holds a Static Shot with small handheld drift as <Subject 1> shifts his weight forward, his shoulders dropping and his chin lowering. <Subject 2> enters the right edge of frame, holding <Subject 4> steady in one hand; the phone's lit screen gives a cool hard glow on <Subject 2>'s face, not the camera. <Subject 1> (S2) keeps his eyes fixed on <Subject 2>'s face, not the phone, and says in a lowered, careful voice: <d>[Hindi] बल्कि ये भी कि बदले में आपका Data कितना Safe है!</d> As the line lands, <Subject 2>'s thumb stops moving, his jaw tightens, and his grip on <Subject 4> becomes firmer. The warm practical lamp in <Subject 3> flickers once from a nearby switch, while the blurred sofa and living-room background stay soft behind the two men.
+
+overall_soundscape: A warm practical lamp buzzes softly when its nearby switch flickers. Fabric shifts as <Subject 1> leans forward, and the phone case gives one small click when <Subject 2>'s grip tightens.
+
+non_diegetic_music: N/A

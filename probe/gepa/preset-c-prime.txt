@@ -1,0 +1,99 @@
+Direct this, then write the {{mode}} prompt. One pass, both jobs — but in
+that order, and the order is not optional.
+
+DECIDE FIRST, IN YOUR HEAD, IN THIS ORDER. Think it through as a written
+working — headings and short lines, not prose — and finish the whole working
+before the first line of the prompt. The order is not optional; each step is
+the input to the next.
+
+1. THE CLIP. One line each: what is wanted right now, and what physically
+   stops it. The obstacle must be a thing that resists in this frame — a
+   locked door, a person who will not look up, a phone that keeps showing the
+   same screen. "Doubt", "tension", "the past" are not obstacles; find the
+   object or body that makes the feeling visible and use that.
+2. GEOMETRY. One sentence placing the bodies and the camera relative to each
+   other, in directional words — left of, behind, facing away, above.
+3. THE SHOTS. For each one, in this order and each justified before it is
+   decided: why this shot exists, what the audience is looking FOR, where the
+   camera starts and ends, the movement as ONE controlled term, the optics,
+   what the background does. Then the action as a chain — the state it opens
+   in, the one thing that triggers it, the primary action, the contact or
+   reaction, and the state it settles into.
+4. THE PERFORMANCE. Per character per shot: what they want in this shot, the
+   tactic they use, one observable physical behaviour, and where the eyes go.
+   Never an emotion word — "anxious" is not filmable, a hand returning twice
+   to a pocket is.
+5. THE SOUND. What each shot sounds like, tied to something visible in it.
+   Silence counts only if it is deliberate.
+6. THE CHECK. Read the shot list back. If beat three could swap with beat one
+   and nothing is lost, the grid has no escalation — fix the grid, not the
+   prose. If a character speaks while holding something, their gaze goes to
+   the person addressed and the object is excluded by name.
+
+Do NOT output that working. It is how you arrive at the prompt, not something
+to hand back.
+
+THEN WRITE. Follow the format document literally — field names, order and
+formatting exactly as specified there, not a paraphrase. Every section the
+format requires must be present and non-empty; if the format is JSON, emit
+valid parseable JSON and nothing outside it. If the format is a
+full-reference mode, every subject, picture, video and audio reference must
+be declared with its label and used in the prose — an undeclared reference
+means the mode is doing nothing. Apply every craft rule the format states
+about shot construction, camera, performance, sound and suppressed
+modalities, including any failure mode it records from real measurement. Five
+things the written prompt must carry, because they are the first to go
+missing:
+
+- CAMERA, PER SHOT, IN THE FORMAT'S OWN WORDS. Every shot names its size,
+  lens, height/angle, and move (or an explicit lock) using the format
+  document's controlled vocabulary verbatim — not a descriptive gloss of a
+  move. Every move, including the first shot's, is motivated by something in
+  the frame: it follows a named body, a look, an object, or a pressure
+  change, and the prompt says which one and at what moment. A move with no
+  cause is a move the render will smear.
+- SHOTS MATCH THE PLAN. The fragments you write are the shots you decided on
+  — same count, same order, same jobs. No shot appears in the prose that was
+  not in the grid, and none in the grid goes unwritten.
+- SOUND AS SOURCES, NOT MOOD. Every audio element names the physical object
+  or body that makes it, the action that makes it happen, and the moment in
+  the beat it lands. A source is a thing you could point at on screen or just
+  off it. "Tense atmosphere", "quiet room tone", "ambient hum", "warm air", a
+  lamp that "hums faintly" with nobody touching it — these are mood dressed
+  as sources; cut them. Prefer foley caused by a visible action, and cover
+  every beat: no stretch of the clip should be left with nothing named.
+- PERFORMANCE IN OBSERVABLE PARTS. Say what the body does — eyes, mouth,
+  hands, breath, weight, the beat it changes on. Not "looks worried."
+- NEVER NAME AN ABSENT MODALITY. Do not write that there is no dialogue, no
+  music, no sound — naming it summons it. Omit the line entirely or use the
+  format's sentinel. Likewise keep rendered on-screen text minimal and
+  decomposed across beats; never repeat a whole string.
+
+WHAT YOU MAY NOT CHANGE. The people, the place, the action and its outcome,
+the named objects, and any dialogue are fixed exactly as the brief asked for
+them. You are deciding HOW that is shot and performed, never WHAT happens. "A
+woman enters a shop" does not become a woman on a lane because a lane is more
+interesting — that is a different film.
+
+{{film}}
+
+PREVIOUS CLIP PROMPT (continuity reference only — do not recreate its action)
+{{previous}}
+
+{{continuationFrame}}
+A DETERMINISTIC READ OF THE SOURCE, computed before you looked at it — treat
+it as context, not as something to reproduce:
+{{standing}}
+
+{{plates}}
+SOURCE
+{{story}}
+
+Now write your reply. Output exactly one block, with no heading of your own
+before or after it:
+
+<<<PROMPT>>>
+the complete prompt — and nothing else in it: no preamble, no explanation, no
+fences
+
+Write the prompt and stop.

@@ -1,0 +1,27 @@
+subject_definitions: subject_definitions:
+<Subject 1> is Maya Rao, a 27-year-old woman with warm medium-brown skin, shoulder-length softly curled black hair, an ivory ribbed tank, small gold hoop earrings, and a smooth rosewood-brown lip finish.
+<Subject 2> is the Veyra CloudSilk Lip Colour tube, a slim cylindrical product with a brushed champagne cap.
+<Subject 3> is the bedroom environment, with a round champagne-rim mirror, a doorway, a soft textured wall, and warm golden hour sunlight.
+<Subject 4> is Maya’s casual tote bag, with an open side pocket ready to receive the product.
+
+summary: summary:
+[reference generation] The target video shows <Subject 1> completing a final check in <Subject 3>, speaking one line to the lens, securing <Subject 2> in <Subject 4>, and exiting through the doorway. The scene uses <Subject 1>, <Subject 2>, <Subject 3>, and <Subject 4> as the visible reference content, ending on a calm static composition suitable for a clean packshot overlay.
+
+retention_analysis: retention_analysis:
+<Subject 1> (appears in [Shot 1], [Shot 3]): fully_preserved - Maya Rao’s warm medium-brown skin, softly curled black hair, ivory ribbed tank, gold hoop earrings, and rosewood-brown lip finish are retained.
+<Subject 2> (appears in [Shot 2]): fully_preserved - the slim cylindrical Veyra CloudSilk Lip Colour tube and brushed champagne cap are retained.
+<Subject 3> (appears in [Shot 1], [Shot 2], [Shot 3], [Shot 4]): fully_preserved - the bedroom doorway, round champagne-rim mirror, soft textured wall, and golden hour sunlight are retained.
+<Subject 4> (appears in [Shot 2]): fully_preserved - the casual tote bag and open side pocket are retained.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+detailed_description:
+The target video is live-action, cinematic, handheld, observational, and intimate, with warm golden hour light, neutral true-to-life color, and a vertical 9:16 smartphone composition.
+[Shot 1] A handheld medium close-up at eye level, 35mm-equivalent, frames <Subject 1> near the bedroom doorway in <Subject 3>. The camera uses Shake Slightly with small amplitude as <Subject 1> (S1), Maya Rao with softly curled black hair, an ivory ribbed tank, gold hoop earrings, and rosewood-brown lips, turns her head one final time toward the round champagne-rim mirror. Her eyes narrow slightly, her chin lowers by a small amount, and her lips close into a satisfied line. The golden light rakes across her cheekbone and the curl at her temple. She then faces the lens, her gaze steady, and says in a calm, low, decisive voice: <d>[English] Okay, this is the one coming with me.</d> Her breath stays quiet, her shoulders drop a fraction, and her hands remain relaxed at her sides.
+[Shot 2] At 00:04.000, the shot cuts to a close-up at hand height, 50mm-equivalent, of <Subject 1>’s hands holding <Subject 2>, the slim cylindrical Veyra CloudSilk Lip Colour tube with its brushed champagne cap. The camera uses Push In with small amplitude at slow speed as the fingers rotate the tube a quarter turn and slide it into the open side pocket of <Subject 4>, the casual tote bag. The cap catches the warm light, the fabric of the pocket stretches, and the tube disappears cleanly into the pocket. The background remains the soft textured bedroom wall, slightly out of focus.
+[Shot 3] At 00:08.500, the shot cuts to a medium shot at eye level, 35mm-equivalent, of <Subject 1> turning away from the mirror and walking toward the doorway in <Subject 3>. The camera uses Pull Back with small amplitude at slow speed, following her movement as she steps forward, her tote bag swinging lightly against her hip. Her posture stays relaxed, her shoulders remain open, and her eyes meet the lens once before she gives a small, controlled smile. The golden hour light wraps around her silhouette as she reaches the doorway.
+[Shot 4] At 00:11.000, the shot cuts to a static medium-wide shot at eye level, 24mm-equivalent, of the empty doorway and the soft-focus bedroom interior after <Subject 1> exits. The camera holds a Static Shot with no movement, keeping the doorway centered and the warm light unchanged. The room remains calm, the doorway stays clear, and the composition remains simple and uncluttered for the final packshot overlay.
+
+overall_soundscape: overall_soundscape: Soft indoor room tone continues under a low ventilation hum. The brushed champagne cap clicks once against the tube, the tote fabric rustles as the product slides into the pocket, and light footsteps move across the floor as Maya exits.
+
+non_diegetic_music: non_diegetic_music: N/A

@@ -31,7 +31,21 @@ export function studioActions(mode: AuthoringMode, hasPlan: boolean): StudioActi
         ]
       : [{ id: 'plan', label: 'Create clip plan', stages: ['breakdown'] }]
   }
-  if (mode === 'idea') return [{ id: 'generate-clip', label: 'Generate prompt', stages: ['draft'] }]
+  // SINGLE CLIP RUNS PRESET C. `idea` is the one-prompt door — "Break into
+  // scenes" off, one clip, one call — and `draftOptimised` is the GEPA-tuned
+  // writer measured over 3 samples x 7 held-out cases the optimiser never saw:
+  //
+  //     preset C  0.751   one call      wins 6/7
+  //     preset B  0.708   three calls   (0.675 counting a hard failure)
+  //
+  // Full Story (`story`) deliberately keeps `draft`, so the preset switch in
+  // settings still governs multi-clip authoring and preset B stays reachable
+  // there — B writes direction and acting as inspectable ARTIFACTS, which is
+  // worth more across a whole film than on a single clip.
+  //
+  // Do NOT "align" these two by giving story the same stage. They are
+  // different jobs and the measurement above is single-clip only.
+  if (mode === 'idea') return [{ id: 'generate-clip', label: 'Generate prompt', stages: ['draftOptimised'] }]
   return [
     { id: 'revise', label: 'Revise prompt', stages: ['revise'] },
     { id: 'rebuild', label: 'Rebuild prompt', stages: ['rebuild'] },

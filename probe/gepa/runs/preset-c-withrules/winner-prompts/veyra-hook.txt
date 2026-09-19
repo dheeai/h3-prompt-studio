@@ -1,0 +1,43 @@
+subject_definitions: subject_definitions:
+<Subject 1> is Maya Rao, 27, a Bengaluru creator, with warm medium-brown skin, shoulder-length softly curled black hair, an ivory ribbed tank, small gold hoop earrings, minimal makeup, and slightly dry natural lips.
+<Subject 2> is the warm vanity-mirror bedroom environment, with a round champagne-rim mirror, dusty-mauve soft furnishings, a vanity counter, porcelain items, and warm late-afternoon light.
+<Subject 3> is the capped Veyra CloudSilk Lip Colour tube, a slim cylindrical frosted dusty-mauve tube with a brushed champagne cap, resting on the vanity counter.
+
+summary:
+[reference generation] The target video shows <Subject 1> standing at <Subject 2>, noticing her dry-looking lips in the mirror and cutting between her reflective gaze and <Subject 3> on the counter. The capped tube remains untouched, so the problem is established without resolution.
+
+retention_analysis:
+<Subject 1> (appears in [Shot 1], [Shot 2], [Shot 4]): fully_preserved - Maya Rao’s age, Bengaluru creator role, warm medium-brown skin, shoulder-length softly curled black hair, ivory ribbed tank, small gold hoop earrings, minimal makeup, and slightly dry natural lips are retained.
+<Subject 2> (appears in [Shot 1], [Shot 2], [Shot 3], [Shot 4]): fully_preserved - the warm vanity-mirror bedroom, round champagne-rim mirror, dusty-mauve soft furnishings, vanity counter, porcelain items, and warm late-afternoon light are retained.
+<Subject 3> (appears in [Shot 3], [Shot 4]): fully_preserved - the capped Veyra CloudSilk Lip Colour tube’s slim cylindrical frosted dusty-mauve body, brushed champagne cap, and capped state are retained.
+
+detailed_description:
+The target video keeps the established observational handheld register, with intimate framing, neutral true-to-life color, and a candid insert push toward the product.
+[Shot 1] A close-up at eye level, 19mm-equivalent wide end, frames <Subject 1> (S1) inside the round champagne-rim mirror of <Subject 2>. Her dark-brown eyes find her own reflection, then drop to her lips; her lower lip presses briefly against her upper lip, and her right hand rises to her chin, fingertips touching the dry edge of her lower lip. The camera Shake Slightly with small amplitude at slow speed as her gaze stays on her lips, not the mirror rim. She says in a quiet, self-aware mid-range voice: <d>[English] Why does my lip colour always look tired before I do?</d>
+[Shot 2] At 00:04.500, the shot cuts to a medium close-up at chest height, 19mm-equivalent wide end, showing <Subject 1> in profile inside <Subject 2>. Her eyes move from the mirror down toward the vanity counter, and her right hand lowers from her chin toward the surface. The camera Push In with small amplitude at slow speed, following the falling hand as it stops just above the counter, not touching anything. Her mouth closes and her breath stays shallow.
+[Shot 3] At 00:08.000, the shot cuts to a top-down detail at counter height, 90mm-equivalent tight framing, on <Subject 3> resting capped among porcelain items in <Subject 2>. The brushed champagne cap catches the warm late-afternoon light, and the frosted dusty-mauve tube remains closed. The camera Push In with small amplitude at slow speed toward the cap as a fingertip enters from the lower edge of frame, hovers over the cap, then pulls back without opening it.
+[Shot 4] At 00:12.000, the shot cuts back to a close-up at eye level, 19mm-equivalent wide end, on <Subject 1> looking up into the mirror. Her right hand is visible at the bottom of the frame, hovering just above <Subject 3>, fingers stopped short of the cap. The camera Static Shot with a small handheld settle as her eyes move from the tube to her own lips, then back to the tube. Her lips part slightly, then close, and the capped tube remains untouched.
+
+overall_soundscape:
+overall_soundscape: A fingertip brushes the lower lip in [Shot 1], then fabric shifts softly as the ivory ribbed tank moves in [Shot 2]. In [Shot 3], a porcelain item gives one small click when the counter is nudged, and the fingertip hovers without touching the cap. In [Shot 4], a shallow exhale and the soft settle of the hand above the counter complete the physical sound layer.
+
+non_diegetic_music:
+non_diegetic_music: N/A
+
+summary: [reference generation] The target video shows <Subject 1> standing at <Subject 2>, noticing her dry-looking lips in the mirror and cutting between her reflective gaze and <Subject 3> on the counter. The capped tube remains untouched, so the problem is established without resolution.
+
+retention_analysis: <Subject 1> (appears in [Shot 1], [Shot 2], [Shot 4]): fully_preserved - Maya Rao’s age, Bengaluru creator role, warm medium-brown skin, shoulder-length softly curled black hair, ivory ribbed tank, small gold hoop earrings, minimal makeup, and slightly dry natural lips are retained.
+<Subject 2> (appears in [Shot 1], [Shot 2], [Shot 3], [Shot 4]): fully_preserved - the warm vanity-mirror bedroom, round champagne-rim mirror, dusty-mauve soft furnishings, vanity counter, porcelain items, and warm late-afternoon light are retained.
+<Subject 3> (appears in [Shot 3], [Shot 4]): fully_preserved - the capped Veyra CloudSilk Lip Colour tube’s slim cylindrical frosted dusty-mauve body, brushed champagne cap, and capped state are retained.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+The target video keeps the established observational handheld register, with intimate framing, neutral true-to-life color, and a candid insert push toward the product.
+[Shot 1] A close-up at eye level, 19mm-equivalent wide end, frames <Subject 1> (S1) inside the round champagne-rim mirror of <Subject 2>. Her dark-brown eyes find her own reflection, then drop to her lips; her lower lip presses briefly against her upper lip, and her right hand rises to her chin, fingertips touching the dry edge of her lower lip. The camera Shake Slightly with small amplitude at slow speed as her gaze stays on her lips, not the mirror rim. She says in a quiet, self-aware mid-range voice: <d>[English] Why does my lip colour always look tired before I do?</d>
+[Shot 2] At 00:04.500, the shot cuts to a medium close-up at chest height, 19mm-equivalent wide end, showing <Subject 1> in profile inside <Subject 2>. Her eyes move from the mirror down toward the vanity counter, and her right hand lowers from her chin toward the surface. The camera Push In with small amplitude at slow speed, following the falling hand as it stops just above the counter, not touching anything. Her mouth closes and her breath stays shallow.
+[Shot 3] At 00:08.000, the shot cuts to a top-down detail at counter height, 90mm-equivalent tight framing, on <Subject 3> resting capped among porcelain items in <Subject 2>. The brushed champagne cap catches the warm late-afternoon light, and the frosted dusty-mauve tube remains closed. The camera Push In with small amplitude at slow speed toward the cap as a fingertip enters from the lower edge of frame, hovers over the cap, then pulls back without opening it.
+[Shot 4] At 00:12.000, the shot cuts back to a close-up at eye level, 19mm-equivalent wide end, on <Subject 1> looking up into the mirror. Her right hand is visible at the bottom of the frame, hovering just above <Subject 3>, fingers stopped short of the cap. The camera Static Shot with a small handheld settle as her eyes move from the tube to her own lips, then back to the tube. Her lips part slightly, then close, and the capped tube remains untouched.
+
+overall_soundscape: overall_soundscape: A fingertip brushes the lower lip in [Shot 1], then fabric shifts softly as the ivory ribbed tank moves in [Shot 2]. In [Shot 3], a porcelain item gives one small click when the counter is nudged, and the fingertip hovers without touching the cap. In [Shot 4], a shallow exhale and the soft settle of the hand above the counter complete the physical sound layer.
+
+non_diegetic_music: non_diegetic_music: N/A

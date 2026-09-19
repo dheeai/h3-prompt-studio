@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { clipsNeedingPrompt, isCanonicalPromptStage } from './studio-workflow'
+import { clipsNeedingPrompt, isCanonicalPromptStage, studioActions } from './studio-workflow'
 import type { Breakdown, BreakdownClip, Version } from './types'
 
 function planClip(index: number, over: Partial<BreakdownClip> = {}): BreakdownClip {
@@ -57,4 +57,21 @@ test('isCanonicalPromptStage: revise, rebuild and freeform also count; direct, c
   assert.ok(!isCanonicalPromptStage('critique'))
   assert.ok(!isCanonicalPromptStage('handoff'))
   assert.ok(!isCanonicalPromptStage('breakdown'))
+})
+
+test('the single-clip door runs preset C, not preset A', () => {
+  // `idea` is "Break into scenes" OFF — one clip, one call. Measured over 3
+  // samples x 7 held-out cases: C 0.751 (1 call) vs B 0.708 (3 calls), C
+  // winning 6/7. If this ever reads 'draft' again the single-clip path has
+  // silently reverted to the unoptimised writer.
+  const actions = studioActions('idea', false)
+  assert.equal(actions.length, 1)
+  assert.deepEqual(actions[0].stages, ['draftOptimised'])
+})
+
+test('Full Story keeps `draft`, so the preset switch still governs multi-clip', () => {
+  // Preset B writes direction and acting as inspectable artifacts, which is
+  // worth more across a film than on one clip — and the C-vs-B measurement
+  // was single-clip only, so it does not license changing this.
+  for (const a of studioActions('story', true)) assert.deepEqual(a.stages, ['draft'])
 })

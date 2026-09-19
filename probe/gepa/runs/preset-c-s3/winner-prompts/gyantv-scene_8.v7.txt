@@ -1,0 +1,21 @@
+subject_definitions: <Subject 1> is Rahul, a man in his early thirties with short dark hair, a trimmed beard, and a dark olive T-shirt, shown from the chest up in a living room.
+  <Subject 2> is Sameer, a man in his mid-thirties with short black hair, a clean-shaven face, and a light grey shirt, shown from the chest up in the same living room.
+  <Subject 3> is the black smartphone held in Rahul's right hand, its screen facing away from camera and its casing visible at chest level.
+  <Subject 4> is the softly blurred living room interior behind the men, with a muted grey wall, a warm practical lamp out of focus, and a dark sofa edge in the background.
+
+summary: [reference generation] The target video shows <Subject 1> holding <Subject 3> steady in <Subject 4> and asking <Subject 2> a serious question about hidden costs beyond money, while <Subject 2> listens without looking away.
+
+retention_analysis: <Subject 1> (appears in [Shot 1], [Shot 2]): fully_preserved - Rahul's appearance, chest-up framing, right-hand phone hold, and serious questioning action are retained.
+  <Subject 2> (appears in [Shot 2]): fully_preserved - Sameer's appearance, chest-up framing, rightward orientation toward Rahul, and silent attentive listening are retained.
+  <Subject 3> (appears in [Shot 1]): fully_preserved - the smartphone remains in Rahul's right hand at chest level, steady, with its screen not turned toward camera.
+  <Subject 4> (appears in [Shot 1], [Shot 2]): fully_preserved - the blurred living room interior remains the background in both shots.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+The target video is live-action and cinematic, observational, with neutral true-to-life color, natural video-sensor grain, and a handheld feel that stays restrained enough to keep both faces readable.
+[Shot 1] Eye-level medium close-up, 50mm-equivalent framing, shallow depth of field, handheld with small amplitude. <Subject 1> is slightly right of center, chest up, in <Subject 4>. His right hand holds <Subject 3> steady at chest level, thumb resting on the lower edge of the phone's casing, not pressing the screen. His eyes are fixed on <Subject 2> off-screen left, not the phone. His jaw tightens, his breath moves through his nose, and his mouth opens as he says in a low, controlled Hindi voice: <d>[Hindi] यानी असली सवाल सिर्फ़ ये नहीं कि पैसे मिलेंगे या नहीं…</d> As the line lands, the camera performs a Push In with small amplitude at slow speed toward his face, following the pressure of his question and stopping when his eyes remain locked on <Subject 2>. The phone's plastic casing gives one soft click against his thumb as his grip settles.
+[Shot 2] At 00:03.290, the shot cuts to an eye-level medium shot, 50mm-equivalent framing, shallow depth of field, handheld with small amplitude. <Subject 2> is slightly left of center, chest up, facing right toward <Subject 1>, with <Subject 4> softly blurred behind him. His eyes stay fixed on <Subject 1>'s face, not the phone, and do not drop to the screen. His brow lowers, his mouth closes, and his weight shifts forward a few centimeters. The camera holds a Static Shot as his shirt fabric shifts once against the chair, and his left hand taps twice on his knee. His silence answers the question by refusing to look away.
+
+overall_soundscape: Rahul's breath moves through his nose before the line, then his mouth opens and closes around the Hindi words. The smartphone's plastic casing clicks once against Rahul's thumb as his grip settles. Sameer's shirt fabric shifts once against the chair, and his left hand taps twice on his knee.
+
+non_diegetic_music: N/A

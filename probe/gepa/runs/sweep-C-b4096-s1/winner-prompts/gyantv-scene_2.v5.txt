@@ -1,0 +1,22 @@
+subject_definitions: <Subject 1> is Rahul, the man presenting the smartphone, seen from the chest up in <Picture 1>, with a neutral indoor shirt, his face lit by the phone screen.
+<Subject 2> is Sameer, the man on the right edge of <Picture 1>, leaning in toward the smartphone, with his eyes directed at the screen.
+<Subject 3> is the smartphone and its lit Cool Survey App interface in <Picture 1>, held in Rahul's hand, its screen turned toward Sameer and casting a cool blue-white glow.
+<Subject 4> is the warm practical indoor room in <Picture 1>, with soft daylight and muted amber-slate surfaces.
+<Picture 1> is the first frame of [Shot 1], showing the medium close-up composition of Rahul centered, holding the smartphone toward Sameer at the right edge.
+
+summary: [keyframe completion + reference generation] The target video begins from <Picture 1> and shows <Subject 1> pitching the Cool Survey App to <Subject 2> while <Subject 3> illuminates <Subject 1>'s face in <Subject 4>.
+
+retention_analysis: <Subject 1> (appears in [Shot 1]): fully_preserved - Rahul's identity, chest-up framing, hand position, and presentation action are retained.
+<Subject 2> (appears in [Shot 1]): fully_preserved - Sameer's right-edge position, leaning-in posture, and screen-directed gaze are retained.
+<Subject 3> (appears in [Shot 1]): fully_preserved - the smartphone, its lit Cool Survey App interface, and cool blue-white glow are retained.
+<Subject 4> (appears in [Shot 1]): fully_preserved - the warm practical indoor room and muted amber-slate lighting are retained.
+<Picture 1> ([Shot 1] first frame): fully_preserved - the opening medium close-up composition is retained as the first frame.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+The target video holds the pitch in one continuous observational take.
+[Shot 1] The shot begins from <Picture 1> as a medium close-up, 90mm-equivalent, eye-level, Static Shot, locked so the fixed phone-to-face geometry stays in the same frame. <Subject 4> fills the background as a warm practical indoor room, with soft daylight falling from the left and muted amber-slate surfaces behind the two men. <Subject 1>, Rahul, is centered from the chest up, his right arm extended toward the right edge of the frame. His face is split by the cool blue-white glow of <Subject 3>, the smartphone in his hand, while the warm room light keeps his skin and shirt true-to-life. <Subject 2>, Sameer, occupies the right edge, leaning in with his shoulders angled toward the phone, his eyes fixed on the lit screen, not Rahul's face, and his mouth closed. Rahul's eyes stay on Sameer's face, not the phone, and do not drop to the screen. As Rahul speaks, his brow lifts slightly, his mouth opens wide on the first word, and his hand pushes the phone two inches closer, increasing the cool glow across his cheek and chin. The phone case gives one soft tap against his thumb as he adjusts his grip. Sameer's head tilts forward, his eyes narrow, and his jaw tightens as the screen light catches the side of his face. Rahul's delivery is urgent and persuasive, his voice clear and mid-range, and he says: <d>[Hindi] समीर! भाई, ये देख… Cool Survey App पर Survey भरो और पैसे कमाओ!</d> His lips close at the end of the line, his hand remains extended, and Sameer stays leaning in, his gaze still on the screen, not Rahul's face. The camera remains a locked Static Shot throughout, so the pressure comes entirely from the hand moving closer, the glow growing, and Sameer's body not reaching back.
+
+overall_soundscape: Rahul's shirt fabric rustles softly as his arm extends, and the phone case taps once against his thumb. Sameer's breath is shallow and audible as he leans forward, while the room stays quiet except for the faint click of the phone being adjusted.
+
+non_diegetic_music: N/A

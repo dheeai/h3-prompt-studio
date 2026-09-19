@@ -78,8 +78,23 @@ async function main() {
   mkdirSync(out, { recursive: true })
   const picked = cases.filter((c) => only.has(c.label))
   console.log(`preset B on ${picked.length} cases · model=${TASK_MODEL}\n`)
-  const scores: [string, number | null][] = []
-  for (const c of picked) {
+  // CONCURRENCY. The box runs `parallel = 4` (models-preset.ini), measured at
+  // 1.76x over serial on short generations and expected higher on real ones,
+  // where decode dominates. Cases are independent; only the three calls WITHIN
+  // a case are ordered (direction -> acting -> draftDirected), so the fan-out
+  // is across cases and the chain inside one stays sequential.
+  const CONC = Math.max(1, Number(arg('concurrency') ?? 4))
+  const scores: [string, number | null][] = new Array(picked.length)
+  let next = 0
+  const worker = async () => {
+    for (;;) {
+      const i = next++
+      if (i >= picked.length) return
+      scores[i] = await runCase(picked[i])
+    }
+  }
+
+  async function runCase(c: any): Promise<[string, number | null]> {
     const covers = c.plan.approvedShots.map((s: any) => `${s.index}. ${s.summary} (${s.seconds}s)`).join('\n')
     const dir = parseDirection(await ask(fillDirectionTemplate(DIRECTION_TEMPLATE, {
       covers: c.story, shots: covers, film: describeFilmLook(LOOK), plates: '' }), directionResponseFormat(), ['h3-direction']), 1)
@@ -95,9 +110,13 @@ async function main() {
       if (joined) { promptText = joined.prompt; score = await judge({ promptText, mode: MODE, ...c.plan }) }
     } catch { score = 0 }
     if (promptText) writeFileSync(join(out, `${c.label}.txt`), promptText, 'utf8')
-    scores.push([c.label, score])
     console.log(`  ${c.label.padEnd(24)} ${score === null ? ' n/a ' : score.toFixed(3)}`)
+    return [c.label, score]
   }
+
+  const t0 = Date.now()
+  await Promise.all(Array.from({ length: Math.min(CONC, picked.length) }, worker))
+  console.log(`\n  ${picked.length} cases at concurrency ${CONC} in ${((Date.now() - t0) / 1000).toFixed(1)}s`)
   const vals = scores.map(([, s]) => s).filter((s): s is number => s !== null)
   console.log(`\npreset B mean over ${vals.length}: ${(vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(3)}`)
   writeFileSync(join(out, 'scores.json'), JSON.stringify(scores, null, 2), 'utf8')

@@ -1,0 +1,18 @@
+subject_definitions: <Subject 1> is the elderly fisherwoman in the dark green nauvari sari, with a weathered complexion, hunched posture, bare cracked ankles, and slow deliberate hand movements.
+<Subject 2> is the market lane, with a worn low corner stone, textured ground, emptying lane, hazy dock in the distance, and fading evening light.
+<Subject 3> is the thin scruffy dock cat, with matted grey-brown fur, visible ribs, a lean body, and bright alert eyes.
+
+summary: [reference generation] The target video shows <Subject 1> seated on the corner stone in <Subject 2>, counting damp notes into a cloth pouch, then dropping a small silver pomfret for <Subject 3>, which eats at her ankles while the lane darkens in a single continuous observational shot.
+
+retention_analysis: <Subject 1> (appears in [Shot 1]): fully_preserved - the elderly fisherwoman's dark green nauvari sari, hunched posture, weathered hands, and bare cracked ankles are retained.
+<Subject 2> (appears in [Shot 1]): fully_preserved - the market lane's worn corner stone, textured ground, emptying lane, hazy dock, and fading evening light are retained.
+<Subject 3> (appears in [Shot 1]): fully_preserved - the dock cat's matted grey-brown fur, visible ribs, lean body, and alert eyes are retained.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+The target video is a single observational medium shot.
+[Shot 1] The camera faces <Subject 1> from across the lane at eye level, framing her center-left on the worn low corner stone of <Subject 2>. The lane and hazy dock extend behind her toward frame right, and the fading light comes from frame right. <Subject 1> sits hunched forward, her dark green nauvari sari pooling around her, her weathered hands over a small pile of damp crumpled notes. <Subject 3> is coiled around her bare cracked ankles in the lower part of the frame, its matted grey-brown fur and visible ribs close to her skin. The camera holds a Static Shot, with the wide end of the zoom keeping the medium framing unchanged. Her fingers move slowly over the damp notes, sliding them one by one into a small worn cloth pouch. The cat's bright alert eyes stay fixed on her hands. After the last note enters the pouch, her hands pause, then reach into the pouch, pull out a small silver pomfret, and drop it onto the stone ground in front of her. The cat's body tightens, then it lowers its head to the fish and begins eating. Her eyes follow the notes, then the pouch and fish, then leave the cat and hold on the distant dock. The cat's eyes drop to the fish and remain on the meat as it eats. The wet tearing sounds continue under the fading market hum. The lane behind her darkens as the shot holds to the end, with the long evening shadows stretching across the textured ground.
+
+overall_soundscape: The distant fading hum of the market continues beneath the soft rustle of damp paper currency, the gentle scuff of bare feet on stone, and the quiet wet tearing sounds of the cat eating the fish.
+
+non_diegetic_music: N/A

@@ -1,0 +1,14 @@
+subject_definitions: No reference assets are wired for this clip; all visible content is generated from the brief.
+
+summary: [reference generation] Rahul asks Sameer, off-screen right, whether the app on his phone is real or fake, while the phone’s unchanged bright interface stays fixed at chest height and the unanswered question remains visible in the frame.
+
+retention_analysis: No reference labels are present to preserve, transfer, copy, or reference.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+The target video is a single observational handheld scene, neutral and true-to-life, with the pressure carried by a held phone and an off-screen listener.
+[Shot 1] A medium close-up frames Rahul from the chest up, centered, at eye level, with the phone held steady at chest height. The camera holds a Static Shot because the pressure is in the unchanged phone screen and the off-screen gaze to the right. Rahul, a young man with warm brown skin, short dark hair, and a plain dark T-shirt, keeps the phone level; its bright blue-white interface casts a cool hard glow on his jaw, nose, and upper torso while the room’s warm practical light stays muted behind him. His eyes look off-screen right, not at the screen, and his mouth opens as he asks in a low, cautious young male voice with a slight pause before the question: <d>[Hindi] हाँ… लेकिन सवाल है—Real है या Fake?</d> As he speaks, his thumb rests on the phone’s lower edge, his fingers do not scroll, and the interface remains the same bright screen. After the line, his lips close, his jaw tightens, and his gaze stays fixed on Sameer off-screen right, not the phone, while his breath slows and the phone remains steady at chest height. The screen’s glow stays on his face, not readable, and the frame ends with the unanswered question held in the silence between the two men.
+
+overall_soundscape: Rahul’s soft exhale moves once as he asks the question, then his breathing stays shallow and controlled. The phone’s plastic edge makes a faint click when his thumb settles on its lower edge, and the room’s practical lamp produces a low electrical tick as the scene ends.
+
+non_diegetic_music: N/A

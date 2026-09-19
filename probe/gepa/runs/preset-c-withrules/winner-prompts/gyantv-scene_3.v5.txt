@@ -1,0 +1,31 @@
+subject_definitions: <Subject 1> is Sameer, a skeptical young man with short dark hair, a trimmed beard, and a dark shirt, leaning in from the right side of the frame.
+  <Subject 2> is Rahul, a calm young man with short black hair and a plain shirt, partially visible on the left in Shot 1 and centered in Shot 2, holding the smartphone steady.
+  <Subject 3> is the smartphone, a dark rectangular device held horizontally, its lit screen providing a cool blue-white glow on the faces of <Subject 1> and <Subject 2>.
+
+summary: "[reference generation] The target video shows <Subject 1> leaning toward <Subject 3>, held by <Subject 2>, to scrutinize the earnings screen, then pulling back and looking up at <Subject 2> to question the promise. The scene is a two-shot exchange in a warm indoor room, with the phone screen acting as the physical object that resists explanation."
+
+retention_analysis: "  <Subject 1> (appears in [Shot 1], [Shot 2]): fully_preserved - Sameer's skeptical posture, right-side lean, and question about the earnings promise are retained.
+  <Subject 2> (appears in [Shot 1], [Shot 2]): fully_preserved - Rahul's steady hand, left-side presence in Shot 1, and centered position in Shot 2 are retained.
+  <Subject 3> (appears in [Shot 1], [Shot 2]): fully_preserved - the smartphone's horizontal hold, cool blue-white screen glow, and role as the object being scrutinized are retained."
+
+"detailed_description": "[Shot 1] Medium close-up, 50mm-equivalent framing, eye-level angle, Static Shot. The frame holds <Subject 1> from the chest up on the right, leaning forward, while <Subject 2> is partially visible on the left, holding <Subject 3> steady. The lit screen of <Subject 3> throws a cool blue-white glow across <Subject 1>'s face and upper torso, cutting against the warm practical light of the room. <Subject 1>'s eyes are fixed on the screen, not on <Subject 2>'s face; his brow is lowered, his mouth opens, and he asks in a low, skeptical voice: <d>[Hindi] सच में? सिर्फ़ Survey भरने के पैसे?</d> As he speaks, his hand moves slightly toward the phone, then stops, his fingers not touching it.
+[Shot 2] At 00:04.500, the shot cuts to a medium shot, 50mm-equivalent framing, eye-level angle, Static Shot. <Subject 2> is centered from the chest up, holding <Subject 3> out toward the right, its screen still glowing cool blue-white on his face. <Subject 1> is on the right edge of the frame, pulling back from the phone. His eyes leave the screen and rise to <Subject 2>'s face, not the phone; his jaw tightens, his mouth closes, and his weight shifts back as he holds the question in his face."
+
+"overall_soundscape": "The smartphone's screen emits a faint electronic hum as <Subject 2> holds it steady. Fabric shifts softly as <Subject 1> leans in, then pulls back. A low indoor room tone continues underneath, with no other sound named."
+
+"non_diegetic_music": "N/A"
+
+summary: [reference generation] The target video shows <Subject 1> leaning toward <Subject 3>, held by <Subject 2>, to scrutinize the earnings screen, then pulling back and looking up at <Subject 2> to question the promise. The scene is a two-shot exchange in a warm indoor room, with the phone screen acting as the physical object that resists explanation.
+
+retention_analysis: <Subject 1> (appears in [Shot 1], [Shot 2]): fully_preserved - Sameer's skeptical posture, right-side lean, and question about the earnings promise are retained.
+  <Subject 2> (appears in [Shot 1], [Shot 2]): fully_preserved - Rahul's steady hand, left-side presence in Shot 1, and centered position in Shot 2 are retained.
+  <Subject 3> (appears in [Shot 1], [Shot 2]): fully_preserved - the smartphone's horizontal hold, cool blue-white screen glow, and role as the object being scrutinized are retained.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+[Shot 1] Medium close-up, 50mm-equivalent framing, eye-level angle, Static Shot. The frame holds <Subject 1> from the chest up on the right, leaning forward, while <Subject 2> is partially visible on the left, holding <Subject 3> steady. The lit screen of <Subject 3> throws a cool blue-white glow across <Subject 1>'s face and upper torso, cutting against the warm practical light of the room. <Subject 1>'s eyes are fixed on the screen, not on <Subject 2>'s face; his brow is lowered, his mouth opens, and he asks in a low, skeptical voice: <d>[Hindi] सच में? सिर्फ़ Survey भरने के पैसे?</d> As he speaks, his hand moves slightly toward the phone, then stops, his fingers not touching it.
+[Shot 2] At 00:04.500, the shot cuts to a medium shot, 50mm-equivalent framing, eye-level angle, Static Shot. <Subject 2> is centered from the chest up, holding <Subject 3> out toward the right, its screen still glowing cool blue-white on his face. <Subject 1> is on the right edge of the frame, pulling back from the phone. His eyes leave the screen and rise to <Subject 2>'s face, not the phone; his jaw tightens, his mouth closes, and his weight shifts back as he holds the question in his face.
+
+overall_soundscape: The smartphone's screen emits a faint electronic hum as <Subject 2> holds it steady. Fabric shifts softly as <Subject 1> leans in, then pulls back. A low indoor room tone continues underneath, with no other sound named.
+
+non_diegetic_music: N/A

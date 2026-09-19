@@ -1,0 +1,25 @@
+subject_definitions: subject_definitions:
+<Subject 1> is the elderly hunched fisherwoman in a green sari, with a bent posture, weathered sun-darkened skin, a dark green nauvari sari, and thin silver anklets.
+<Subject 2> is the bustling, gritty fishing port at dawn, with low-slung auction sheds, corrugated metal roofs, wet brine-stained concrete, thick mist, and diesel smoke.
+<Subject 3> is the wide, shallow woven basket made of rustic, weathered natural cane fibers.
+<Subject 4> is the weathered wooden fish crates, rectangular, salt-stained, and stacked haphazardly.
+
+summary: summary:
+[reference generation] The target video follows <Subject 1> as she enters <Subject 2> from the left, balancing <Subject 3> on her head and moving through a narrow path blocked by <Subject 4> and blurred dock workers. The shot remains a continuous observational wide view, letting her body, the wet dock, and the surrounding labor define the pressure of the scene.
+
+retention_analysis: retention_analysis:
+<Subject 1> (appears in [Shot 1]): fully_preserved - her bent posture, weathered sun-darkened skin, dark green nauvari sari, and thin silver anklets are retained.
+<Subject 2> (appears in [Shot 1]): fully_preserved - the low-slung auction sheds, corrugated metal roofs, wet brine-stained concrete, mist, and diesel smoke are retained.
+<Subject 3> (appears in [Shot 1]): fully_preserved - the wide, shallow woven cane basket is retained as the head-carried load.
+<Subject 4> (appears in [Shot 1]): fully_preserved - the rectangular, salt-stained, haphazardly stacked wooden fish crates are retained as the physical obstacles.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+detailed_description:
+[Shot 1] A wide, eye-level Tracking Shot follows <Subject 1> from the left edge of the frame as she enters <Subject 2>, her bent body low under the weight of <Subject 3> balanced on her head. The camera tracks her with small amplitude at slow speed, keeping her centered in the wet concrete lane while the auction sheds and corrugated roofs stay behind her in soft focus. Her bare cracked heels strike the brine-stained ground in a steady rhythm, and the thin silver anklets flash once with each step. As she reaches the first stack of <Subject 4>, her right elbow presses against the nearest crate, shifting its weight a few centimeters before she continues. Blurred dock workers pass behind her, their bodies crossing the frame without stopping her. The camera continues the Tracking Shot as she threads between two more crate stacks, her shoulders tightening and her head lowering to keep <Subject 3> level. A worker’s outstretched arm brushes the edge of the frame, and she turns her hips slightly to pass without breaking stride. The camera then Pushes In with small amplitude at slow speed toward her face and upper body as she reaches the open end of the lane, her eyes fixed ahead, her jaw set, and her hands held low and steady at her sides. The mist and diesel smoke soften the background, while the wet concrete reflects the pale dawn light beneath her feet.
+
+overall_soundscape: overall_soundscape:
+Wet concrete slaps under bare feet in a steady rhythm, wooden crates scrape and shift as elbows press against them, and distant men’s shouts rise and fall across the jetty. Low boat engines idle nearby, while mist carries the faint metallic clink of hooks and the soft splash of water from the dock edge.
+
+non_diegetic_music: non_diegetic_music:
+N/A

@@ -1,0 +1,14 @@
+subject_definitions: No reference assets are wired for this clip.
+
+summary: [reference generation] The target video shows Sameer leaning forward in a living room while speaking to Rahul, who holds a smartphone steady between them.
+
+retention_analysis: No reference labels are present.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+The target video follows the established film-wide look.
+[Shot 1] A static medium shot frames Sameer from the chest up, positioned slightly left of center and facing right, with Rahul visible at the right edge or just outside frame right, holding a smartphone steady between them. The living room behind them remains softly out of focus, with warm practical indoor light falling on Sameer’s face and the phone remaining a small bright object in Rahul’s hands. Sameer is seated upright and already in conversation. He begins to lean forward from his seated position, his shoulders and torso moving forward and slightly right as one unit, closing the distance toward Rahul while the smartphone remains level and unmoving in Rahul’s hands. Rahul’s wrists stay level under the phone, his elbows remain quiet, and his body does not lean away. Sameer’s chin lowers, his hands stay low and still, and his eyes stay fixed on Rahul’s face, not the phone, holding the look through the line and dropping briefly toward the phone as the word safe lands. Rahul’s eyes remain on Sameer’s face, not the screen, and stay level until the line settles. Sameer (S1) says in a lowered, measured voice: <d>[Hindi] बल्कि ये भी कि बदले में आपका Data कितना Safe है!</d> The shot ends with Sameer held in the leaned-in position at the right side of his frame position, the phone still steady at the right edge, and the visual weight settled in the space between Sameer and the phone.
+
+overall_soundscape: Quiet domestic room tone continues underneath the scene, with faint fabric movement as Sameer leans forward and a soft low breath before the line.
+
+non_diegetic_music: N/A

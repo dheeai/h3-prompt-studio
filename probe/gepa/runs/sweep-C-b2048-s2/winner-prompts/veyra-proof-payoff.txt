@@ -1,0 +1,46 @@
+subject_definitions: subject_definitions:
+<Subject 1> is Maya Rao, a 27-year-old woman with warm medium-brown skin, shoulder-length softly curled black hair, an ivory ribbed tank, small gold hoop earrings, and a smooth rosewood-brown lip finish.
+<Subject 2> is the Veyra CloudSilk Lip Colour tube, a slim cylindrical product with a brushed champagne cap.
+<Subject 3> is the bedroom environment, a soft-textured suite with a round champagne-rim mirror, a doorway, and warm golden-hour sunlight.
+<Subject 4> is the casual tote bag with an open side pocket.
+
+summary:
+[reference generation] The target video shows <Subject 1> finishing her look in <Subject 3>, checking her reflection, securing <Subject 2> in <Subject 4>, and exiting with quiet confidence. The final frame remains calm and uncluttered for a deterministic packshot overlay.
+
+retention_analysis:
+<Subject 1> (appears in [Shot 1], [Shot 3]): fully_preserved - Maya Rao’s identity, warm medium-brown skin, softly curled black hair, ivory ribbed tank, gold hoop earrings, and rosewood-brown lip finish are retained.
+<Subject 2> (appears in [Shot 2]): fully_preserved - the slim cylindrical Veyra CloudSilk Lip Colour tube and brushed champagne cap are retained.
+<Subject 3> (appears in [Shot 1], [Shot 2], [Shot 3], [Shot 4]): fully_preserved - the bedroom suite, round champagne-rim mirror, doorway, and golden-hour light are retained.
+<Subject 4> (appears in [Shot 2]): fully_preserved - the casual tote bag and side pocket are retained.
+
+detailed_description:
+The target video continues the established observational live-action look.
+[Shot 1] A medium close-up at 24mm-equivalent, eye level, frames <Subject 1> near the bedroom doorway in <Subject 3>. Her face is three-quarters toward the round champagne-rim mirror, her eyes checking her lips, and the golden-hour light rakes across her skin and curls. The camera performs a Push In with small amplitude at slow speed as her gaze settles on her rosewood-brown lips. <Subject 1> (S1), a woman with a warm, low, unhurried voice, says directly to the lens: <d>[English] Okay, this is the one coming with me.</d> Her chin lifts slightly, her mouth closes, and her shoulders relax.
+[Shot 2] At 00:04.000, the shot cuts to a close-up insert at 90mm-equivalent, high angle, looking down at <Subject 1>’s hands. Her fingers hold <Subject 2>, the recapped Veyra CloudSilk Lip Colour tube, while <Subject 4> rests below. The camera performs a Tracking Shot with small amplitude at slow speed following the tube as it slides into the tote’s side pocket. The cap catches the warm light, the fabric of the pocket opens, and the tube seats firmly.
+[Shot 3] At 00:08.500, the shot cuts to a medium shot at 35mm-equivalent, eye level, framing <Subject 1> from the waist up. She turns away from the mirror and walks toward the doorway, her tote swinging lightly at her side. The camera performs a Tracking Shot with small amplitude at slow speed following her toward the door. Her posture stays tall, her eyes meet the lens, and a small smile forms as the golden light rims her hair.
+[Shot 4] At 00:11.000, the shot cuts to a medium-wide shot at 24mm-equivalent, eye level, holding the empty doorway and soft-focus bedroom. The camera holds a Static Shot with small amplitude as the warm light remains steady on the doorframe and the quiet room settles. The composition stays clean, with no new subject entering the frame.
+
+overall_soundscape:
+Soft fabric rustles as the tote moves, the lip tube makes a small dry click against the pocket, and quiet footsteps stop near the doorway. Warm room air remains still after Maya exits.
+
+non_diegetic_music:
+N/A
+
+summary: [reference generation] The target video shows <Subject 1> finishing her look in <Subject 3>, checking her reflection, securing <Subject 2> in <Subject 4>, and exiting with quiet confidence. The final frame remains calm and uncluttered for a deterministic packshot overlay.
+
+retention_analysis: <Subject 1> (appears in [Shot 1], [Shot 3]): fully_preserved - Maya Rao’s identity, warm medium-brown skin, softly curled black hair, ivory ribbed tank, gold hoop earrings, and rosewood-brown lip finish are retained.
+<Subject 2> (appears in [Shot 2]): fully_preserved - the slim cylindrical Veyra CloudSilk Lip Colour tube and brushed champagne cap are retained.
+<Subject 3> (appears in [Shot 1], [Shot 2], [Shot 3], [Shot 4]): fully_preserved - the bedroom suite, round champagne-rim mirror, doorway, and golden-hour light are retained.
+<Subject 4> (appears in [Shot 2]): fully_preserved - the casual tote bag and side pocket are retained.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+The target video continues the established observational live-action look.
+[Shot 1] A medium close-up at 24mm-equivalent, eye level, frames <Subject 1> near the bedroom doorway in <Subject 3>. Her face is three-quarters toward the round champagne-rim mirror, her eyes checking her lips, and the golden-hour light rakes across her skin and curls. The camera performs a Push In with small amplitude at slow speed as her gaze settles on her rosewood-brown lips. <Subject 1> (S1), a woman with a warm, low, unhurried voice, says directly to the lens: <d>[English] Okay, this is the one coming with me.</d> Her chin lifts slightly, her mouth closes, and her shoulders relax.
+[Shot 2] At 00:04.000, the shot cuts to a close-up insert at 90mm-equivalent, high angle, looking down at <Subject 1>’s hands. Her fingers hold <Subject 2>, the recapped Veyra CloudSilk Lip Colour tube, while <Subject 4> rests below. The camera performs a Tracking Shot with small amplitude at slow speed following the tube as it slides into the tote’s side pocket. The cap catches the warm light, the fabric of the pocket opens, and the tube seats firmly.
+[Shot 3] At 00:08.500, the shot cuts to a medium shot at 35mm-equivalent, eye level, framing <Subject 1> from the waist up. She turns away from the mirror and walks toward the doorway, her tote swinging lightly at her side. The camera performs a Tracking Shot with small amplitude at slow speed following her toward the door. Her posture stays tall, her eyes meet the lens, and a small smile forms as the golden light rims her hair.
+[Shot 4] At 00:11.000, the shot cuts to a medium-wide shot at 24mm-equivalent, eye level, holding the empty doorway and soft-focus bedroom. The camera holds a Static Shot with small amplitude as the warm light remains steady on the doorframe and the quiet room settles. The composition stays clean, with no new subject entering the frame.
+
+overall_soundscape: Soft fabric rustles as the tote moves, the lip tube makes a small dry click against the pocket, and quiet footsteps stop near the doorway. Warm room air remains still after Maya exits.
+
+non_diegetic_music: N/A

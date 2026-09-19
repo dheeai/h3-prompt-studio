@@ -1,0 +1,19 @@
+subject_definitions: <Subject 1> is Sameer, the skeptical man in the warm-lit domestic interior, with a short dark beard, a muted olive shirt, and a guarded, questioning expression.
+  <Subject 2> is Rahul, the man holding the smartphone, with short dark hair, a grey T-shirt, and a steady, slightly defensive posture.
+  <Subject 3> is the smartphone held by Rahul, its lit screen casting a cool blue-white glow on nearby faces and hands.
+
+summary: [reference generation] The target video shows <Subject 1> leaning toward <Subject 3> while <Subject 2> holds it steady, then pulling back to question the earnings promise directly to <Subject 2>.
+
+retention_analysis: <Subject 1> (appears in [Shot 1], [Shot 2]): fully_preserved - Sameer's skeptical expression, leaning posture, pull-back motion, and direct questioning gaze are retained.
+  <Subject 2> (appears in [Shot 1], [Shot 2]): fully_preserved - Rahul's steady hand, smartphone-holding posture, and centered chest-up framing are retained.
+  <Subject 3> (appears in [Shot 1], [Shot 2]): fully_preserved - the smartphone's lit screen, cool blue-white glow, and off-axis hand-held position are retained.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+The scene is an observational two-person exchange in a dim domestic interior, with the phone glow as the only hard light source.
+[Shot 1] A medium close-up at 50mm-equivalent, eye-level, frames <Subject 1> from the chest up on the right side of the frame, leaning in from the right. <Subject 2> is partially visible on the left, his hand holding <Subject 3> steady at the left edge. The lit screen of <Subject 3> casts a cool blue-white glow across <Subject 1>'s face, jaw, and upper torso, while the warm practical room light stays low behind him. The camera holds a Static Shot because <Subject 1>'s lean is the pressure change: his brow lowers, his eyes narrow on the screen, his mouth opens, and he asks: <d>[Hindi] सच में? सिर्फ़ Survey भरने के पैसे?</d> His breath stays shallow, his shoulders tighten, and his gaze remains on the screen, not on <Subject 2>'s face.
+[Shot 2] At 00:04.500, the shot cuts to a medium shot at 50mm-equivalent, eye-level, framing <Subject 2> from the chest up, centered. He holds <Subject 3> out toward the right, his thumb resting on the lower edge of the phone, his fingers steady around the back. <Subject 1> is on the right edge of the frame, pulling back slightly from the screen. The lit screen of <Subject 3> provides a cool hard glow on <Subject 2>'s face and hands, while the warm ambient room light stays soft behind him. The camera holds a Static Shot because <Subject 1>'s pull-back and upward gaze are the pressure change: his body shifts back, his eyes leave the screen, and his gaze lands on <Subject 2>'s face, not the phone. His mouth closes, his brow stays lowered, and his head tilts slightly as the question remains unresolved.
+
+overall_soundscape: The smartphone's screen emits a faint electronic tick as <Subject 2>'s thumb settles on its edge. <Subject 1>'s shirt fabric scrapes softly as he leans in, then again as he pulls back. A low domestic room tone continues underneath, with no other named sound source.
+
+non_diegetic_music: N/A

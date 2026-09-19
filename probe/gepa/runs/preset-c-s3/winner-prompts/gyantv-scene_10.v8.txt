@@ -1,0 +1,28 @@
+subject_definitions: subject_definitions:
+<Subject 1> is Rahul, the man on the left in the living-room two-shot, with short dark hair, a trimmed beard, a dark casual shirt, and a direct, earnest expression; his appearance and on-screen position come from <Picture 1>.
+<Subject 2> is Sameer, the man on the right in the living-room two-shot, with short dark hair, a clean-shaven face, a light casual shirt, and a skeptical, questioning expression; his appearance and on-screen position come from <Picture 1>.
+<Subject 3> is the smartphone held by Rahul, a dark rectangular device with a lit screen that provides a small cool glow on his hand and lower face; its appearance comes from <Picture 1>.
+<Subject 4> is the softly blurred living-room interior behind the two men, with warm practical indoor light, muted amber and slate tones, and a shallow depth of field; its environment comes from <Picture 1>.
+<Picture 1> is the first frame of [Shot 1], showing Rahul and Sameer side-by-side in a medium two-shot before they turn fully toward the camera.
+
+summary: summary:
+[keyframe completion + reference generation] The target video begins from <Picture 1> and shows <Subject 1> and <Subject 2> breaking the fourth wall in <Subject 4>. <Subject 1> turns from <Subject 2> toward the lens while holding <Subject 3>, poses the final question about the Cool Survey App, and <Subject 2> follows with a skeptical question while both maintain direct eye contact with the viewer.
+
+retention_analysis: retention_analysis:
+<Subject 1> (appears in [Shot 1], [Shot 2]): fully_preserved - Rahul’s identity, dark casual shirt, left-side position, direct-to-camera turn, and smartphone-holding role are retained.
+<Subject 2> (appears in [Shot 1], [Shot 2]): fully_preserved - Sameer’s identity, light casual shirt, right-side position, skeptical expression, and direct-to-camera gaze are retained.
+<Subject 3> (appears in [Shot 1], [Shot 2]): fully_preserved - the smartphone remains in Rahul’s hand, steady, with its screen providing a small local glow rather than readable content.
+<Subject 4> (appears in [Shot 1], [Shot 2]): fully_preserved - the blurred living-room interior, warm practical light, muted amber-and-slate palette, and shallow depth of field are retained.
+<Picture 1> ([Shot 1] first frame): fully_preserved - the opening medium two-shot composition, subject placement, and initial side-by-side framing are retained.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+detailed_description:
+The target video is a direct-to-camera documentary moment, intimate and observational, with natural indoor light and a neutral true-to-life palette.
+[Shot 1] The shot begins from <Picture 1>, a medium two-shot of <Subject 1> on the left and <Subject 2> on the right inside <Subject 4>. The camera holds a Static Shot at eye level, with a shallow depth of field that keeps both faces sharp and the living-room background softly blurred. <Subject 1> starts angled slightly toward <Subject 2>, his eyes moving from Sameer’s face to the lens, his brow lifting as he gathers the question. His right hand holds <Subject 3> steady at chest height, the screen turned away from the audience and giving only a small cool glow on his thumb and lower face. <Subject 2> starts angled slightly toward <Subject 1>, then turns his head forward, his eyebrows raising and his mouth closing into a skeptical set. As <Subject 1> completes the turn, his weight shifts forward and his gaze locks on the lens, not on <Subject 3>. <Subject 1> (S1), a man in his thirties with a warm mid-range voice, steady pace, and a direct conversational tone, says: <d>[Hindi] तो Cool Survey App की Reality क्या है?</d> His lips move clearly, then close as he holds the question open.
+[Shot 2] At 00:04.360, the shot cuts to a slightly tighter medium two-shot, still at eye level, with the camera holding a Static Shot and only the smallest natural handheld breath in the frame. <Subject 1> remains on the left, <Subject 3> still steady in his hand, his eyes fixed on the lens, not the screen. <Subject 2> remains on the right, now fully facing forward, his head tilted slightly, eyebrows raised, and his mouth opening into a skeptical question. The background in <Subject 4> stays softly blurred, with warm practical light on their faces and muted amber-and-slate tones behind them. <Subject 2> (S2), a man in his thirties with a clear mid-range voice, slightly dry tone, and a measured pace, says: <d>[Hindi] Real… Fake… या मामला कुछ और?</d> As the line ends, both men hold their direct gaze, <Subject 1>’s hand still, <Subject 2>’s head still tilted, and the frame settles on their shared look at the viewer.
+
+overall_soundscape: overall_soundscape: A low indoor room tone continues beneath the scene, with the soft click of Rahul’s thumb against the smartphone edge as he steadies it, the faint rustle of his shirt as he shifts his weight, and the quiet fabric movement of Sameer’s shoulder as he turns toward the camera.
+
+non_diegetic_music: non_diegetic_music:
+N/A

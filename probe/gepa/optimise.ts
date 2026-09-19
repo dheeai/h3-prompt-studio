@@ -131,7 +131,7 @@ import { DEFAULT_TEMPLATES } from '../../src/lib/stages'
 import { h3ResponseFormat, joinH3Sections } from '../../src/lib/schema'
 import { injectFilmLook } from '../../src/lib/filmLookInject'
 import { describeFilmLook, FILM_LOOK_PRESETS } from '../../src/lib/filmLook'
-import { withQwenReasoningBudget } from '../../src/lib/thinking'
+import { withQwenReasoningBudget, QWEN_REASONING_BUDGET_DEFAULT } from '../../src/lib/thinking'
 import {
   buildJudgeRequest,
   judgeFeedback,
@@ -292,7 +292,7 @@ async function author(prompt: string): Promise<{ text: string; ms: number }> {
     temperature: 0.35,
     messages,
     response_format: h3ResponseFormat(MODE),
-  })
+  }, REASONING_BUDGET)
   const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
   const j: any = await res.json()
   const text: string = j.choices?.[0]?.message?.content ?? ''
@@ -316,8 +316,62 @@ function parseAuthored(raw: string): string | null {
 
 const CACHE_DIR = 'probe/gepa/.cache'
 
+/**
+ * The key MUST include the skills corpus. It did not, and that silently
+ * invalidated a corpus experiment: after two craft rules were added to
+ * `h3-prompting`, a re-measurement of preset C reported a 100% cache hit rate
+ * and returned scores byte-identical to the previous run — it had re-SCORED
+ * the old prompts rather than re-AUTHORING them, because neither the
+ * instruction nor the story had changed. The corpus is part of the input to
+ * the authoring call, so it is part of the key.
+ */
 function cacheKeyFor(instruction: string, story: string): string {
-  return createHash('sha256').update(instruction + '\0' + story).digest('hex')
+  return createHash('sha256')
+    .update(instruction + '\0' + story + '\0' + corpusFingerprint() + '\0' + SAMPLE + '\0' + REASONING_BUDGET)
+    .digest('hex')
+}
+
+/**
+ * Which independent sample of the same (instruction, story, corpus) this is.
+ *
+ * MEASURED 2026-09-19 and it changes how every comparison must be read:
+ * re-authoring one case with the SAME instruction at temperature 0.35 moves
+ * its score with a standard deviation of 0.116. Over 7 cases that is a
+ * standard error of 0.044, so two 7-case means need to differ by ~0.088
+ * before the difference means anything — which is larger than most of the
+ * deltas this project has been chasing.
+ *
+ * The cache key must include this or every "sample" returns the first one's
+ * cached prompt. Distinct samples are distinct cache entries, so a repeated
+ * run is still free while genuinely new samples still cost GPU.
+ */
+let SAMPLE = 1
+
+/**
+ * Reasoning tokens for the authoring call. `QWEN_REASONING_BUDGET_DEFAULT` is
+ * 1024, chosen to stop a runaway (unbounded thinking once cost 14,127
+ * completion tokens on one direction call) rather than because it was
+ * measured as enough.
+ *
+ * It may well be too small HERE. Preset C's instruction asks the model to
+ * name five scene gates, give every shot a job, and lay out a beat grid with
+ * a change per beat — all before writing a word, and all discarded. That is a
+ * lot to fit in 1024 tokens, and it is the one budget preset B never has to
+ * respect, because its three calls each get their own.
+ *
+ * In the cache key for the same reason the corpus and sample index are: it
+ * changes the authoring output, so it must invalidate the entry.
+ */
+let REASONING_BUDGET = QWEN_REASONING_BUDGET_DEFAULT
+
+/** Hash of the skill documents actually sent, computed once. Changing any of
+ * them changes every key, which is the point. */
+let CORPUS_FINGERPRINT: string | null = null
+function corpusFingerprint(): string {
+  if (CORPUS_FINGERPRINT === null) {
+    CORPUS_FINGERPRINT = createHash('sha256').update(SKILLS.join(',') + '\0' + corpus(SKILLS)).digest('hex').slice(0, 16)
+  }
+  return CORPUS_FINGERPRINT
 }
 
 function cachePath(dir: string, key: string): string {
@@ -1040,6 +1094,12 @@ async function main() {
   // --seed-instruction: swap the seed BEFORE anything downstream reads it —
   // REQUIRED_PLACEHOLDERS (the placeholder guard), the self-checks under
   // --dry, and the baseline eval all close over these two `let`s.
+  const budgetArg = arg('reasoning-budget')
+  if (budgetArg) REASONING_BUDGET = Math.max(0, Number(budgetArg))
+
+  const sampleArg = arg('sample')
+  if (sampleArg) SAMPLE = Math.max(1, Number(sampleArg))
+
   const skillsArg = arg('skills')
   if (skillsArg) {
     SKILLS = skillsArg.split(',').map((x) => x.trim()).filter(Boolean)

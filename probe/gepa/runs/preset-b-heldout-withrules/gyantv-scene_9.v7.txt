@@ -1,0 +1,20 @@
+subject_definitions: <Subject 1> is Sameer, the man in the living room, with a neutral true-to-life appearance, seated or standing frame-left, torso upright, facing right, wearing practical indoor clothing consistent with the source image.
+  <Subject 2> is Rahul’s forearm and hand entering from frame-right, holding an upright smartphone steady, with the wrist level and fingers gripping without shifting.
+  <Subject 3> is the living-room environment behind Sameer, softly blurred and steady, with warm practical indoor light falling unevenly across the space and no background figures or moving props.
+  <Picture 1> is the source film still used as the concrete visual anchor for the opening framing, character placement, lighting, and smartphone position.
+
+summary: [keyframe completion + reference generation] The target video is a single continuous medium shot in which <Subject 1> leans forward while speaking one Hindi line, and <Subject 2> remains steady at frame-right holding the smartphone. <Picture 1> anchors the opening composition, and <Subject 3> provides the stable blurred living-room background.
+
+retention_analysis: <Subject 1> (appears in [Shot 1]): fully_preserved - Sameer’s identity, frame-left placement, right-facing orientation, and living-room context are retained.
+<Subject 2> (appears in [Shot 1]): fully_preserved - Rahul’s forearm, upright smartphone, level wrist, and motionless grip are retained.
+<Subject 3> (appears in [Shot 1]): fully_preserved - the softly blurred living-room background, warm practical indoor light, and absence of background motion are retained.
+<Picture 1> ([Shot 1] opening frame): fully_preserved - the source still’s framing, subject placement, lighting, and smartphone position are used as the concrete opening anchor.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+The shot is live-action and cinematic, observational, and held in a neutral true-to-life palette.
+[Shot 1] The shot begins from <Picture 1>, a medium 16:9 frame of <Subject 1>, Sameer, from the chest up, positioned slightly left of center and facing right. <Subject 3>, the living-room background, extends behind him into soft blur, with warm practical indoor light falling unevenly across the room and leaving the background in soft shadow. <Subject 2>, Rahul’s forearm and hand, enter from the right edge of frame, holding the smartphone upright; the wrist stays level under the phone, the fingers grip without shifting, and the screen edge catches a thin line of warm light. The camera holds a Static Shot with only subtle handheld micro-drift. Sameer’s torso begins to move forward, his chest and shoulders shifting toward the camera and toward Rahul’s side of frame, while his head lowers slightly. His eyes stay on Rahul’s face, drop once to the smartphone as he says the data-safety line, then return to Rahul’s eyes. Sameer (S2) speaks with a lower, slower pressure: <d>[Hindi] बल्कि ये भी कि बदले में आपका Data कितना Safe है!</d> Rahul’s forearm and smartphone remain steady; the smartphone does not move, tilt, or shift position. Sameer holds the forward position without pulling back, and the frame settles into the held position of the smartphone at frame-right.
+
+overall_soundscape: Quiet indoor room tone continues beneath a low, steady ambient hum. Sameer’s forward lean produces a soft shift of fabric, while the smartphone remains silent and the background stays still.
+
+non_diegetic_music: N/A

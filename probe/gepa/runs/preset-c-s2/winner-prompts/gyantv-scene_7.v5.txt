@@ -1,0 +1,26 @@
+subject_definitions: <Subject 1> is Sameer, the man speaking in the living-room conversation, with a calm, measured delivery, positioned slightly right of center in the source framing, wearing neutral indoor clothing.
+  <Subject 2> is Rahul, the man listening and interjecting, positioned on the left side of the frame in the source framing, with an attentive, responsive posture.
+  <Subject 3> is the softly blurred living-room interior behind the two men, with warm practical indoor lighting and a muted amber-and-slate grade.
+  <Picture 1> is the first-frame anchor for [Shot 1], showing Sameer from the chest up, slightly right of center, leaning forward with his right hand raised and three fingers extended.
+  <Audio 1> is the voice-timbre reference for <Subject 1> (S1), a clear mid-range male Hindi voice with a controlled, explanatory pace.
+  <Audio 2> is the voice-timbre reference for <Subject 2> (S2), a slightly higher male Hindi voice with an eager, questioning delivery.
+
+summary: [reference generation + audio reference] The target video is a three-shot dialogue exchange in a living room. <Subject 1> lists three trust criteria while <Subject 2> interjects with the final point on reviews. <Picture 1> anchors the opening frame, and <Audio 1> and <Audio 2> guide the two speakers’ vocal identities.
+
+retention_analysis: <Subject 1> (appears in [Shot 1], [Shot 3]): fully_preserved - Sameer’s identity, calm explanatory delivery, right-of-center placement, and three-finger listing gesture are retained.
+<Subject 2> (appears in [Shot 2]): fully_preserved - Rahul’s identity, left-side placement, attentive nodding, and interjection are retained.
+<Subject 3> (appears in [Shot 1], [Shot 2], [Shot 3]): fully_preserved - the softly blurred living-room interior, warm practical lighting, and muted amber-and-slate grade are retained.
+<Picture 1> ([Shot 1] first frame): fully_preserved - the opening chest-up framing of Sameer with three fingers raised is retained.
+<Audio 1>: reference - Sameer’s dialogue follows the clear, measured male Hindi timbre without copying the original signal.
+<Audio 2>: reference - Rahul’s interjection follows the slightly higher, eager male Hindi timbre without copying the original signal.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+The target video is live-action and cinematic, observational, handheld, with natural video-sensor grain and a neutral true-to-life palette.
+[Shot 1] The shot begins from <Picture 1>: a handheld medium shot frames <Subject 1> (S1), Sameer, from the chest up, slightly right of center, leaning forward in <Subject 3>, the softly blurred living-room interior. His right hand is raised at shoulder height, three fingers extended, and his eyes stay fixed on <Subject 2>’s face, not his own hand. The camera holds a static shot with small amplitude at slow speed as he speaks in the clear, measured male Hindi timbre referenced from <Audio 1>: <d>[Hindi] तीन चीज़ें देखो Payment का तरीका, Withdrawal की शर्तें और Privacy Policy।</d> His fingers remain extended through the line, then lower one by one as he closes the list.
+[Shot 2] At 00:04.320, the shot cuts to a handheld medium close-up of <Subject 2> (S2), Rahul, from the chest up, positioned on the left side of the frame. His eyes widen, his head nods forward, and his free hand rises subtly near his chest. The camera pushes in with small amplitude at slow speed as he interjects in the slightly higher, eager male Hindi timbre referenced from <Audio 2>: <d>[Hindi] और Reviews?</d> His gaze stays on <Subject 1>’s face, not the background, and his mouth closes into an expectant half-smile after the question.
+[Shot 3] At 00:08.640, the shot cuts back to a handheld medium shot of <Subject 1> (S1), Sameer, from the chest up, slightly right of center, now settling back with his hand lowered. His eyes remain on <Subject 2>’s face, not the room, and he gives one conclusive nod. The camera pulls out with small amplitude at slow speed as he validates the point in the same clear, measured male Hindi timbre referenced from <Audio 1>: <d>[Hindi] वो भी! क्योंकि सिर्फ़ "पैसे कमाओ" देखकर भरोसा करना सही नहीं।</d> His shoulders relax at the end of the line, and his lips close as the shot ends.
+
+overall_soundscape: Soft indoor room tone continues under the conversation. Fabric shifts as Sameer settles back, a chair creaks faintly when Rahul leans forward, and a low ventilation hum from the room’s air conditioning runs beneath the dialogue.
+
+non_diegetic_music: N/A

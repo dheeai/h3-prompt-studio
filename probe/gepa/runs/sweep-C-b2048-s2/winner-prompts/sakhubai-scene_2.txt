@@ -1,0 +1,24 @@
+subject_definitions: <Subject 1> is the elderly hunched fisherwoman in a dark green nauvari sari, a small weathered woman with deep wrinkles, heavily lined hands, and a cane basket balanced on her head, receiving the fish.
+  <Subject 2> is the middle-aged auction worker with a henna-stained reddish beard, a white skullcap, and light cotton clothing, pushing the crate toward the woman.
+  <Subject 3> is the Sassoon Dock auction shed, an industrial space with corrugated metal roofs, wet concrete floors, and soft diffused daylight.
+  <Subject 4> is the silver pomfret fish, gleaming oval-shaped fish with reflective scales and bright eyes.
+  <Subject 5> is the fish crate, a weathered rectangular wooden container stained with salt and water.
+  <Subject 6> is the cane basket, a wide shallow woven basket with visible natural fibers.
+
+summary: [reference generation] The target video depicts a tender exchange between <Subject 1> and <Subject 2> inside <Subject 3>. <Subject 2> pushes <Subject 5> filled with <Subject 4> across the counter toward <Subject 1>, who accepts it with a grateful nod, and the fish are transferred into <Subject 6>.
+
+retention_analysis: <Subject 1> (appears in [Shot 1]): fully_preserved - the elderly fisherwoman's hunched posture, dark green nauvari sari, weathered hands, and cane basket on her head are retained.
+  <Subject 2> (appears in [Shot 1]): fully_preserved - the auction worker's henna-stained reddish beard, white skullcap, and light cotton clothing are retained.
+  <Subject 3> (appears in [Shot 1]): weak_reference - the industrial dock-shed atmosphere of corrugated metal, wet concrete, and diffused daylight is retained.
+  <Subject 4> (appears in [Shot 1]): fully_preserved - the silver pomfret's oval body, reflective scales, and bright eyes are retained.
+  <Subject 5> (appears in [Shot 1]): fully_preserved - the weathered rectangular wooden crate stained with salt and water is retained.
+  <Subject 6> (appears in [Shot 1]): fully_preserved - the wide shallow woven cane basket with visible natural fibers is retained.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+The target video presents the exchange as a quiet, observational scene.
+[Shot 1] A handheld medium-wide shot at eye level, using 19mm-equivalent wide coverage, frames the weathered wooden counter inside <Subject 3>, with corrugated metal roof panels above and wet concrete floor below. <Subject 2> leans forward from the left side of the frame, his white skullcap and henna-stained reddish beard catching the soft diffused daylight. His hands grip the edges of <Subject 5>, the salt-stained wooden crate, and he pushes it steadily across the damp counter toward <Subject 1>. The crate slides, its wooden base scraping the counter, while the silver bodies of <Subject 4> shift inside, their reflective scales catching brief highlights. <Subject 1> stands on the right, small and hunched, her dark green nauvari sari hanging in worn folds and <Subject 6> balanced on her head. She reaches out with heavily lined hands to steady the crate, then lifts her eyes to <Subject 2>'s face, not the crate. His eyes stay on her face, not the fish, and his jaw relaxes as he speaks with a warm, resigned, affectionate tone: <d>[Hindi] Le ja, buddhi... Tera bharosa hi mera munafa hai.</d> As he speaks, the camera performs a Push In with small amplitude at slow speed toward the two faces, motivated by the moment her hands stop moving and their gaze locks. She gives a subtle nod, her brow softening, then lowers her eyes to the crate. Her fingers close around one silver pomfret, lift it, and set it into <Subject 6>; the wet scale surface makes a soft slap against the woven fibers. She repeats the motion with a second fish, her breath audible as a short exhale. In the background, a rope creaks once on a mooring post and a distant gull cries, while the crate remains centered between them, its wooden edges wet and worn.
+
+overall_soundscape: The wooden crate scrapes across the damp counter, wet fish scales slap against the woven cane basket, and the woman's short exhale is audible as she lifts each fish. A rope creaks once on a mooring post and a distant gull cries from off-screen.
+
+non_diegetic_music: N/A

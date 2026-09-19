@@ -1,0 +1,18 @@
+subject_definitions: <Subject 1> is Rahul in <Picture 1>, a young man with warm brown skin, short dark hair, and a neutral indoor outfit, shown from the chest up while holding a smartphone at chest height.
+  <Subject 2> is the smartphone and lit app screen in <Picture 1>, held steady at chest height, with the screen angled toward off-screen right and acting as a cool light source.
+  <Subject 3> is the indoor room environment in <Picture 1>, a warm, neutral, still interior with no background figures and no moving objects.
+
+summary: [reference generation] The target video shows <Subject 1> holding <Subject 2> steady in <Subject 3> while he asks the fixed Hindi question toward off-screen right. The single shot begins with a wider frontal framing and tightens into a candid insert on the phone and Rahul’s face, leaving the question unresolved.
+
+retention_analysis: <Subject 1> (appears in [Shot 1]): fully_preserved - Rahul’s identity, warm brown skin, chest-up framing, and steady posture are retained.
+  <Subject 2> (appears in [Shot 1]): partially_preserved - the smartphone and lit screen are retained as a cool glow, while the interface is not rendered as readable on-screen content.
+  <Subject 3> (appears in [Shot 1]): fully_preserved - the warm neutral indoor room remains still, with no background figures and no moving objects.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+The target video is live-action and cinematic, with observational documentary immediacy and a neutral true-to-life palette.
+[Shot 1] A frontal medium shot frames <Subject 1>, Rahul, centered-left in frame from the chest up, holding <Subject 2>, the smartphone, steady at chest height. The phone’s lit screen is angled toward off-screen right, where Sameer is implied to be, and its cool glow is the brightest object in the warm neutral room. Rahul’s supporting hand braces against his own torso, keeping the interface from wavering, while his shoulders stay square and his weight remains planted. His eyes stay fixed on the off-screen right point where Sameer is, not the phone screen, and they do not drop until the line ends. The room behind Rahul stays still, with no background figures, no moving objects, and only a slight handheld micro-drift. Rahul (S1) says in a steady, direct young male voice with a measured pace: <d>[Hindi] हाँ… लेकिन सवाल है—Real है या Fake?</d> As the question lands, the camera performs a Push In with small amplitude at slow speed, moving from the wider frontal coverage to a tighter 16:9 framing on the phone and Rahul’s face. The phone remains level and does not tilt, drop, or move. The shot settles into the tighter frontal framing, still slightly left of the phone, with Sameer still off-screen right and the question unresolved.
+
+overall_soundscape: Quiet indoor room tone continues throughout the shot, with a faint handheld micro-drift and the soft, steady presence of the phone held without movement.
+
+non_diegetic_music: N/A

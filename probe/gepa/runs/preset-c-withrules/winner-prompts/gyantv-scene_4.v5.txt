@@ -1,0 +1,39 @@
+subject_definitions: subject_definitions:
+<Subject 1> is Rahul, a young man with warm brown skin, short dark hair, and a dark casual shirt, holding a smartphone at chest height.
+<Subject 2> is the smartphone in Rahul's hand, a modern black phone with a bright app interface on its screen.
+<Subject 3> is the dim indoor room, with a plain slate-grey wall behind Rahul and a warm practical lamp out of focus to the left.
+
+summary:
+[reference generation] The target video shows <Subject 1> holding <Subject 2> steady in <Subject 3>, asking <Subject 2>'s app interface to be judged as real or fake while his gaze stays fixed toward an off-screen listener on the right.
+
+retention_analysis:
+<Subject 1> (appears in [Shot 1], [Shot 2]): fully_preserved - Rahul's warm brown skin, short dark hair, dark casual shirt, chest-up framing, and steady smartphone-holding posture are retained.
+<Subject 2> (appears in [Shot 1], [Shot 2]): fully_preserved - the black smartphone, its bright app interface, and its cool blue-white glow on Rahul's face are retained.
+<Subject 3> (appears in [Shot 1], [Shot 2]): fully_preserved - the dim indoor room, plain slate-grey wall, and warm practical lamp out of focus to the left are retained.
+
+detailed_description:
+The target video is live-action, cinematic, observational, and handheld, with a neutral true-to-life palette, light sensor grain, and a wide zoom framing that tightens only for the phone insert.
+[Shot 1] A medium shot frames <Subject 1> from the chest up, centered in <Subject 3>, with the plain slate-grey wall behind him and the warm practical lamp out of focus to the left. <Subject 1> holds <Subject 2> steady at chest height, both hands gripping its lower edge, while the bright app interface on <Subject 2> casts a cool blue-white glow across his face and upper torso. The camera holds a Static Shot for the first two seconds, then Push In with small amplitude at slow speed as <Subject 1>'s eyes lift from <Subject 2> toward the off-screen right and his brow draws down. <Subject 1> (S1) says in a low, careful Hindi voice with a short pause after the first word: <d>[Hindi] हाँ… लेकिन सवाल है—Real है या Fake?</d> His lips close on the final word, his jaw tightens, and his thumb presses once against the side of <Subject 2>.
+[Shot 2] At 00:04.000, the shot cuts to a close-up of <Subject 2> in <Subject 1>'s hands, with <Subject 1>'s chin and lower face visible above it and <Subject 3> blurred behind. The app interface on <Subject 2> remains on the same bright screen, its cool hard glow sharpening the edge of <Subject 1>'s jaw and the knuckles of his fingers. The camera holds a Static Shot as <Subject 1>'s thumb stops moving, his breath slows, and his eyes stay fixed toward the off-screen right, not the screen. The final frame lands on <Subject 2>'s unchanged bright interface and <Subject 1>'s closed, waiting mouth.
+
+overall_soundscape:
+Rahul's fingers make a soft, dry contact against the phone's plastic edge when his thumb presses once. His breath becomes shorter and more controlled as the shot tightens, and the room stays quiet except for the faint click of his jaw tightening.
+
+non_diegetic_music:
+N/A
+
+summary: [reference generation] The target video shows <Subject 1> holding <Subject 2> steady in <Subject 3>, asking <Subject 2>'s app interface to be judged as real or fake while his gaze stays fixed toward an off-screen listener on the right.
+
+retention_analysis: <Subject 1> (appears in [Shot 1], [Shot 2]): fully_preserved - Rahul's warm brown skin, short dark hair, dark casual shirt, chest-up framing, and steady smartphone-holding posture are retained.
+<Subject 2> (appears in [Shot 1], [Shot 2]): fully_preserved - the black smartphone, its bright app interface, and its cool blue-white glow on Rahul's face are retained.
+<Subject 3> (appears in [Shot 1], [Shot 2]): fully_preserved - the dim indoor room, plain slate-grey wall, and warm practical lamp out of focus to the left are retained.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+The target video is live-action, cinematic, observational, and handheld, with a neutral true-to-life palette, light sensor grain, and a wide zoom framing that tightens only for the phone insert.
+[Shot 1] A medium shot frames <Subject 1> from the chest up, centered in <Subject 3>, with the plain slate-grey wall behind him and the warm practical lamp out of focus to the left. <Subject 1> holds <Subject 2> steady at chest height, both hands gripping its lower edge, while the bright app interface on <Subject 2> casts a cool blue-white glow across his face and upper torso. The camera holds a Static Shot for the first two seconds, then Push In with small amplitude at slow speed as <Subject 1>'s eyes lift from <Subject 2> toward the off-screen right and his brow draws down. <Subject 1> (S1) says in a low, careful Hindi voice with a short pause after the first word: <d>[Hindi] हाँ… लेकिन सवाल है—Real है या Fake?</d> His lips close on the final word, his jaw tightens, and his thumb presses once against the side of <Subject 2>.
+[Shot 2] At 00:04.000, the shot cuts to a close-up of <Subject 2> in <Subject 1>'s hands, with <Subject 1>'s chin and lower face visible above it and <Subject 3> blurred behind. The app interface on <Subject 2> remains on the same bright screen, its cool hard glow sharpening the edge of <Subject 1>'s jaw and the knuckles of his fingers. The camera holds a Static Shot as <Subject 1>'s thumb stops moving, his breath slows, and his eyes stay fixed toward the off-screen right, not the screen. The final frame lands on <Subject 2>'s unchanged bright interface and <Subject 1>'s closed, waiting mouth.
+
+overall_soundscape: Rahul's fingers make a soft, dry contact against the phone's plastic edge when his thumb presses once. His breath becomes shorter and more controlled as the shot tightens, and the room stays quiet except for the faint click of his jaw tightening.
+
+non_diegetic_music: N/A

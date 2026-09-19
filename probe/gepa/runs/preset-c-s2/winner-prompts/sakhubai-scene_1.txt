@@ -1,0 +1,20 @@
+subject_definitions: <Subject 1> is the elderly hunched fisherwoman in a green sari, with a bent posture, weathered sun-darkened skin, a dark green nauvari sari, and thin silver anklets.
+  <Subject 2> is the bustling, gritty fishing port at dawn, with low-slung auction sheds, corrugated metal roofs, and wet concrete stained with brine.
+  <Subject 3> is the wide, shallow woven basket, made of rustic, weathered natural cane fibers.
+  <Subject 4> is the weathered wooden fish crates, rectangular, salt-stained, and stacked haphazardly.
+
+summary: [reference generation] The target video follows <Subject 1> as she crosses <Subject 2> at dawn, carrying <Subject 3> on her head and moving through a path blocked by <Subject 4>.
+
+retention_analysis: <Subject 1> (appears in [Shot 1]): fully_preserved - her bent posture, weathered sun-darkened skin, dark green nauvari sari, and thin silver anklets are retained.
+  <Subject 2> (appears in [Shot 1]): fully_preserved - the low-slung auction sheds, corrugated metal roofs, and wet brine-stained concrete are retained.
+  <Subject 3> (appears in [Shot 1]): fully_preserved - the wide, shallow woven cane basket is retained.
+  <Subject 4> (appears in [Shot 1]): fully_preserved - the rectangular, salt-stained, haphazardly stacked wooden fish crates are retained.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+The target video is a single observational dawn sequence, neutral and true-to-life.
+[Shot 1] A wide shot, 19mm-equivalent, eye-level, Static Shot, locked to the fixed crate line as <Subject 1> enters from the left. <Subject 1>, the elderly hunched fisherwoman in a dark green nauvari sari, moves across the wet brine-stained concrete of <Subject 2>, the gritty fishing port at dawn, with <Subject 3>, the wide shallow woven cane basket, balanced on her head. Her bare cracked heels strike the concrete in a steady rhythm, and her thin silver anklets clink with each step. She passes the first stack of <Subject 4>, the weathered wooden fish crates, and her right elbow brushes the nearest crate, scraping wood against wood as she clears the gap. The camera remains fixed while her path narrows between two taller crate stacks; she shifts her weight left, then right, keeping <Subject 3> level as a passing worker's shoulder brushes her sari sleeve. A boat engine off-screen to the right turns over, its propeller churning water, and the vibration reaches the concrete under her feet. She reaches the final crate stack, where a loose plank protrudes into her path; her left foot taps the plank, it shifts, and she steps over it without breaking stride. Her breath is visible as a short white plume in the cold dawn air, and her jaw tightens as she settles her weight forward. The shot ends with her centered in the frame, <Subject 3> still level, moving away from the camera toward the auction sheds.
+
+overall_soundscape: The wet concrete of <Subject 2> carries the slap of <Subject 1>'s bare cracked heels, the clink of her thin silver anklets, and the scrape of her elbow against <Subject 4>. A boat engine off-screen to the right turns over, its propeller churning water, and the vibration reaches the concrete under her feet.
+
+non_diegetic_music: N/A

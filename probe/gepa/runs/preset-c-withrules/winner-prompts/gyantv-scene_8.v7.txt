@@ -1,0 +1,22 @@
+subject_definitions: <Subject 1> is Rahul, the man asking the question, with a serious face, steady hands, and a calm but pressing delivery.
+  <Subject 2> is Sameer, the man listening, with a still face, closed lips, and an attentive posture.
+  <Subject 3> is the smartphone held by Rahul, kept steady at chest level, its screen not readable and its light only a small practical glow.
+  <Subject 4> is the living-room interior, a neutral domestic space with soft practical indoor light and a shallow depth of field.
+
+summary: [reference generation] The target video shows <Subject 1> holding <Subject 3> steady in <Subject 4> and asking <Subject 2> a serious question about hidden costs beyond money, while <Subject 2> listens without speaking. The scene stays observational and handheld, with the zoom tightening only when the phone becomes the object of the question.
+
+retention_analysis: <Subject 1> (appears in [Shot 1], [Shot 2], [Shot 3]): fully_preserved - Rahul's identity, serious expression, steady hand, and questioning role are retained.
+  <Subject 2> (appears in [Shot 1], [Shot 2], [Shot 3]): fully_preserved - Sameer's identity, listening posture, closed lips, and attentive gaze are retained.
+  <Subject 3> (appears in [Shot 1], [Shot 2], [Shot 3]): fully_preserved - the smartphone remains in Rahul's hand, steady at chest level, with its screen not readable.
+  <Subject 4> (appears in [Shot 1], [Shot 2], [Shot 3]): fully_preserved - the living-room interior remains the same neutral domestic space with soft practical light.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+The scene stays observational, with the zoom favoring coverage and tightening only when the phone becomes the object of the question.
+[Shot 1] A handheld medium close-up frames <Subject 1> from the chest up, slightly right of center, in <Subject 4>. The camera holds a Static Shot for the first beat, then Pushes In with small amplitude at slow speed as <Subject 1>'s eyes lift from <Subject 3> to <Subject 2>. <Subject 1> (S1), with a low, controlled voice, says: <d>[Hindi] यानी असली सवाल सिर्फ़ ये नहीं कि पैसे मिलेंगे या नहीं…</d> His right hand keeps <Subject 3> steady at chest level, his thumb resting on its edge, while his jaw tightens and his breath stays shallow. <Subject 3>'s screen is not readable and gives only a small cool glow on his fingers.
+[Shot 2] At 00:03.290, the shot cuts to a handheld medium shot of <Subject 2> from the chest up, slightly left of center, facing right toward <Subject 1>. The camera holds a Static Shot, then Tilts Down with small amplitude at slow speed as <Subject 2>'s eyes drop to <Subject 3> and back to <Subject 1>'s face. <Subject 2> listens with closed lips, his brow lowering, his shoulders staying still, and his weight shifting slightly forward. The background remains the softly blurred living room.
+[Shot 3] At 00:06.500, the shot cuts to a handheld close insert on <Subject 3> in <Subject 1>'s hand, with <Subject 1>'s face partially visible above it. The camera Pushes In with small amplitude at slow speed as <Subject 1>'s thumb presses the phone's side, not the screen, and the phone stays level. The screen remains not readable, its light only a small practical glow on his fingers. <Subject 1>'s lips stay closed after the line, and his eyes remain on <Subject 2>'s face, not the screen.
+
+overall_soundscape: A soft indoor room tone continues under the scene. The phone makes a small plastic click when <Subject 1>'s thumb presses its side, and his breathing is shallow and audible in close shots. Fabric shifts once as <Subject 2> moves his weight forward.
+
+non_diegetic_music: N/A

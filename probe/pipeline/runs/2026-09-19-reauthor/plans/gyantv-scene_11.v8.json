@@ -1,0 +1,22 @@
+{
+  "clipSeconds": 15.08,
+  "hasCharacters": true,
+  "hasDialogue": true,
+  "approvedShots": [
+    {
+      "index": 1,
+      "summary": "Rahul and Sameer hold the phone between them and settle into a steady look at the camera, both with their lips closed.",
+      "seconds": 4
+    },
+    {
+      "index": 2,
+      "summary": "The two hold their position, lips closed and still, the phone screen angled toward the lens.",
+      "seconds": 7.3
+    },
+    {
+      "index": 3,
+      "summary": "They hold the final frame, lips closed, gaze level at the camera as the light settles.",
+      "seconds": 3.78
+    }
+  ]
+}

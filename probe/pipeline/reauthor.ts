@@ -118,7 +118,21 @@ function structuredToText(d: any): string {
   if (d.style) body.push(String(d.style).trim())
   d.shots.forEach((sh: any, i: number) => {
     const marker = i === 0 ? '[Shot 1]' : `[Shot ${i + 1}] At ${stamp(Number(sh.startTime) || 0)},`
-    const lines = (sh.dialogue ?? []).map((x: any) => (typeof x === 'string' ? x : x?.line ?? '')).filter(Boolean)
+    // The source carries FULLY structured dialogue — `speakerId`, `language`,
+    // `exactWords` — and H3 wants `(S1) <d>[Language] words</d>`. An earlier
+    // version of this looked for a `line` key, found none, and silently
+    // emitted NO dialogue, which then scored the old arm at 0.11-0.43 on the
+    // dialogue dimension and made the old corpus look far worse than it is.
+    // Read the real keys, and keep the original language rather than
+    // translating it away.
+    const lines = (sh.dialogue ?? []).map((x: any) => {
+      if (typeof x === 'string') return x
+      const words = x?.exactWords ?? x?.line ?? x?.text ?? ''
+      if (!words) return ''
+      const who = x?.speakerId ? `(${x.speakerId}) ` : ''
+      const lang = x?.language ? `[${x.language}] ` : ''
+      return `${who}<d>${lang}${words}</d>`
+    }).filter(Boolean)
     body.push([marker, sh.composition, sh.action,
       sh.cameraMotion ? `Camera: ${sh.cameraMotion}.` : '',
       lines.length ? lines.join(' ') : ''].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim())
@@ -133,11 +147,22 @@ function structuredToText(d: any): string {
   return parts.filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`).join('\n\n')
 }
 
-/** The old file's own fields, under H3's names. Missing sections stay missing. */
+/** The old file's own fields, under H3's names. Missing sections stay missing.
+ *
+ * `spokenLinesAudio` is carried through because these files already store it
+ * in H3's own form (`<d>[English] (S1) ...</d>`) and dropping it left the old
+ * arm with NO dialogue at all — which the judge then scored as a dialogue
+ * failure that belonged to this converter, not to the prompt. Same class of
+ * mistake as the structured path's `exactWords`. Convert losslessly or do not
+ * claim to be comparing. */
 function oldPromptText(d: any): string {
+  const spoken = d.spokenLinesAudio
+    ? String(d.spokenLinesAudio)
+    : (d.spokenLines ?? []).map((l: string) => `<d>[English] ${l}</d>`).join(' ')
+  const desc = [d.detailedDescription ?? '', spoken].filter(Boolean).join(' ')
   const parts: [string, string][] = [
     ['summary', d.summary ?? ''],
-    ['detailed_description', d.detailedDescription ?? ''],
+    ['detailed_description', desc],
     ['overall_soundscape', d.overallSoundscape ?? ''],
     ['non_diegetic_music', d.nonDiegeticMusic ?? ''],
   ]

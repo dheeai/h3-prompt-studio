@@ -1,0 +1,27 @@
+{
+  "clipSeconds": 15,
+  "hasCharacters": true,
+  "hasDialogue": true,
+  "approvedShots": [
+    {
+      "index": 1,
+      "summary": "the shot opens with a close-up of Maya’s face in the round champagne-rim mirror.",
+      "seconds": 3.75
+    },
+    {
+      "index": 2,
+      "summary": "the shot cuts to a medium close-up of Maya’s profile as she turns slightly away from the mirror, her gaze drifting down toward the vanity surface.",
+      "seconds": 3.75
+    },
+    {
+      "index": 3,
+      "summary": "the shot cuts to a top-down detail view of the vanity surface.",
+      "seconds": 3.75
+    },
+    {
+      "index": 4,
+      "summary": "the shot cuts back to Maya’s face.",
+      "seconds": 3.75
+    }
+  ]
+}

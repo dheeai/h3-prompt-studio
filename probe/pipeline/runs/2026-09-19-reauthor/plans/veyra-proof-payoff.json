@@ -1,0 +1,27 @@
+{
+  "clipSeconds": 15,
+  "hasCharacters": true,
+  "hasDialogue": true,
+  "approvedShots": [
+    {
+      "index": 1,
+      "summary": "The shot opens with a medium close-up of Maya standing near the bedroom doorway, bathed in warm golden hour light.",
+      "seconds": 3.75
+    },
+    {
+      "index": 2,
+      "summary": "the shot cuts to a detail view of Maya’s hands.",
+      "seconds": 3.75
+    },
+    {
+      "index": 3,
+      "summary": "the shot cuts back to a medium shot of Maya.",
+      "seconds": 3.75
+    },
+    {
+      "index": 4,
+      "summary": "the shot holds on a calm, static composition of the empty doorway or the soft focus of the room as Maya exits the frame.",
+      "seconds": 3.75
+    }
+  ]
+}

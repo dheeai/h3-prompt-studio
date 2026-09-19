@@ -1,0 +1,14 @@
+subject_definitions: No reference assets are wired for this clip.
+
+summary: [reference generation] Rahul holds the smartphone steady in a warm living room, taps the screen once, and looks up to Sameer with an expectant expression, inviting him to consider how to verify the app's legitimacy.
+
+retention_analysis: No reference labels are present.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+The scene is observational and intimate, with the handheld camera held close enough to preserve the quiet tension between the two men.
+[Shot 1] A medium two-shot frames Rahul and Sameer from the chest up in a warm living room. Rahul is on the left, holding a smartphone steady in front of him, its cool glow catching his face against the amber practical light. Sameer is on the right, watching Rahul's face and the phone with focused attention. The camera holds a static shot with only subtle handheld breathing as Rahul taps the screen once, then looks up toward Sameer with an expectant expression. Rahul (S1) says in a measured, slightly urgent male voice: <d>[English] How do we know this app is legit?</d> Sameer listens, his gaze shifting between Rahul's face and the glowing screen, his expression cautious and attentive.
+
+overall_soundscape: Soft indoor room tone continues beneath a faint hum of household electronics. A single light tap on the phone screen is audible, followed by quiet breathing and the subtle movement of fabric.
+
+non_diegetic_music: N/A

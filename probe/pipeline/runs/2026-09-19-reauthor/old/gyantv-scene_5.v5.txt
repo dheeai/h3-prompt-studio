@@ -1,0 +1,7 @@
+summary: [reference generation] Rahul lowers the smartphone to his chest, breaking eye contact with the screen to look at Sameer. Sameer watches the gesture, his expression shifting from skepticism to quiet reflection as the late afternoon light highlights his thoughtful demeanor.
+
+detailed_description: Cinematic photoreal film still, 50mm lens, shallow depth of field, warm practical indoor lighting, muted amber-and-slate grade, fine grain, vertical 9:16 frame. [Shot 1] Static medium two-shot framing Rahul and Sameer from the chest up. Rahul is on the left, slowly lowering the smartphone to his chest. Sameer is on the right, watching Rahul's face and the phone. Rahul lowers the phone; Sameer watches and reflects. Camera: Static Shot. (S2) <d>[Hindi] अगर सच में कमाई है, तो फिर… हर Survey App भरोसेमंद क्यों नहीं होता?</d>
+
+overall_soundscape: The hit rings through the room. The hit rings through the room. The quiet hum of a late afternoon living room is overlaid by the soft rustle of fabric as Rahul moves. [Shot 1] The quiet hum of the living room; the soft rustle of Rahul's shirt as he lowers his arm.
+
+non_diegetic_music: A single deep suspense hit — DHOOM! — lands hard as the question turns serious, then decays into a low sustained drone that holds unresolved underneath the rest of the beat.

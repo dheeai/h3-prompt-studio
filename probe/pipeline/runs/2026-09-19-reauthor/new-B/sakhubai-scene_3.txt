@@ -1,0 +1,24 @@
+subject_definitions: subject_definitions:
+<Subject 1> is the weathered elderly woman in a dark green nauvari sari, seated low on a rough stone at frame left, with bright steady eyes, a wide grin revealing four remaining teeth, and weathered hands.
+<Subject 2> is the young woman in a bright yellow kurti, standing at frame right, leaning slightly toward the fish, with quick blinks and a hand moving from her bag to cash.
+<Subject 3> is the silver pomfret fish, with wet gleaming scales, a firm belly, and a clear bright eye that catches the morning light.
+<Subject 4> is the vibrant morning market lane, extending behind the two women, softly out of focus, with moving people, shifting cloth, and flickering light across wet surfaces.
+<Subject 5> is the empty space beside <Subject 1> on the stone, remaining visible after the fish is lifted and the transaction is complete.
+
+summary: summary:
+[reference generation] The target video shows <Subject 1> demonstrating the freshness of <Subject 3> to <Subject 2> in <Subject 4>, followed by a cash transaction and <Subject 2> beginning to leave, with <Subject 5> remaining visible beside <Subject 1>.
+
+retention_analysis: retention_analysis:
+<Subject 1> (appears in [Shot 1]): fully_preserved - the weathered elderly woman in a dark green nauvari sari, seated low on the stone at frame left, is retained.
+<Subject 2> (appears in [Shot 1]): fully_preserved - the young woman in a bright yellow kurti, standing at frame right, is retained.
+<Subject 3> (appears in [Shot 1]): fully_preserved - the silver pomfret fish with wet gleaming scales and a clear bright eye is retained.
+<Subject 4> (appears in [Shot 1]): fully_preserved - the vibrant morning market lane, softly out of focus and moving behind the subjects, is retained.
+<Subject 5> (appears in [Shot 1]): fully_preserved - the empty space beside <Subject 1> on the stone remains visible.
+
+detailed_description: detailed_description:
+The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+[Shot 1] A medium two-shot from slightly above the fish rows, at <Subject 2>'s shoulder height, angled so <Subject 1> is frame left and <Subject 2> is frame right. <Subject 1> sits low on the rough stone at frame left, surrounded by rows of <Subject 3>, the silver pomfret fish, with wet gleaming scales and a clear bright eye. <Subject 2> stands at frame right, leaning slightly forward toward the fish, her hand near her bag. The market lane behind them stays softly out of focus and keeps moving: people pass, cloth shifts, light flickers across wet surfaces. <Subject 1> reaches down to the fish rows, lifts one <Subject 3>, presses its firm belly with her thumb, then raises it into the morning light and tilts it upward so the fish eye catches the light. Her shoulders lift from the stone, her head turns toward <Subject 2>, and her grin widens, revealing her four remaining teeth. <Subject 2>'s eyes track the fish's eye, then lift to <Subject 1>'s mouth, blink quickly, then drop to the cash in her fingers. <Subject 2>'s hand leaves her bag and moves toward <Subject 1> with cash, her fingers pinching the notes. <Subject 1>'s open palm takes the cash and closes around it. <Subject 1> (S1) says with a wide, humorous grin: <d>[Hindi] Paplet lo! Taaza paplet! ... Beta, ye subah samundar mein tha... Isse taaza toh main bhi nahi hun.</d> <Subject 2> laughs, her expression shifting from doubt to amusement, her shoulders relax, and she begins to turn away at frame right. The camera executes a Push In, starting near the wide end of the 19-90mm range for coverage and pushing to a tighter 90mm-equivalent framing on the two bodies and the fish as the fish is lifted and the cash is handed over. The empty space beside <Subject 1> on the stone remains visible.
+
+overall_soundscape: overall_soundscape: Soft market ambience with distant voices, shifting cloth, and wet surfaces under flickering morning light. The fish scales shimmer with a faint wet sound as it is lifted, and cash makes a soft rustle as it changes hands.
+
+non_diegetic_music: non_diegetic_music: N/A

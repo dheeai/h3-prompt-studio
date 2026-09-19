@@ -1,0 +1,17 @@
+{
+  "clipSeconds": 8.71,
+  "hasCharacters": true,
+  "hasDialogue": true,
+  "approvedShots": [
+    {
+      "index": 1,
+      "summary": "Rahul poses the question about the app's reality, turning to face the camera.",
+      "seconds": 4.36
+    },
+    {
+      "index": 2,
+      "summary": "Sameer poses the final question about the app's nature, looking directly at the camera.",
+      "seconds": 4.35
+    }
+  ]
+}

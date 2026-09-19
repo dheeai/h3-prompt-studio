@@ -1,0 +1,17 @@
+{
+  "clipSeconds": 8.71,
+  "hasCharacters": true,
+  "hasDialogue": true,
+  "approvedShots": [
+    {
+      "index": 1,
+      "summary": "Rahul holds the phone steady and poses the first part of his question about money.",
+      "seconds": 3.29
+    },
+    {
+      "index": 2,
+      "summary": "Sameer holds Rahul's gaze without a word, weighing what he has just heard. Neither man speaks for the rest of the beat.",
+      "seconds": 5.42
+    }
+  ]
+}

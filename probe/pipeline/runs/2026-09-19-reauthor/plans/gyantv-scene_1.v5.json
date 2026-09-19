@@ -1,0 +1,17 @@
+{
+  "clipSeconds": 10.13,
+  "hasCharacters": true,
+  "hasDialogue": false,
+  "approvedShots": [
+    {
+      "index": 1,
+      "summary": "Rahul taps the smartphone screen, illuminating his face with the glow.",
+      "seconds": 4.5
+    },
+    {
+      "index": 2,
+      "summary": "Rahul holds the smartphone out toward Sameer, displaying the 'Cool Survey App' interface.",
+      "seconds": 5.63
+    }
+  ]
+}

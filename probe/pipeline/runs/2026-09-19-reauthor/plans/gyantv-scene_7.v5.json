@@ -1,0 +1,22 @@
+{
+  "clipSeconds": 12.96,
+  "hasCharacters": true,
+  "hasDialogue": true,
+  "approvedShots": [
+    {
+      "index": 1,
+      "summary": "Sameer raises three fingers to list payment, withdrawal, and privacy criteria.",
+      "seconds": 4.32
+    },
+    {
+      "index": 2,
+      "summary": "Rahul nods and interjects with the point about reviews.",
+      "seconds": 4.32
+    },
+    {
+      "index": 3,
+      "summary": "Sameer lowers his hand, nods conclusively, and validates the review point.",
+      "seconds": 4.32
+    }
+  ]
+}

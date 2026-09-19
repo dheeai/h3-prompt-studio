@@ -1,0 +1,20 @@
+subject_definitions: <Subject 1> is Rahul, a man shown in the reference image, wearing a neutral shirt, with a calm and direct face, positioned centered and slightly left in a frontal medium close-up.
+<Subject 2> is Sameer, a man shown in the reference image, positioned at the right edge of the frame, leaning inward toward Rahul.
+<Subject 3> is the smartphone held by Rahul, with a lit screen showing the Cool Survey App interface, its blue-white glow visible in the shared space between the two men.
+<Subject 4> is the indoor room environment, with warm practical lighting and a static background behind the pair.
+
+summary: [reference generation] The target video shows <Subject 1> presenting <Subject 3> to <Subject 2> in <Subject 4>. <Subject 1> extends the phone from his chest toward <Subject 2>, while <Subject 2> leans inward to read the screen. The shot remains a single continuous frontal medium close-up with no cut.
+
+retention_analysis: <Subject 1> (appears in [Shot 1]): fully_preserved - Rahul's identity, neutral shirt, centered-left placement, and direct presentation posture are retained.
+<Subject 2> (appears in [Shot 1]): fully_preserved - Sameer's identity, right-edge placement, and inward lean are retained.
+<Subject 3> (appears in [Shot 1]): fully_preserved - the smartphone, its lit Cool Survey App interface, and blue-white screen glow are retained.
+<Subject 4> (appears in [Shot 1]): fully_preserved - the warm practical indoor room and static background are retained.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+The target video is a single observational live-action beat, quiet and direct, with warm practical room light and a cool blue-white phone glow.
+[Shot 1] A frontal medium close-up frames <Subject 1>, Rahul, centered and slightly left, with <Subject 2>, Sameer, at the right edge leaning inward. <Subject 3>, the smartphone, is already held at Rahul's chest height, its screen lit with the Cool Survey App interface. The camera holds a Static Shot at eye level, keeping Rahul's face, the phone screen, and Sameer's right-edge presence readable in one frame. Rahul's forearm extends the smartphone from his chest toward Sameer, keeping the screen angled into the shared space between them. His eyes stay on Sameer's face, drop once to the screen to check the interface, then return and hold Sameer's eyes while the phone is extended. His chest lifts slightly, and his free hand stays low at his side. Sameer leans his upper body inward toward the phone, shoulder drawing slightly forward, head tilting to read the screen, and his weight settles into the lean as the phone reaches him. His eyes move from Rahul's face to the phone screen, hold the screen while it steadies, then lift back to Rahul's face. There is no physical contact; the frame's balance shifts as the phone reaches its extended position and Sameer's shoulder moves slightly deeper into the right edge. The phone is held steady at arm's length, its blue-white glow on Rahul's face and upper torso, while Sameer remains at the right edge and the screen stays visible in the shared space between them. The room behind them remains static, and the phone screen remains the brightest object in the frame throughout the shot.
+
+overall_soundscape: Quiet indoor room tone continues throughout the shot, with only the soft movement of fabric and the faint settle of the phone into a steady extended position.
+
+non_diegetic_music: N/A

@@ -1,0 +1,15 @@
+subject_definitions: No standalone reference assets are wired for this clip.
+
+summary: [reference generation] A mid-afternoon domestic moment in which Rahul receives a phone notification, looks down at the smartphone, and turns it toward Sameer. The beat is carried by the chime, the glow of the screen, and the physical turn of the phone; no one speaks.
+
+retention_analysis: No reference labels are present for this clip.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+[Shot 1] A handheld medium close-up frames Rahul from the chest up, centered in the frame, in a softly lit living room during mid-afternoon. He holds a smartphone in his right hand, the screen facing him, its cool blue-white glow catching his face and upper torso against the warm ambient light. The camera holds a static shot with only a faint handheld breathing as a notification chime lands and Rahul’s eyes drop to the screen. His thumb taps the smartphone screen once, brightening the glow on his cheek and jaw. The room stays quiet around him, with shallow focus keeping the phone and his face sharp while the background softens into muted domestic shapes.
+
+[Shot 2] At 00:04.500, the shot cuts to a handheld medium two-shot. Rahul is on the left, turned slightly right, extending the smartphone toward the center of the frame. Sameer is on the right, leaning in from the sofa to look at the screen. The phone is the focal point between them, its interface visible as the “Cool Survey App” screen. The camera pushes in with small amplitude at slow speed, tightening toward the shared screen while preserving the natural handheld feel. Rahul holds the smartphone out toward Sameer, displaying the “Cool Survey App” interface. Sameer’s attention moves to the screen, and the beat completes on the quiet turn of the phone, the soft glow between them, and the absence of speech.
+
+overall_soundscape: A short phone notification chime rings once in a quiet living room, followed by the soft tap of a thumb on glass and the faint creak of a sofa as Sameer leans in. Low domestic room tone continues underneath, with no dialogue.
+
+non_diegetic_music: N/A

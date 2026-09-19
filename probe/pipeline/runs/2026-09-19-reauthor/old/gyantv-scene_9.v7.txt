@@ -1,0 +1,7 @@
+summary: [dialogue execution] Sameer leans forward from his position in the living room, lowering his voice to emphasize the data privacy cost, while Rahul listens intently, holding the smartphone steady.
+
+detailed_description: Cinematic photoreal film still, 50mm lens, shallow depth of field, warm practical indoor lighting, muted amber-and-slate grade, fine grain, vertical 9:16 frame. [Shot 1] Static medium shot framing Sameer from the chest up. He is positioned slightly left of center, facing right towards Rahul. The background is the softly blurred living room interior. The camera holds steady on his face as he leans forward. Sameer leans forward and speaks the final part of his thought about data safety, while Rahul listens intently. Camera: Static Shot. (S2) <d>[Hindi] बल्कि ये भी कि बदले में आपका Data कितना Safe है!</d>
+
+overall_soundscape: The quiet hum of a late afternoon living room is overlaid by the rustle of fabric as Sameer leans forward and gestures, and the soft sounds of their breathing. [Shot 1] The rustle of Sameer's t-shirt as he leans forward; the soft hum of the living room; the faint tap of Rahul's thumb on the phone screen.
+
+non_diegetic_music: N/A

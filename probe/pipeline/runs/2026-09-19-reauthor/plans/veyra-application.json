@@ -1,0 +1,27 @@
+{
+  "clipSeconds": 15,
+  "hasCharacters": true,
+  "hasDialogue": true,
+  "approvedShots": [
+    {
+      "index": 1,
+      "summary": "The shot opens with a close-up of Maya’s face at the vanity mirror.",
+      "seconds": 3.75
+    },
+    {
+      "index": 2,
+      "summary": "the shot cuts to a medium close-up as Maya moves away from the vanity toward a window.",
+      "seconds": 3.75
+    },
+    {
+      "index": 3,
+      "summary": "the shot cuts to a tighter frame on her face as she speaks her impression.",
+      "seconds": 3.75
+    },
+    {
+      "index": 4,
+      "summary": "the shot holds on her smiling face, the rosewood-brown shade looking natural and integrated with her complexion.",
+      "seconds": 3.75
+    }
+  ]
+}

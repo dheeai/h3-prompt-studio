@@ -1,0 +1,7 @@
+summary: [reference generation] Sameer scrutinizes the smartphone screen held by Rahul, his face illuminated by the cool blue UI glow, then looks up to question the earnings promise.
+
+detailed_description: Cinematic photoreal film still, 50mm lens, shallow depth of field, warm practical indoor lighting, muted amber-and-slate grade, fine grain, vertical 9:16 frame. [Shot 1] Medium close-up framing Sameer from the chest up, leaning in from the right side of the frame. Rahul is partially visible on the left, holding the smartphone steady. The cool blue-white glow from the phone screen illuminates Sameer's face and upper torso, contrasting with the warm ambient light of the room. Sameer leans in to scrutinize the smartphone screen held by Rahul while asking about the earnings. Camera: Static Shot. (S2) <d>[Hindi] सच में? सिर्फ़ Survey भरने के पैसे?</d> [Shot 2] At 00:04.500, Medium shot framing Rahul from the chest up, centered in the frame, holding the smartphone out toward the right. Sameer is on the right edge of the frame, pulling back slightly. The cool blue-white glow from the phone screen illuminates Rahul's face and upper torso, contrasting with the warm ambient light of the room. Sameer pulls back from the screen and looks up at Rahul with a doubtful expression. Camera: Static Shot.
+
+overall_soundscape: The quiet hum of a late afternoon living room is overlaid by Sameer's skeptical voice. [Shot 1] Sameer's skeptical voice cuts through the quiet hum of the living room. [Shot 2] The quiet hum of the living room.
+
+non_diegetic_music: N/A

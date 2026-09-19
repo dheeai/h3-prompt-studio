@@ -1,0 +1,18 @@
+subject_definitions: <Subject 1> is Rahul, a young man with warm brown skin, short dark hair, and a neutral indoor shirt, holding a smartphone.
+<Subject 2> is the smartphone in Rahul's hands, with a bright app interface visible on its screen.
+<Subject 3> is the indoor room environment, with warm practical lighting and a muted, true-to-life background.
+
+summary: [reference generation] The target video shows <Subject 1> holding <Subject 2> steady in <Subject 3>, presenting the app interface to an off-screen person on the right while asking whether the app is real or fake.
+
+retention_analysis: <Subject 1> (appears in [Shot 1]): fully_preserved - Rahul's identity, warm brown skin, short dark hair, neutral indoor shirt, and curious expression are retained.
+<Subject 2> (appears in [Shot 1]): fully_preserved - the smartphone and its bright app interface are retained.
+<Subject 3> (appears in [Shot 1]): fully_preserved - the warm practical indoor room and muted ambient lighting are retained.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+The scene is observational and immediate, with a restrained cinematic realism.
+[Shot 1] A medium shot frames <Subject 1>, Rahul, from the chest up, centered in the frame. He holds <Subject 2>, the smartphone, steady at chest height with both hands, the bright app interface facing slightly toward the right side of the frame. The cool blue-white glow from the screen falls across his face and upper torso, while the warm ambient light of <Subject 3>, the indoor room, remains visible behind him. His expression is curious and direct, his gaze moving toward the off-screen right where Sameer is implied to be receiving the question. The camera holds a Static Shot with only the faintest handheld steadiness, keeping Rahul's face, the phone screen, and the room's warm background in a balanced composition. Rahul (S1) asks in a calm, slightly uncertain young male voice: <d>[English] Is this app real, or is it fake?</d> His lips close at the end of the line, and he keeps the phone steady as the screen's glow remains fixed on his face.
+
+overall_soundscape: A quiet indoor room tone continues underneath the scene, with a faint hum from the room and the soft movement of fabric as Rahul holds the phone steady.
+
+non_diegetic_music: N/A

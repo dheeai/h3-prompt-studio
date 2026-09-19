@@ -1,0 +1,14 @@
+subject_definitions: No reference assets are wired for this clip.
+
+summary: [dialogue execution] The target video shows Sameer leaning forward in a living room and lowering his voice to emphasize the data-privacy cost, while Rahul listens intently and holds the smartphone steady.
+
+retention_analysis: No reference labels are present.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+The scene is a quiet, observational indoor conversation with natural practical light and a restrained, true-to-life image.
+[Shot 1] A static medium shot frames Sameer from the chest up, positioned slightly left of center and facing right toward Rahul. The living room behind him is softly out of focus, with warm practical light shaping his face and muted domestic shapes remaining readable in the background. Sameer leans forward with small, deliberate movement, his expression tightening as he shifts the subject from earnings to digital security. Rahul is visible at the right edge of frame, listening intently, his hands holding the smartphone steady without shifting its angle. The camera holds a static shot, keeping Sameer’s face centered in the composition as his posture changes. A low, careful tone fills the room as Sameer says: <d>[English] The real cost is your data.</d> Rahul’s eyes stay fixed on him, and the smartphone remains motionless in his hands.
+
+overall_soundscape: Soft indoor room tone continues beneath the quiet living room, with faint fabric movement and the subtle creak of a chair as Sameer leans forward.
+
+non_diegetic_music: N/A

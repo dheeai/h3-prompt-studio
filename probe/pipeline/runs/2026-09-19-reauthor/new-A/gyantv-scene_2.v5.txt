@@ -1,0 +1,34 @@
+subject_definitions: <Subject 1> is Rahul, a young Indian man in his late twenties, wearing a plain dark shirt, with short dark hair and a focused, persuasive expression.
+  <Subject 2> is Sameer, a young Indian man in his late twenties, wearing a light casual shirt, leaning in with interested attention.
+  <Subject 3> is the smartphone Rahul holds, displaying the Cool Survey App interface with a cool blue-white UI glow.
+  <Subject 4> is the warm indoor room environment, with practical lighting, muted amber and slate tones, and a shallow depth of field.
+
+summary: [reference generation] The target video shows Rahul presenting the smartphone to Sameer, illuminating his face with the cool blue UI glow while emphasizing the app's earning potential.
+
+retention_analysis: <Subject 1> (appears in [Shot 1]): fully_preserved - Rahul's appearance, centered medium close-up framing, and persuasive presentation are retained.
+<Subject 2> (appears in [Shot 1]): fully_preserved - Sameer's position at the right edge, leaning in, is retained.
+<Subject 3> (appears in [Shot 1]): fully_preserved - the smartphone and Cool Survey App interface are retained as the source of the cool blue-white glow.
+<Subject 4> (appears in [Shot 1]): fully_preserved - the warm practical indoor lighting and muted amber-and-slate environment are retained.
+
+detailed_description: The target video is live-action and cinematic, with observational documentary immediacy, handheld framing, and a neutral true-to-life palette.
+[Shot 1] A medium close-up frames Rahul from the chest up, centered in the frame, holding the smartphone out toward the right. Sameer is on the right edge of the frame, leaning in. The cool blue-white glow from the phone screen illuminates Rahul's face and upper torso, contrasting with the warm ambient light of the room. Rahul extends the smartphone toward Sameer, displaying the Cool Survey App interface while speaking. The camera holds a static shot with small handheld drift as Rahul's eyes move from the screen to Sameer, then back to the screen. Rahul (S1), with a clear, confident young male voice and an eager conversational pace, says: <d>[English] You can earn real money from home with the Cool Survey App.</d> Sameer's gaze stays fixed on the glowing interface as the blue light sharpens the details of Rahul's face.
+
+overall_soundscape: Quiet indoor room tone continues underneath a low practical-light hum, with the soft click of the phone being steadied in Rahul's hand.
+
+non_diegetic_music: N/A
+
+summary: [reference generation] The target video shows Rahul presenting the smartphone to Sameer, illuminating his face with the cool blue UI glow while emphasizing the app's earning potential.
+
+retention_analysis: <Subject 1> (appears in [Shot 1]): fully_preserved - Rahul's appearance, centered medium close-up framing, and persuasive presentation are retained.
+<Subject 2> (appears in [Shot 1]): fully_preserved - Sameer's position at the right edge, leaning in, is retained.
+<Subject 3> (appears in [Shot 1]): fully_preserved - the smartphone and Cool Survey App interface are retained as the source of the cool blue-white glow.
+<Subject 4> (appears in [Shot 1]): fully_preserved - the warm practical indoor lighting and muted amber-and-slate environment are retained.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+The target video is live-action and cinematic, with observational documentary immediacy, handheld framing, and a neutral true-to-life palette.
+[Shot 1] A medium close-up frames Rahul from the chest up, centered in the frame, holding the smartphone out toward the right. Sameer is on the right edge of the frame, leaning in. The cool blue-white glow from the phone screen illuminates Rahul's face and upper torso, contrasting with the warm ambient light of the room. Rahul extends the smartphone toward Sameer, displaying the Cool Survey App interface while speaking. The camera holds a static shot with small handheld drift as Rahul's eyes move from the screen to Sameer, then back to the screen. Rahul (S1), with a clear, confident young male voice and an eager conversational pace, says: <d>[English] You can earn real money from home with the Cool Survey App.</d> Sameer's gaze stays fixed on the glowing interface as the blue light sharpens the details of Rahul's face.
+
+overall_soundscape: Quiet indoor room tone continues underneath a low practical-light hum, with the soft click of the phone being steadied in Rahul's hand.
+
+non_diegetic_music: N/A

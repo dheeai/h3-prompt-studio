@@ -1,0 +1,17 @@
+{
+  "clipSeconds": 8.71,
+  "hasCharacters": true,
+  "hasDialogue": true,
+  "approvedShots": [
+    {
+      "index": 1,
+      "summary": "Sameer leans in to scrutinize the smartphone screen held by Rahul while asking about the earnings.",
+      "seconds": 4.5
+    },
+    {
+      "index": 2,
+      "summary": "Sameer pulls back from the screen and looks up at Rahul with a doubtful expression.",
+      "seconds": 4.21
+    }
+  ]
+}

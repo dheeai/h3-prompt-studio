@@ -1,0 +1,15 @@
+subject_definitions: No reference assets are provided for this clip.
+
+summary: [reference generation] Rahul lowers the smartphone to his chest, breaking eye contact with the screen to look at Sameer. Sameer watches the gesture, his expression shifting from skepticism to quiet reflection as the late afternoon light highlights his thoughtful demeanor.
+
+retention_analysis: No reference labels are present in this clip.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+[Shot 1] A medium two-shot frames Rahul on the left and Sameer on the right from the chest up, both seated close together in a quiet interior. Rahul holds a smartphone in his right hand, the screen glowing faintly against his fingers, and slowly lowers it to his chest. His gaze leaves the screen and moves to Sameer, his expression softening from concentration into an invitation. Sameer watches the phone first, then Rahul's face, his brow slightly furrowed with skepticism before easing into quiet reflection. Late afternoon light enters from the left, warming Rahul's skin and catching the edge of Sameer's shoulder. The camera holds a static shot with small handheld breathing, keeping both faces in balanced frame while the smartphone descends out of the line of sight. The room remains still except for the subtle movement of fabric and the faint click of the phone settling against Rahul's chest.
+
+[Shot 2] At 00:02.500, the shot cuts to a tighter 90mm-equivalent close-up of Sameer's face, preserving the same late afternoon light and muted interior tone. His eyes remain fixed on Rahul, who is now just out of frame. Sameer's expression shifts from doubt to thoughtful consideration, his mouth closing as he weighs what he has just seen. The camera pushes in with small amplitude at slow speed, isolating his reaction while the background softens into neutral shapes. A faint exhale passes through the room as his attention settles into quiet contemplation.
+
+overall_soundscape: Quiet indoor room tone continues beneath a low ventilation hum. The smartphone makes a soft click as it is lowered, followed by the subtle rustle of clothing and a faint exhale.
+
+non_diegetic_music: N/A

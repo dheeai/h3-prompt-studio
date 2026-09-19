@@ -1,0 +1,16 @@
+subject_definitions: No reference assets are wired for this clip.
+
+summary: [reference generation] The target video is a three-shot indoor dialogue beat in which Sameer counts three trust criteria on his fingers while Rahul listens, interjects on reviews, and Sameer validates the point.
+
+retention_analysis: No reference labels are used because no reference assets are wired.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+The scene is an observational indoor conversation with warm practical light, neutral true-to-life color, and a handheld documentary feel.
+[Shot 1] A handheld medium shot frames Sameer from the chest up, slightly right of center, in a softly blurred living room. He leans forward, his right hand raised at shoulder height with three fingers extended, his gaze steady toward Rahul off-screen left. The camera holds a static shot with only small handheld drift as he counts the three points with small deliberate finger movements, his expression serious and explanatory. Warm practical light catches his face while the background remains out of focus.
+[Shot 2] At 00:04.320, the shot cuts to a handheld medium close-up of Rahul from the chest up, positioned on the left side of the frame. He nods vigorously, his eyes widening, and his free hand makes a small gesture near his chest as he adds the final point about reviews. The camera remains a static shot with slight handheld sway, keeping his face and upper torso in shallow focus while the room behind him stays soft.
+[Shot 3] At 00:08.640, the shot cuts back to a handheld medium shot of Sameer from the chest up, slightly right of center. His hand is lowered, his posture settling back, and he looks directly toward Rahul with a conclusive nod. The camera holds a static shot with minimal handheld movement as the exchange lands, the warm practical lighting and muted interior tones remaining consistent.
+
+overall_soundscape: Quiet indoor room tone continues throughout, with soft fabric movement, a faint chair creak, and subtle breathing under the scene.
+
+non_diegetic_music: N/A

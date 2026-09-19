@@ -1,0 +1,7 @@
+summary: [reference generation] Rahul holds the smartphone steady, tapping the screen once while looking up at Sameer with an expectant expression. The cool glow of the screen illuminates his face against the warm ambient light of the living room.
+
+detailed_description: Cinematic photoreal film still, 50mm lens, shallow depth of field, warm practical indoor lighting, muted amber-and-slate grade, fine grain, vertical 9:16 frame. [Shot 1] Static medium two-shot framing Rahul and Sameer from the chest up. Rahul is on the left, holding the smartphone steady in front of him. Sameer is on the right, watching Rahul's face and the phone. Rahul taps the phone screen once and looks up to ask the question; Sameer watches and listens. Camera: Static Shot. (S1) <d>[Hindi] तो पता कैसे चलेगा कि ये App सही है?</d>
+
+overall_soundscape: A one-second beat of near-total silence, then A one-second beat of near-total silence, then The quiet hum of a late afternoon living room is overlaid by the soft tap of a finger on glass and the rustle of Rahul's shirt as he moves. [Shot 1] The quiet hum of the living room; the soft tap of Rahul's finger on the glass screen.
+
+non_diegetic_music: One full beat of complete silence at the top — a held pause — before a sparse low pulse creeps back in, slow and deliberate.

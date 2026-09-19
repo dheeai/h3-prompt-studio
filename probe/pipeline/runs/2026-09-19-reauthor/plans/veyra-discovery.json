@@ -1,0 +1,27 @@
+{
+  "clipSeconds": 15,
+  "hasCharacters": true,
+  "hasDialogue": true,
+  "approvedShots": [
+    {
+      "index": 1,
+      "summary": "The shot opens with a close-up of Maya’s hands as she picks up the slim cylindrical Veyra CloudSilk Lip Colour tube from the vanity surface.",
+      "seconds": 3.75
+    },
+    {
+      "index": 2,
+      "summary": "the shot cuts to a medium close-up of Maya’s face and upper torso.",
+      "seconds": 3.75
+    },
+    {
+      "index": 3,
+      "summary": "the shot cuts to a detail view of Maya’s wrist.",
+      "seconds": 3.75
+    },
+    {
+      "index": 4,
+      "summary": "the shot cuts back to Maya’s face.",
+      "seconds": 3.75
+    }
+  ]
+}

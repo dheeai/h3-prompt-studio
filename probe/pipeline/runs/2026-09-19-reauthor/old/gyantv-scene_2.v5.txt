@@ -1,0 +1,7 @@
+summary: [reference generation] Rahul presents the smartphone to Sameer, illuminating his face with the cool blue UI glow while emphasizing the app's earning potential.
+
+detailed_description: Cinematic photoreal film still, 50mm lens, shallow depth of field, warm practical indoor lighting, muted amber-and-slate grade, fine grain, vertical 9:16 frame. [Shot 1] Medium close-up framing Rahul from the chest up, centered in the frame, holding the smartphone out toward the right. Sameer is on the right edge of the frame, leaning in. The cool blue-white glow from the phone screen illuminates Rahul's face and upper torso, contrasting with the warm ambient light of the room. Rahul extends the smartphone toward Sameer, displaying the 'Cool Survey App' interface while speaking. Camera: Static Shot. (S1) <d>[Hindi] समीर! भाई, ये देख… Cool Survey App पर Survey भरो और पैसे कमाओ!</d>
+
+overall_soundscape: The quiet hum of a late afternoon living room is overlaid by Rahul's enthusiastic voice. [Shot 1] Rahul's voice cuts through the quiet hum of the living room.
+
+non_diegetic_music: N/A

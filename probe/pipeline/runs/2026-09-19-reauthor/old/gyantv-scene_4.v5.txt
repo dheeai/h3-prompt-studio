@@ -1,0 +1,7 @@
+summary: [reference generation] Rahul holds the smartphone steady, the screen's bright interface casting a cool glow on his warm brown skin, framing the central mystery of the app’s legitimacy with a curious expression.
+
+detailed_description: Cinematic photoreal film still, 50mm lens, shallow depth of field, warm practical indoor lighting, muted amber-and-slate grade, fine grain, vertical 9:16 frame. [Shot 1] Medium shot framing Rahul from the chest up, centered in the frame, holding the smartphone steady at chest height. The cool blue-white glow from the phone screen illuminates Rahul's face and upper torso, contrasting with the warm ambient light of the room. Sameer is implied to be off-screen right, receiving the gaze. Rahul holds the smartphone steady, presenting the app interface to Sameer while asking if it is real or fake. Camera: Static Shot. (S1) <d>[Hindi] हाँ… लेकिन सवाल है—Real है या Fake?</d>
+
+overall_soundscape: The quiet hum of a late afternoon living room is overlaid by Rahul's thoughtful voice. [Shot 1] The quiet hum of the living room.
+
+non_diegetic_music: N/A

@@ -1,0 +1,15 @@
+summary: [reference generation] Maya Rao finishes getting ready in golden hour light. She gives her rosewood-brown lips an approving look, slips the recapped Veyra CloudSilk tube into her bag, and exits with quiet confidence. The composition remains calm and simple at the end to allow for deterministic packshot overlay. Vertical smartphone aesthetic.
+
+detailed_description: Vertical 9:16 smartphone aesthetic. Warm, intimate lighting transitions to rich golden hour sunlight streaming through the bedroom window. Maya Rao, 27, with warm medium-brown skin and shoulder-length softly curled black hair, wears an ivory ribbed tank and small gold hoop earrings. Her lips display a smooth, comfortable rosewood-brown finish.
+
+[Shot 1] The shot opens with a medium close-up of Maya standing near the bedroom doorway, bathed in warm golden hour light. She looks into the round champagne-rim mirror one last time, checking her reflection. Her expression is one of quiet satisfaction and main-character confidence. The light catches the texture of her skin and the soft curls of her hair. She speaks directly to the lens, her tone conversational and decisive.
+
+[Shot 2] At 00:04.000, the shot cuts to a detail view of Maya’s hands. She holds the slim cylindrical Veyra CloudSilk Lip Colour tube, now recapped with its brushed champagne cap. With a fluid motion, she slips the compact tube into the side pocket of her casual tote bag. The focus is sharp on the product form and the action of securing it, emphasizing its portability and importance to her routine. The background remains the soft, textured bedroom suite.
+
+[Shot 3] At 00:08.500, the shot cuts back to a medium shot of Maya. She turns away from the mirror and begins to walk toward the door, her posture relaxed and assured. The golden light creates a warm halo effect around her silhouette. She offers a final, subtle smile to the camera, acknowledging the successful look. The camera performs a gentle `Pull Back` to frame her full upper body as she prepares to exit.
+
+[Shot 4] At 00:11.000, the shot holds on a calm, static composition of the empty doorway or the soft focus of the room as Maya exits the frame. The lighting remains warm and inviting, with no essential visual information changing. This static hold provides a clean, uncluttered canvas for the deterministic packshot overlay, ensuring the final brand assets are the primary focus without visual competition from the generative footage. <d>[English] (S1) Okay, this is the one coming with me.</d>
+
+overall_soundscape: Soft bedroom ambience with subtle golden hour warmth. Natural room tone includes the faint rustle of fabric as Maya moves and the soft sound of the lipstick tube sliding into the bag. No music or sound effects beyond natural environmental sounds.
+
+non_diegetic_music: None

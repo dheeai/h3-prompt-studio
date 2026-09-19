@@ -1,0 +1,13 @@
+subject_definitions: No reference assets are wired for this clip.
+
+summary: [reference generation] The target video shows Rahul and Sameer breaking the fourth wall in a living room, with Rahul holding a smartphone and posing the final question about the Cool Survey App, followed by Sameer’s skeptical inquiry.
+
+retention_analysis: No reference labels are present.
+
+detailed_description: The target video is live-action and cinematic, shot on a Sony FX6 with a Fujinon Cabrio 19-90mm T2.9 zoom lens, handheld. That handheld camera is this film's default camera behaviour, not a rule — a shot that genuinely needs to lock off still may. 16:9 composition, 24fps, observational documentary immediacy rather than a locked cinema rig. Light natural video-sensor grain, no heavy film-stock texture layered on top, reduced digital sharpening, no influencer plastic texture. Overall palette neutral and true-to-life, minimal grade: warm skin ochre, daylight white, muted green, soft grey. Default optics register: the zoom favouring its wide end for coverage, pushing in to a tighter 90mm-equivalent framing for a candid insert.
+
+[Shot 1] A medium two-shot frames Rahul on the left and Sameer on the right, seated side-by-side in a softly blurred living room. Rahul holds a smartphone in his right hand, its screen angled slightly toward him, while Sameer rests one hand near his knee. Both begin facing each other, then turn their heads toward the camera lens. Rahul (S1), with a direct, measured voice, says: <d>[English] So what is the Cool Survey App, really?</d> The camera holds a static shot, keeping both faces in clear focus against the muted background. [Shot 2] At 00:04.360, the shot cuts to a slightly tighter medium two-shot, preserving the same left-right placement and the softly blurred living room behind them. Rahul remains on the left, holding the smartphone steady, while Sameer tilts his head slightly and raises his eyebrows. Sameer (S2), with a skeptical, conversational tone, says: <d>[English] And why does it keep asking us that?</d> Both maintain direct eye contact with the camera lens as the shot ends.
+
+overall_soundscape: Quiet indoor room tone continues throughout, with subtle fabric movement and the faint click of the smartphone being steadied in Rahul’s hand.
+
+non_diegetic_music: N/A

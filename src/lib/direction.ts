@@ -45,14 +45,51 @@
  * `probe/json-schema/schemas.ts` so shipped code never depends on the probe
  * tree — and as an ENUM rather than prose because that is precisely the change
  * the probe measured at 0% -> 95% exact-case compliance. */
-export const CAMERA_TERMS = [
+export const H3_CONTROLLED_CAMERA_TERMS = [
   'Zoom In', 'Zoom Out', 'Push In', 'Pull Out', 'Pan Left', 'Pan Right',
   'Truck Left', 'Truck Right', 'Tilt Up', 'Tilt Down', 'Pedestal Up', 'Pedestal Down',
   'Arc Shot', 'Tracking Shot', 'Static Shot', 'Shake Slightly', 'Shake Strongly',
   'POV', 'Roll Clockwise', 'Roll Counterclockwise',
 ] as const
 
+/**
+ * Five camera figures from the Singularity spec's §9
+ * (https://huggingface.co/WarmBloodAban/Minimax-h3_Singularity/blob/main/MiniMax_H3_Singularity_Prompt_Writing_Specification_Enhanced_EN.md),
+ * added ALONGSIDE — not instead of — the 20 above. DO NOT fold these back
+ * into `H3_CONTROLLED_CAMERA_TERMS` or "clean up" the split: the two lists
+ * are different KINDS of thing wearing the same `string` type.
+ *
+ * The first 20 are MiniMax's own controlled vocabulary — tokens H3's prompt
+ * parser recognises as such. These five are corpus-tested camera FIGURES the
+ * Singularity spec documents; H3 reads them as ordinary descriptive prose,
+ * not as tokens. They earn a place here anyway because each names a move the
+ * official 20 cannot express: `Swoop` is a curved/diving trajectory through
+ * space (not a straight push/pull or a fixed-radius arc); `Whip Pan` is a
+ * rapid rotational snap (not `Pan Left`/`Pan Right`'s steady rotation);
+ * `Dive` is a downward-and-forward plunge from an elevated viewpoint (no
+ * existing term is vertical AND forward); `Handheld` is a controlled
+ * physical-presence shake distinct from `Shake Slightly`/`Shake Strongly`'s
+ * pure amplitude; `Barrel Roll` rolls around the lens axis WHILE travelling
+ * (unlike `Roll Clockwise`/`Roll Counterclockwise`, which roll in place).
+ *
+ * Everything else §9 names was deliberately left OUT because the official 20
+ * already cover it: orbit/arc -> `Arc Shot`, tracking -> `Tracking Shot`,
+ * push-in -> `Push In`, pull-back -> `Pull Out`, pan -> `Pan Left`/`Pan
+ * Right`, tilt -> `Tilt Up`/`Tilt Down`, static/locked-off -> `Static Shot`.
+ */
+export const SINGULARITY_CAMERA_TERMS = ['Swoop', 'Whip Pan', 'Dive', 'Handheld', 'Barrel Roll'] as const
+
+/** The enum AND the template both read from this — widening flows through
+ * automatically to both without a second edit site. */
+export const CAMERA_TERMS = [...H3_CONTROLLED_CAMERA_TERMS, ...SINGULARITY_CAMERA_TERMS] as const
+
 export type CameraTerm = (typeof CAMERA_TERMS)[number]
+
+/** True only for the official 20 — the narrower question `offVocabularyMovements`
+ * cannot answer, since a Singularity term passes that check by design. */
+export function isH3ControlledTerm(term: string): boolean {
+  return (H3_CONTROLLED_CAMERA_TERMS as readonly string[]).includes(term)
+}
 
 /** One directed shot. */
 export interface DirectedShot {
@@ -68,7 +105,31 @@ export interface DirectedShot {
   cameraMovement: string
   optics: string
   backgroundTreatment: string
+  /**
+   * The action, decomposed into an ordered causal chain per the Singularity
+   * spec's §8 ("Action Writing: From Labels to Processes") — a one-word
+   * label like "attacks" or "examines" is not visually reliable, so the
+   * shot is forced to write the chain out rather than assert it. Declared,
+   * required and rendered in this order because the order IS the chain:
+   *
+   *   1. initialState — where the shot opens
+   *   2. trigger       — the one thing that starts it
+   *   3. action        — the primary continuous action (§8's own name; kept
+   *                       unchanged because downstream code and stored
+   *                       documents reference this field)
+   *   4. reaction       — the contact/impact beat and its physical consequence
+   *   5. finalState     — where the shot settles, for §12 continuity to pick up
+   *
+   * COMPATIBILITY: documents authored before this change are persisted in
+   * IndexedDB without these four new fields. `parseDirection` coerces
+   * missing values to `''` via `str()`, and `directionToPromptBlock` filters
+   * empty lines, so an old document still renders a clean (shorter) block.
+   */
+  initialState: string
+  trigger: string
   action: string
+  reaction: string
+  finalState: string
   /** h3_film_slm's `threeDetails`: three concrete facts that stop a shot
    * reading as a generic description of its own summary. */
   environmentalPressure: string
@@ -110,6 +171,11 @@ THEN SPECIFY EACH SHOT. Camera movement MUST be one of these, spelled exactly:
 WHAT YOU MAY NOT CHANGE: the people, the place, the action and its outcome,
 and any dialogue. Those are fixed. You decide HOW it is shot, never WHAT
 happens.
+
+DO NOT WRITE ONE-WORD ACTIONS. Write the chain: the state the shot opens in,
+the one thing that triggers it, the primary action, the contact/impact
+reaction, and the state it settles into. If anything distant or in the
+background is meant to keep moving, SAY SO — left unstated, it freezes.
 
 DO NOT WRITE performance here — no gaze direction for the actor, no breath, no
 delivery. A separate pass owns that. You own the camera and the frame.
@@ -173,7 +239,8 @@ export function directionResponseFormat(): Record<string, unknown> {
               required: [
                 'index', 'whyThisShot', 'viewerGaze',
                 'cameraStartAngle', 'cameraEndAngle', 'cameraMovement',
-                'optics', 'backgroundTreatment', 'action',
+                'optics', 'backgroundTreatment',
+                'initialState', 'trigger', 'action', 'reaction', 'finalState',
                 'environmentalPressure', 'physicalMicroAction', 'thirdConcreteFact',
               ],
               properties: {
@@ -182,10 +249,18 @@ export function directionResponseFormat(): Record<string, unknown> {
                 viewerGaze: { type: 'string', description: 'What the audience is looking at, and what they are looking FOR.' },
                 cameraStartAngle: { type: 'string', description: 'Where the camera starts — height, side, distance.' },
                 cameraEndAngle: { type: 'string', description: 'Where it ends. The same as the start is a legitimate answer for a held shot.' },
-                cameraMovement: { type: 'string', enum: [...CAMERA_TERMS], description: 'Exactly one controlled term, spelled verbatim.' },
+                cameraMovement: { type: 'string', enum: [...CAMERA_TERMS], description: 'Exactly one term from the list above, spelled verbatim.' },
                 optics: { type: 'string', description: 'Focal length and depth of field, consistent with the film-wide look.' },
-                backgroundTreatment: { type: 'string', description: 'What the background does — what is legible in it, what falls away.' },
-                action: { type: 'string', description: 'What physically happens in this shot, and how it ends.' },
+                backgroundTreatment: {
+                  type: 'string',
+                  description:
+                    'What the background does — what is legible in it, what falls away. State whether anything back there keeps moving through the shot. If a distant or background figure is meant to keep walking, working, or acting, say so explicitly — left unstated, it freezes.',
+                },
+                initialState: { type: 'string', description: 'The state this shot opens in — body position, weight, what the hands hold, where the eyes already are. Not backstory: what a frame-one still would show.' },
+                trigger: { type: 'string', description: 'The one thing that starts the movement. Name a single event, not a mood.' },
+                action: { type: 'string', description: 'The primary continuous action, and the displacement or momentum it produces.' },
+                reaction: { type: 'string', description: 'The contact or impact beat and its physical consequence — recoil, stagger, cloth and hair responding to force, dust, spill, a surface taking light.' },
+                finalState: { type: 'string', description: 'The pose or state this shot settles into — write it explicitly so the next shot can carry it forward.' },
                 environmentalPressure: { type: 'string', description: 'One concrete fact about the place pressing on the people — heat, noise, crowding, cold.' },
                 physicalMicroAction: { type: 'string', description: 'One small physical act, specific enough that it could not be any other scene.' },
                 thirdConcreteFact: { type: 'string', description: 'A third concrete, visible fact. Not a feeling, not a restatement of the action.' },
@@ -242,7 +317,14 @@ export function parseDirection(raw: string, clipIndex: number): DirectionDoc | n
       cameraMovement: str(c.cameraMovement),
       optics: str(c.optics),
       backgroundTreatment: str(c.backgroundTreatment),
+      // The four chain fields are absent on a pre-change document rehydrated
+      // from IndexedDB; `str()` coerces that absence to '', same as any other
+      // missing field here — no special-casing needed.
+      initialState: str(c.initialState),
+      trigger: str(c.trigger),
       action: str(c.action),
+      reaction: str(c.reaction),
+      finalState: str(c.finalState),
       environmentalPressure: str(c.environmentalPressure),
       physicalMicroAction: str(c.physicalMicroAction),
       thirdConcreteFact: str(c.thirdConcreteFact),
@@ -260,9 +342,12 @@ export function parseDirection(raw: string, clipIndex: number): DirectionDoc | n
   }
 }
 
-/** Which shots named a camera movement outside the controlled vocabulary.
+/** Which shots named a camera movement outside the (now widened) vocabulary.
  * Reported, never corrected — this is the number the A/B wants (the probe
- * measured 0% -> 95% on exactly this), and snapping a term would hide it. */
+ * measured 0% -> 95% on exactly this), and snapping a term would hide it.
+ * A Singularity term (`Swoop`, `Whip Pan`, ...) passes this check BY DESIGN —
+ * it is a legal `CAMERA_TERMS` entry, just not an `H3_CONTROLLED_CAMERA_TERMS`
+ * one. Use `isH3ControlledTerm` when the narrower question is what you mean. */
 export function offVocabularyMovements(doc: DirectionDoc): number[] {
   const ok = new Set<string>(CAMERA_TERMS)
   return doc.shots.filter((s) => !ok.has(s.cameraMovement)).map((s) => s.index)
@@ -284,7 +369,16 @@ export function directionToPromptBlock(doc: DirectionDoc | undefined): string {
     const details = [s.environmentalPressure, s.physicalMicroAction, s.thirdConcreteFact].filter(Boolean)
     return [
       `[Shot ${s.index}]`,
+      // The chain, in causal order — §8's own sequence, minus the
+      // justification fields already spent on the way here. A pre-change
+      // document has no initialState/trigger/reaction/finalState; `.filter
+      // (Boolean)` drops those lines rather than printing them empty, so the
+      // block still reads cleanly with only `action` present.
+      s.initialState ? `  initialState: ${s.initialState}` : '',
+      s.trigger ? `  trigger: ${s.trigger}` : '',
       `  action: ${s.action}`,
+      s.reaction ? `  reaction: ${s.reaction}` : '',
+      s.finalState ? `  finalState: ${s.finalState}` : '',
       `  camera: ${s.cameraStartAngle} -> ${s.cameraEndAngle}, ${s.cameraMovement}`,
       `  optics: ${s.optics}`,
       `  background: ${s.backgroundTreatment}`,
@@ -295,8 +389,9 @@ export function directionToPromptBlock(doc: DirectionDoc | undefined): string {
   })
   return `THE DIRECTION FOR THIS CLIP — already decided. Write these shots, in this
 order, with these camera moves. Do not re-choose them, do not add a shot and do
-not drop one. The camera terms are from H3's controlled vocabulary and must
-appear verbatim.
+not drop one. Whatever camera term was chosen must appear verbatim — some are
+H3's controlled vocabulary, some are corpus-tested figures from the
+Singularity spec, but either way the exact wording is fixed, not a suggestion.
 
 Geometry: ${doc.geometrySentence}
 Rhythm: ${doc.rhythm}

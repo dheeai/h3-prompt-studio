@@ -7,20 +7,78 @@ those two files are pure (no `fetch`, no network, no new dependency); this
 script is the network edge.
 
 ```sh
-TYPESAFE_API_KEY=... npx tsx probe/judge/judge.ts <prompt-file> [mode]
+npx tsx probe/judge/judge.ts <prompt-file> [--mode Ref2VA] [--plan plan.json]
+                             [--via typesafe|openrouter] [--repeat N]
 ```
 
-`mode` is any `H3Mode` (default `Ref2VA`). This probe has no plan file, so it
-judges the prompt alone — `approvedShots` is empty and `clipSeconds` is `0`,
-which means every `'shot'`-scoped question and the whole per-shot
-action-chain fan-out have nothing to pair against and are skipped. A real
-caller (GEPA's own harness) has the plan and builds a fuller `JudgeContext`.
+`--plan` is `{ clipSeconds, approvedShots: [{ index, summary, seconds }] }`.
+**Pass it whenever one exists.** Without it `approvedShots` is empty, so every
+`'shot'`-scoped question and the whole per-shot action-chain fan-out have
+nothing to pair against and are skipped — roughly a third of the rubric goes
+quiet. That is `appliesWhen`/`shotIndex` working as designed, not a failure,
+but the script prints a `note:` when it happens so it is never silent.
 
-**There is no API key on this machine.** The script refuses to run without
-`TYPESAFE_API_KEY` set, with one clear message, rather than falling back to a
-fake response — a hand-built `answers` map would only prove the plumbing
-works against itself. Everything in `src/lib/judge.test.ts` and
-`judgeRubric.test.ts` is verified without network for exactly this reason.
+`--repeat N` re-sends the identical request N times and reports the spread.
+
+## Two transports, one body
+
+Jev is reachable directly or through OpenRouter. The request body is
+byte-identical; only the URL, the key and the model id differ — which is why
+`buildJudgeRequest` takes the model as a parameter.
+
+| via | endpoint | model | key |
+| --- | --- | --- | --- |
+| `typesafe` | `POST api.typesafe.ai/v1/systemone` | `jev-latest` | `TYPESAFE_API_KEY` |
+| `openrouter` | `POST openrouter.ai/api/alpha/decisions` | `~typesafe/jev-latest` | `LLM_JUDGE_API_KEY` or `OPENROUTER_API_KEY` |
+
+With no `--via`, whichever key is present wins. A value beginning `local` is
+treated as absent: sibling projects set `OPENAI_API_KEY=local-no-key` when
+pointed at a llama.cpp gateway, and that is a placeholder, not a key.
+
+**On OpenRouter a decisions model is not a chat model.** It never appears in
+`GET /v1/models` (chat only), and `/chat/completions` refuses it with a 400
+saying so. Searching the model list, finding nothing and concluding the model
+is unavailable is a mistake worth not repeating. OpenRouter also returns
+`usage.cost`, which the native endpoint does not.
+
+The script refuses to run without a usable key, with one clear message,
+rather than falling back to a fake response — a hand-built `answers` map would
+only prove the plumbing works against itself. Everything in
+`src/lib/judge.test.ts` and `judgeRubric.test.ts` is verified without network
+for exactly that reason.
+
+## Measured, on real prompts
+
+Two third-party MiniMax H3 prompts, judged through this probe:
+
+| prompt | weighted total | requests | input tokens | cost | wall |
+| --- | --- | --- | --- | --- | --- |
+| a careful 15s parkour one-take | **0.821** | 2 | 4,305 | $0.000181 | ~800ms |
+| the same genre written badly | **0.231** | 6 | 5,444 | $0.000229 | ~2.3s |
+
+The rubric separates them by 3.6x, and each read holds up individually: the
+bad prompt scores `generic-filler` p=0.94, `camera.vague-language` p≈0.96,
+`camera.five-elements` 0.00 on every shot, and `acting.observable-not-labeled`
+0.03–0.15 where it names emotions outright.
+
+**Jev is not deterministic.** Per question the spread is about ±0.05
+(one question read 0.28 / 0.33 / 0.30 across three runs). Aggregated over a
+whole rubric it is far tighter — three runs of the parkour prompt gave
+0.819 / 0.821 / 0.823, ±0.002 — because averaging ~17 questions cancels most
+of the per-question noise. A GEPA delta smaller than the spread is noise;
+`--repeat` is how you measure it on your own rubric.
+
+### Two things this measurement exposed
+
+`shots.fragments-match-plan` scores **1.00 for the bad prompt and 0.20 for the
+good one** — the bad one carries all five `[Shot N]` markers and the good one
+writes four of its beats as bare `From 00:03.000`. That is correct: an exact
+check measures structure, never merit. Do not "fix" it by making it a quality
+judgement.
+
+`pacing` does **not** discriminate — 0.697 good against 0.727 bad, i.e. it
+scored the worse prompt higher. Its exact check is structural and its two
+model questions are weak. It is the dimension to rework first.
 
 ## The endpoint
 

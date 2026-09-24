@@ -10,8 +10,68 @@ import {
   turboLoraStepCount,
   withExtenderOverrides,
 } from '../lib/extenderSettings'
-import type { ExtenderEngineChoice, ExtenderQualityTier } from '../lib/extenderSettings'
+import type { ExtenderAuthoringMode, ExtenderEngineChoice, ExtenderQualityTier } from '../lib/extenderSettings'
+import { DEFAULT_REWRITE_SYSTEM_PROMPT, rewriteSystemPromptFor } from '../lib/rewriteSystemPrompt'
 import { framesForSeconds, oomRisk } from '../lib/geometry'
+import type { Settings } from '../lib/types'
+
+/**
+ * Studio-authored (the incumbent) or rewriter-authored — see
+ * `extenderSettings.ts`'s module comment on `ExtenderAuthoringMode`. The
+ * system-prompt textarea+reset follows `SettingsPanel.tsx`'s existing
+ * `stageTemplates` override-or-default pattern exactly (`modified`/"Restore
+ * the default"), just for one free-text field instead of one per `StageId`.
+ */
+function AuthoringModeControl({
+  authoringMode,
+  rewriteSystemPrompt,
+  patchSettings,
+}: {
+  authoringMode: ExtenderAuthoringMode | undefined
+  rewriteSystemPrompt: string | undefined
+  patchSettings: (p: Partial<Settings>) => void
+}) {
+  const mode: ExtenderAuthoringMode = authoringMode ?? 'studio'
+  const modified = !!rewriteSystemPrompt?.trim()
+  const effectivePrompt = rewriteSystemPromptFor(rewriteSystemPrompt)
+  return (
+    <div>
+      <div className="lbl" style={{ marginBottom: 4 }}>Authoring</div>
+      <div style={{ display: 'flex', gap: 7, marginBottom: 8 }}>
+        <button className={`btn sm${mode === 'studio' ? ' pri' : ''}`} onClick={() => patchSettings({ authoringMode: 'studio' })}>
+          Studio-authored
+        </button>
+        <button className={`btn sm${mode === 'rewriter' ? ' pri' : ''}`} onClick={() => patchSettings({ authoringMode: 'rewriter' })}>
+          Rewriter-authored (on the box)
+        </button>
+      </div>
+      <div className="tok" style={{ display: 'block', lineHeight: 1.5, marginBottom: mode === 'rewriter' ? 8 : 0 }}>
+        {mode === 'studio'
+          ? 'The incumbent: Direct/Draft/Revise write the six-section H3 prompt here, before anything is submitted.'
+          : 'Each clip\'s plain-English raw ask is submitted as-is; the Master Extender\'s OWN rewriter (rewrite_mode: "pending clips") expands it into the six sections on the box, using the system prompt below. The Studio never authors or sees a six-section prompt for these clips.'}
+      </div>
+      {mode === 'rewriter' && (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <span className="tok">rewrite_system_prompt {modified && <em>· edited</em>}</span>
+            <div style={{ flexGrow: 1 }} />
+            {modified && (
+              <button className="btn sm ghost" onClick={() => patchSettings({ rewriteSystemPrompt: undefined })}>
+                Restore the default
+              </button>
+            )}
+          </div>
+          <textarea
+            className="composer-textarea"
+            style={{ minHeight: 160, width: '100%', fontFamily: 'monospace', fontSize: 11 }}
+            value={effectivePrompt}
+            onChange={(e) => patchSettings({ rewriteSystemPrompt: e.target.value === DEFAULT_REWRITE_SYSTEM_PROMPT ? undefined : e.target.value })}
+          />
+        </>
+      )}
+    </div>
+  )
+}
 
 /**
  * The Master Extender's own settings, reduced to the two decisions the
@@ -300,6 +360,14 @@ export function ExtenderSettingsPanel({ onClose }: { onClose: () => void }) {
                   {validatedCount === 1 ? 'it' : 'them'}.
                 </div>
               )}
+
+              <div style={{ marginBottom: 20 }}>
+                <AuthoringModeControl
+                  authoringMode={settings.authoringMode}
+                  rewriteSystemPrompt={settings.rewriteSystemPrompt}
+                  patchSettings={patchSettings}
+                />
+              </div>
 
               <div style={{ marginBottom: 20 }}>
                 <EngineControl

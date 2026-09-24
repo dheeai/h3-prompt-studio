@@ -3,6 +3,7 @@ import { useApp } from '../app/state'
 import { nextStep } from '../lib/nextStep'
 import { deriveNextStepInput } from '../lib/nextStepInput'
 import { pipelinePreset } from '../lib/pipeline'
+import { breakdownPlanner } from '../lib/breakdownPlanner'
 import { clipsNeedingPrompt } from '../lib/studio-workflow'
 
 /**
@@ -23,7 +24,7 @@ export function NextStepBar() {
   const app = useApp()
   const {
     plot, shotList, thinBriefCheck, shotGroups, breakdown, versions, timeline, rendering,
-    settings, makeShotList, continueSubdivision, approveShotGroups, writePendingPrompts,
+    settings, makeShotList, runChapterBreakdown, continueSubdivision, approveShotGroups, writePendingPrompts,
     submitTickedPrompts, stopRender, saveFilmNow,
   } = app
   const [busy, setBusy] = useState(false)
@@ -67,7 +68,11 @@ export function NextStepBar() {
     }
     switch (step.kind) {
       case 'make-shot-list':
-        return void run(() => makeShotList())
+        // Same dispatcher discipline as every other case here — this just
+        // has TWO underlying functions to choose between now, picked the
+        // same way `StoryAndShots.tsx`'s own "Make the shot list" button
+        // does (`settings.breakdownPlanner`, see `lib/breakdownPlanner.ts`).
+        return void run(() => (breakdownPlanner(settings.breakdownPlanner).id === 'structured-json' ? runChapterBreakdown() : makeShotList()))
       case 'resolve-thin-brief':
         return void run(() => continueSubdivision())
       case 'approve-groups':

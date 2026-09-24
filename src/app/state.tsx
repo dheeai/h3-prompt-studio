@@ -17,7 +17,7 @@ import type { PollResult } from '../lib/comfy'
 import { framesForSeconds } from '../lib/geometry'
 import { parseWorkflow } from '../lib/workflow'
 import { EXTENDER_REF_SLOTS, ExtenderError, buildExtenderGraph, extenderCostEstimate, extenderGeometryFromInputs, platesFreezeReason, readExtenderMasterInputs } from '../lib/extender'
-import { mergeExtenderInputs } from '../lib/extenderSettings'
+import { EXTENDER_STUDIO_AUTHORING_OVERRIDES, extenderRewriteOverrides, mergeExtenderInputs } from '../lib/extenderSettings'
 import type { ExtenderNodeSchema } from '../lib/extenderSettings'
 import { watchExtenderProgress } from '../lib/extenderLiveProgress'
 import type { ExtenderLiveProgress, ExtenderProgressHandle } from '../lib/extenderLiveProgress'
@@ -56,6 +56,13 @@ import {
   shotSubdivideResponseFormat, subdivideAllBeats,
 } from '../lib/shotList'
 import type { ShotSubdivideCall, ThinBriefCheck } from '../lib/shotList'
+import {
+  CHAPTER_BREAKDOWN_TEMPLATE, chapterBreakdownResponseFormat, chapterBreakdownToShotList,
+  checkChapterBreakdown, fillChapterBreakdownTemplate, parseChapterBreakdown, rawAskForClipIndex,
+} from '../lib/chapterBreakdown'
+import type { ChapterBreakdown } from '../lib/chapterBreakdown'
+import { breakdownPlanner } from '../lib/breakdownPlanner'
+import { rewriteSystemPromptFor } from '../lib/rewriteSystemPrompt'
 import {
   addShotToGroup, clipsDiscardedByShotRevision, discardBreakdownFromIndex, dropShot, planForTickedSubmission,
   pullShotFromNext, pushShotToNext, retimeShot, rewordShot, takeShotGroups,
@@ -226,6 +233,18 @@ interface Session {
   shotGroupIssues?: string[]
   /** Which shot group "The clip in hand" (Screen 2) is currently open. */
   editingGroupIndex?: number | null
+  /**
+   * Set only when `runChapterBreakdown` produced the current `shotList`/
+   * `shotGroups` (`settings.breakdownPlanner === 'structured-json'`) — the
+   * model's own structured clip/shot data, kept alongside the derived
+   * `ShotList` so the rewriter-authored render path
+   * (`chapterBreakdown.ts`'s `rawAskForClipIndex`) can reconstruct each
+   * clip's EXACT multi-line raw-ask text (header + forward pull) rather than
+   * the lossy space-joined `BreakdownClip.covers` `takeShotGroups` already
+   * derives for the Studio-authored path. `undefined` for a plan the
+   * incumbent beats/subdivide planner produced, or a hand-edited one.
+   */
+  chapterBreakdown?: ChapterBreakdown
   /**
    * Full Story mode's film-wide style-LoRA default — the same kind of
    * decision as `FilmLook` (chosen once, applies to the whole film), but
@@ -509,6 +528,13 @@ export interface Api {
    * 2 (`subdivideAllBeats`) immediately, exactly as before this rework.
    */
   makeShotList: () => Promise<void>
+  /**
+   * The `structured-json` planner — see `breakdownPlanner.ts` and the
+   * function's own module comment in this file. One call, no thin-brief
+   * pause (there is no beats pass to pause between), lands in the same
+   * `shotList`/`shotGroups` slots `makeShotList` does.
+   */
+  runChapterBreakdown: () => Promise<void>
   /** Run pass 2 anyway, after `makeShotList` paused on `thinBriefCheck` — the
    * operator's own call once they've seen the warning; the operator stays in
    * control of whether a thin plot gets padded out, this file only refuses
@@ -1532,7 +1558,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         working = ''
       } else if (override?.current !== undefined) {
         working = override.current
-      } else if (stage === 'draft' || stage === 'draftDirected' || stage === 'draftOptimised') {
+      } else if (stage === 'draft' || stage === 'draftDirected' || stage === 'draftOptimised' || stage === 'draftRewriter') {
         // Prefer a direction sheet — the one you are reading, else the latest.
         //
         // `draftDirected` and `draftOptimised` belong HERE, with `draft`, not
@@ -1546,7 +1572,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         // spent. That is the founder's "it's not finishing writing the
         // prompt and its not telling me what happened either." `draftOptimised`
         // (preset C) is the same case as `draft` — one call, decides
-        // everything itself — so it gets the same treatment.
+        // everything itself — so it gets the same treatment. `draftRewriter`
+        // (preset D) is the same case again — it CREATES the prompt from a
+        // raw ask; in practice `rebuild()` always supplies `override.current`
+        // for it (caught by the branch above, so this line is never actually
+        // reached for it), but this fallback matches every other writer stage
+        // rather than falling into the EDIT branch's very different assumptions.
         working = (cur?.stage === 'direct' ? cur.text : lastOf('direct')?.text) ?? snap.story
       } else {
         // Critique, Revise, Rebuild and a freeform note all operate on the prompt.
@@ -1565,7 +1596,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       if (stage !== 'direct' && stage !== 'breakdown' && !working.trim()) {
         setError(
-          stage === 'draft' || stage === 'draftDirected' || stage === 'draftOptimised'
+          stage === 'draft' || stage === 'draftDirected' || stage === 'draftOptimised' || stage === 'draftRewriter'
             ? 'Nothing to draft from yet.'
             : `${STAGE_LABEL[stage]} works on a prompt, and there isn’t one yet. Paste one, or run Draft first.`,
         )
@@ -1665,7 +1696,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
           // the frame and the thread follow, which is what makes a composer
           // turn a continuation rather than a cold single-shot request.
           messages: [
-            { role: 'system', content: buildH3SystemPrompt(ctx, 'studio', contentAuthoringMode) },
+            // `draftRewriter` (preset D) is the ONE stage whose system
+            // message is not `buildH3SystemPrompt` — the founder's own
+            // Desktop rewriter prompt (`rewriteSystemPrompt.ts`) replaces it
+            // wholesale, verbatim, rather than being composed with the
+            // loaded-skill corpus every other stage gets. See
+            // `lib/pipeline.ts`'s module comment on preset D.
+            { role: 'system', content: stage === 'draftRewriter' ? rewriteSystemPromptFor(settings.rewriteSystemPrompt) : buildH3SystemPrompt(ctx, 'studio', contentAuthoringMode) },
             {
               role: 'user',
               content: requestImages.length ? [{ type: 'text' as const, text: user }, ...requestImages] : user,
@@ -1786,7 +1823,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           stage === 'rebuild' ||
           stage === 'freeform' ||
           stage === 'draftDirected' ||
-          stage === 'draftOptimised'
+          stage === 'draftOptimised' ||
+          stage === 'draftRewriter'
         const strictReplacement = stage === 'revise' || stage === 'rebuild'
         const splitResult = schemaResult
           ? { ...schemaResult, changelog: [] as string[] }
@@ -2078,15 +2116,45 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     }
 
+    // Preset D's writer is given RAW ASKS, not a plot — this clip's own
+    // (`chapterBreakdown.ts`'s `formatClipRawAsk`, via `rawAskForClipIndex`)
+    // and the PREVIOUS clip's (mirrors the ComfyUI rewriter's own
+    // `rewrite_previous_clips: "raw asks"` behaviour) — computed the same
+    // "only for a Full Story clip that actually has a clipIndex" way
+    // `draftDirected`'s block above does. Falls back to the plan clip's
+    // plain `covers` when this film's plan did not come from the
+    // structured-json planner (no `chapterBreakdown`) — still a raw ask,
+    // just without that planner's exact multi-line/header formatting.
+    let currentRawAsk: string | undefined
+    let previousRawAsk: string | undefined
+    if (preset.writerStage === 'draftRewriter' && studioModeOverride === 'story') {
+      const clipIndex = sessionRef.current.film?.clipIndex
+      if (clipIndex !== undefined) {
+        const breakdown = sessionRef.current.breakdown
+        const chapterBreakdown = sessionRef.current.chapterBreakdown
+        currentRawAsk =
+          rawAskForClipIndex(chapterBreakdown, clipIndex) ??
+          breakdown?.clips.find((c) => c.index === clipIndex)?.covers ??
+          sessionRef.current.film?.covers
+        previousRawAsk =
+          rawAskForClipIndex(chapterBreakdown, clipIndex - 1) ??
+          breakdown?.clips.find((c) => c.index === clipIndex - 1)?.covers
+      }
+    }
+
     // ONE pass writes the prompt — `draft` works the directing gates
     // internally, and `draftDirected` (preset B) is handed them already
     // worked. `direct` remains its own stage for anyone who wants the sheet
-    // itself.
+    // itself. `draftRewriter` (preset D) is handed the raw asks above via
+    // the same generic `current`/`previous` override every writer stage
+    // already threads through `run()` — no new plumbing there.
     await run(preset.writerStage, undefined, {
       studioMode: studioModeOverride,
       auto: opts?.auto,
       direction: directionBlock,
       acting: actingBlock,
+      current: currentRawAsk,
+      previous: previousRawAsk,
       pipelinePreset: preset.id,
     })
   }, [run, breakIntoScenes, settings.pipelinePreset, runDirection, runActing])
@@ -2447,6 +2515,70 @@ export function AppProvider({ children }: { children: ReactNode }) {
       endGpuUse()
     }
   }, [providers, settings, beginGpuUse, endGpuUse, runSubdivision, finalizeShotList])
+
+  /**
+   * The `structured-json` planner (`breakdownPlanner.ts`) — ONE schema-
+   * constrained call over the whole plot (`chapterBreakdown.ts`'s
+   * `CHAPTER_BREAKDOWN_TEMPLATE`/`chapterBreakdownResponseFormat`), no beats
+   * pass, no per-beat subdivide, no `groupShotsIntoClips` packer: the shots
+   * ARE already grouped into clips the moment the model returns them, one
+   * `ShotGroup` per clip via `chapterBreakdownToShotList`. Lands in exactly
+   * the same session slots `finalizeShotList` does (`shotList`/`shotGroups`/
+   * `shotGroupIssues`), PLUS `chapterBreakdown` itself — so every existing
+   * Full Story screen and `approveShotGroups`/`takeShotGroups` need no
+   * branching at all to consume this plan.
+   */
+  const runChapterBreakdown = useCallback(async () => {
+    const provider = providers.find((p) => p.id === settings.providerId)
+    if (!provider) { setError('Pick a provider first.'); return }
+    if (!settings.model) { setError('Pick a model first.'); return }
+    const plot = sessionRef.current.plot ?? ''
+    if (!plot.trim()) { setError('Write the plot first.'); return }
+    if (!beginGpuUse('llm')) return
+    setShotListBusy(true)
+    setError(null)
+    setShotsAuthoredSoFar([])
+    const ac = new AbortController()
+    abortRef.current = ac
+    setShotStreaming({ stage: 'chapter-breakdown', text: '', reasoning: '', startedAt: Date.now(), continuations: 0, phase: 'thinking' })
+    try {
+      const user = fillChapterBreakdownTemplate(CHAPTER_BREAKDOWN_TEMPLATE, plot)
+      const result = await streamChatComplete({
+        provider,
+        model: settings.model,
+        temperature: settings.temperature,
+        maxTokens: settings.maxTokens,
+        thinkingBudget: resolveThinkingBudget(provider.id, settings.model, settings.thinkingBudgets),
+        responseFormat: provider.supportsJsonSchema ? chapterBreakdownResponseFormat() : undefined,
+        signal: ac.signal,
+        messages: [{ role: 'user', content: user }],
+        ...streamingCallbacks(setShotStreaming),
+      })
+      if (!result.text.trim()) throw new Error('The model returned nothing.')
+      const parsed = parseChapterBreakdown(result.text)
+      if (!parsed) throw new Error('Could not parse a chapter breakdown from the reply — try again.')
+      const issues = checkChapterBreakdown(parsed)
+      const { shotList, groups } = chapterBreakdownToShotList(parsed)
+      const next = {
+        ...sessionRef.current,
+        shotList,
+        shotGroups: groups,
+        shotGroupIssues: issues,
+        chapterBreakdown: parsed,
+        editingGroupIndex: null,
+        thinBriefCheck: null,
+      }
+      sessionRef.current = next
+      setSession(next)
+    } catch (e) {
+      if ((e as Error).name !== 'AbortError') setError(String((e as Error).message || e))
+    } finally {
+      abortRef.current = null
+      setShotListBusy(false)
+      setShotStreaming(null)
+      endGpuUse()
+    }
+  }, [providers, settings, beginGpuUse, endGpuUse])
 
   /** See `Api.continueSubdivision`'s module comment. */
   const continueSubdivision = useCallback(async () => {
@@ -3020,9 +3152,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       const nodeId = `m_${b.at.toString(36)}`
       const vs = sessionRef.current.versions
+      // Rewriter-authored (`settings.authoringMode === 'rewriter'`, see
+      // `extenderSettings.ts`'s module comment): the Studio never writes the
+      // six sections for these clips at all — it submits each clip's plain-
+      // English RAW ASK and the node's own `rewrite_mode: "pending clips"`
+      // expands it on the box. `rawAskForClipIndex` reconstructs the exact
+      // multi-line text (header + forward pull) from `chapterBreakdown`
+      // when this plan came from the structured-json planner; a plan from
+      // the incumbent planner (or a hand-edited one) falls back to the
+      // clip's plain `covers` — still a raw ask, just without that exact
+      // formatting.
+      const rewriterAuthored = settings.authoringMode === 'rewriter'
       const plan = b.clips.map((c) => {
         const v = [...vs].reverse().find((x) => x.clipIndex === c.index && PROMPT_STAGES.has(x.stage))
-        return { index: c.index, title: c.title || `clip ${c.index}`, seconds: c.seconds, prompt: v?.text ?? '', loraStack: c.loraStack }
+        const prompt = rewriterAuthored ? rawAskForClipIndex(sessionRef.current.chapterBreakdown, c.index) ?? c.covers : v?.text ?? ''
+        return { index: c.index, title: c.title || `clip ${c.index}`, seconds: c.seconds, prompt, loraStack: c.loraStack }
       })
 
       // A clip already validated as part of THIS film resends exactly what
@@ -3158,13 +3302,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
 
         const validatedCount = extClips.filter((c) => c.validated).length
+        // Rewriter overrides are merged ON TOP of the operator's own render-
+        // setting overrides — never the reverse, so a rewriter setting
+        // (`rewrite_mode`/`rewrite_system_prompt`/…) can never be silently
+        // shadowed by a stale `extenderOverrides` entry from before this mode
+        // existed.
+        const overrides = rewriterAuthored
+          ? { ...settings.extenderOverrides, ...extenderRewriteOverrides(settings.rewriteSystemPrompt) }
+          : { ...settings.extenderOverrides, ...EXTENDER_STUDIO_AUTHORING_OVERRIDES }
         const built = buildExtenderGraph({
           graph: extenderGraph,
           nodeId,
           clips: extClips,
           plates: extPlates,
           runMode,
-          overrides: settings.extenderOverrides,
+          overrides,
           priorMasterInputs: extenderFrozenRef.current[nodeId],
           validatedCount,
           filmName: effectiveFilmName(),
@@ -3519,7 +3671,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // 'render' from this call.
       if (landed) void authorNextAfterLandingRef.current({ clipId: id, sceneIndex })
     }
-  }, [endpoint, extenderGraph, settings.lockSeed, settings.seed, settings.seconds, settings.extenderOverrides, patchClip, savePlate, beginGpuUse, endGpuUse])
+  }, [endpoint, extenderGraph, settings.lockSeed, settings.seed, settings.seconds, settings.extenderOverrides, settings.authoringMode, settings.rewriteSystemPrompt, patchClip, savePlate, beginGpuUse, endGpuUse])
 
   const selectClip = useCallback((id: string) => setCurrentClipId(id), [])
 
@@ -4015,6 +4167,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     directionForClip,
     actingForClip,
     makeShotList,
+    runChapterBreakdown,
     continueSubdivision,
     reviseShotsFrom,
     approveShotGroups,

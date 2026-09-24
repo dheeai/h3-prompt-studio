@@ -9,6 +9,8 @@ import { LoraStackEditor } from './LoraStackEditor'
 import { localLoraStackOverride } from '../lib/loras'
 import { PIPELINE_PRESETS, pipelinePreset } from '../lib/pipeline'
 import type { PipelinePresetId } from '../lib/pipeline'
+import { BREAKDOWN_PLANNERS, breakdownPlanner } from '../lib/breakdownPlanner'
+import type { BreakdownPlannerId } from '../lib/breakdownPlanner'
 import type { FilmContext, FilmLook, LoraStackEntry, Settings } from '../lib/types'
 
 /**
@@ -47,6 +49,48 @@ function PipelinePresetRow({
         {active.id === 'direct-write'
           ? 'Preset A — the incumbent, unchanged. Nothing about how a prompt is authored is different from before this switch existed.'
           : 'Preset B — every clip gets two extra model calls (Direction, then Acting) before the prompt is written.'}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Which strategy turns the plot into a shot list — see `lib/breakdownPlanner.ts`.
+ * Same chip-row pattern as `PipelinePresetRow` right above (and the same
+ * reason: an operator who never touches this switch sees the incumbent,
+ * unchanged).
+ */
+function BreakdownPlannerRow({
+  breakdownPlanner: current,
+  patchSettings,
+}: {
+  breakdownPlanner: BreakdownPlannerId | undefined
+  patchSettings: (p: Partial<Settings>) => void
+}) {
+  const active = breakdownPlanner(current)
+  return (
+    <div style={{ marginBottom: 9 }}>
+      <div className="lbl">Shot-list planner</div>
+      <div style={{ display: 'flex', gap: 7, marginTop: 5, flexWrap: 'wrap' }}>
+        {BREAKDOWN_PLANNERS.map((p) => (
+          <button
+            key={p.id}
+            className={`chip${active.id === p.id ? ' on' : ''}`}
+            style={{ flexDirection: 'column', alignItems: 'flex-start', textAlign: 'left', maxWidth: 320, height: 'auto', padding: '7px 10px' }}
+            // Pairs the planner with its recommended writer preset the moment
+            // it's chosen — a STARTING default, not a lock: `PipelinePresetRow`
+            // right above still lets the operator switch to any other preset
+            // immediately afterward. See `breakdownPlanner.ts`'s
+            // `defaultPipelinePreset` module comment for why this pairing
+            // exists (a structured-json clip already has its shots/camera
+            // decided; preset D is the writer built for exactly that).
+            onClick={() => patchSettings({ breakdownPlanner: p.id, pipelinePreset: p.defaultPipelinePreset })}
+          >
+            <span style={{ fontWeight: 600 }}>{p.name}</span>
+            <span className="tok" style={{ color: 'inherit', opacity: 0.75, whiteSpace: 'normal', lineHeight: 1.4 }}>{p.description}</span>
+            <span className="tok" style={{ color: 'inherit', opacity: 0.6 }}>{p.cost}</span>
+          </button>
+        ))}
       </div>
     </div>
   )
@@ -267,7 +311,7 @@ export function StoryAndShots({ onOpenPlates }: { onOpenPlates: () => void }) {
   const app = useApp()
   const {
     plot, setPlot, maxRuntimeSeconds, setMaxRuntimeSeconds, shotList, thinBriefCheck, shotsAuthoredSoFar,
-    shotGroups, shotGroupIssues, shotListBusy, shotStreaming, makeShotList, continueSubdivision, reviseShotsFrom,
+    shotGroups, shotGroupIssues, shotListBusy, shotStreaming, makeShotList, runChapterBreakdown, continueSubdivision, reviseShotsFrom,
     breakdown, plates, platesFrozenReason, film, setFilm,
     filmLoraStack, setFilmLoraStack, extenderDefaultLoraStack, endpoint, loraNames, loraNamesState, refreshLoraNames,
     filmName, filmNameEffective, setFilmName, settings, patchSettings,
@@ -348,6 +392,7 @@ export function StoryAndShots({ onOpenPlates }: { onOpenPlates: () => void }) {
           </span>
         </div>
         <PipelinePresetRow pipelinePreset={settings.pipelinePreset} patchSettings={patchSettings} />
+        <BreakdownPlannerRow breakdownPlanner={settings.breakdownPlanner} patchSettings={patchSettings} />
         <SaveFilmRow
           exportDirName={exportDirName}
           exportDirStatus={exportDirStatus}
@@ -384,7 +429,11 @@ export function StoryAndShots({ onOpenPlates }: { onOpenPlates: () => void }) {
             </span>
           </label>
           <div style={{ flexGrow: 1 }} />
-          <button className="btn pri" disabled={!plot.trim() || busy} onClick={() => void makeShotList()}>
+          <button
+            className="btn pri"
+            disabled={!plot.trim() || busy}
+            onClick={() => void (breakdownPlanner(settings.breakdownPlanner).id === 'structured-json' ? runChapterBreakdown() : makeShotList())}
+          >
             {shotListBusy ? 'Making the shot list…' : shotList ? 'Remake the shot list' : 'Make the shot list'}
           </button>
         </div>

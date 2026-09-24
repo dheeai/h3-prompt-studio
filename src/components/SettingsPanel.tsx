@@ -13,7 +13,7 @@ const MODES: { id: H3Mode; note: string }[] = [
   { id: 'MoGr', note: 'motion graphics' },
 ]
 
-const EDITABLE: StageId[] = ['direct', 'draft', 'draftDirected', 'draftOptimised', 'critique', 'revise', 'rebuild', 'freeform']
+const EDITABLE: StageId[] = ['direct', 'draft', 'draftDirected', 'draftOptimised', 'draftRewriter', 'critique', 'revise', 'rebuild', 'freeform']
 
 export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const { settings, providers, patchSettings, reset, versions } = useApp()
@@ -238,8 +238,15 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                   </>
                 )}
                 . Editing one pins it — it will no longer track improvements to
-                the shipped prompt until you restore the default. The loaded skills are sent separately, ahead of this — don’t repeat them here or you break
-                the cached prefix.
+                the shipped prompt until you restore the default.{' '}
+                {editing === 'draftRewriter' ? (
+                  <>This stage's SYSTEM message is not the loaded skills at all — it's the rewriter system
+                    prompt (Render settings ▸ Authoring), fixed and skill-free. <code>{'{{current}}'}</code> is
+                    THIS clip's raw ask and <code>{'{{previous}}'}</code> is the PREVIOUS clip's raw ask, not a
+                    rendered prompt.</>
+                ) : (
+                  'The loaded skills are sent separately, ahead of this — don’t repeat them here or you break the cached prefix.'
+                )}
               </div>
 
               <textarea

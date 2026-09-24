@@ -58,7 +58,7 @@ import {
 import type { ShotSubdivideCall, ThinBriefCheck } from '../lib/shotList'
 import {
   CHAPTER_BREAKDOWN_TEMPLATE, chapterBreakdownResponseFormat, chapterBreakdownToShotList,
-  checkChapterBreakdown, fillChapterBreakdownTemplate, parseChapterBreakdown, rawAskForClipIndex,
+  checkChapterBreakdown, checkRawAsksDistinct, fillChapterBreakdownTemplate, parseChapterBreakdown, rawAskForClipIndex,
 } from '../lib/chapterBreakdown'
 import type { ChapterBreakdown } from '../lib/chapterBreakdown'
 import { breakdownPlanner } from '../lib/breakdownPlanner'
@@ -480,6 +480,11 @@ export interface Api {
    * has run. `shots` is empty (with `beats` populated) the moment pass 1
    * lands but pass 2 hasn't run yet — see `thinBriefCheck`. */
   shotList: ShotList | null
+  /** Set only when the `structured-json` planner produced the current
+   * `shotList` — the model's own state ledger + per-clip state changes,
+   * for the Studio UI to show where the clip plan is shown (`FilmTimeline
+   * .tsx`) — see `Session.chapterBreakdown`'s own module comment. */
+  chapterBreakdown: ChapterBreakdown | undefined
   /** Non-null only while pass 1's beats are checked and this runtime would
    * pad a thin plot — see `Session.thinBriefCheck`'s module comment. Drives
    * the "Continue and subdivide anyway" gate in "Story & shots". */
@@ -3233,6 +3238,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setError(`${missing.length} clip(s) have no prompt yet.`)
         return
       }
+      // The h3_chapter bundle's first live run lesson (dhee-runner-h3-
+      // chapter-plan#1): a per-clip step that cannot find its own clip must
+      // never emit placeholder text — a walker scoping bug there handed
+      // every clip the SAME upstream document, and TWO clips' raw asks
+      // hashing identically is exactly what let a cache silently serve
+      // clip 1's prompt to clips 2-5. `checkRawAsksDistinct` is the same
+      // guard for this app: refuse the SUBMIT (never a soft warning) the
+      // moment two DIFFERENT clips would send byte-identical text to the
+      // box — this is the step that would otherwise actually corrupt
+      // multiple renders, unlike `checkChapterBreakdown`'s own copy of this
+      // check, which only DISCLOSES it at breakdown time.
+      if (rewriterAuthored && sessionRef.current.chapterBreakdown) {
+        const collisions = checkRawAsksDistinct(sessionRef.current.chapterBreakdown)
+        if (collisions.length) {
+          setError(`Refusing to render — ${collisions[0]}`)
+          return
+        }
+      }
       const imagePlates = platesRef.current.filter((p) => p.kind === 'image')
       if (imagePlates.length > EXTENDER_REF_SLOTS) {
         setError(`${imagePlates.length} plates exceeds H3's ${EXTENDER_REF_SLOTS}-reference cap.`)
@@ -4157,6 +4180,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     maxRuntimeSeconds: session.maxRuntimeSeconds ?? DEFAULT_MAX_RUNTIME_SECONDS,
     setMaxRuntimeSeconds,
     shotList: session.shotList ?? null,
+    chapterBreakdown: session.chapterBreakdown,
     thinBriefCheck: session.thinBriefCheck ?? null,
     shotsAuthoredSoFar,
     shotGroups: session.shotGroups ?? [],

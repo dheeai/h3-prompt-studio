@@ -8,10 +8,44 @@ import {
   continuationSource,
   migrateBreakIntoScenes,
   nextPlanClipToAuthor,
+  previousPromptForClip,
   promptSourceForAuthoringMode,
   withContinuationFrame,
 } from './entry'
 import type { Breakdown, BreakdownClip, Version } from './types'
+
+// ── previousPromptForClip — every writer stage's prompt counts ──────────
+
+function v(stage: string, text: string, clipIndex: number): { stage: string; text: string; clipIndex?: number } {
+  return { stage, text, clipIndex }
+}
+
+test('previousPromptForClip: undefined for clip 1, or with no clipIndex at all', () => {
+  assert.equal(previousPromptForClip([v('draft', 'p1', 1)], 1), undefined)
+  assert.equal(previousPromptForClip([v('draft', 'p1', 1)], undefined), undefined)
+})
+
+test('previousPromptForClip: finds the nearest earlier clip\'s draft', () => {
+  assert.equal(previousPromptForClip([v('draft', 'p1', 1)], 2), 'p1')
+})
+
+for (const stage of ['draftDirected', 'draftOptimised', 'draftRewriter']) {
+  test(`previousPromptForClip: a clip authored via ${stage} (preset B/C/D) is visible to the NEXT clip's lookup`, () => {
+    assert.equal(previousPromptForClip([v(stage, 'p1', 1)], 2), 'p1')
+  })
+}
+
+test('previousPromptForClip: a non-prompt pass (e.g. critique) never counts, even as the only version', () => {
+  assert.equal(previousPromptForClip([v('critique', 'notes', 1)], 2), undefined)
+})
+
+test('previousPromptForClip: a missing intermediate clip falls back to the nearest EARLIER one, never claims "none"', () => {
+  assert.equal(previousPromptForClip([v('draft', 'p1', 1)], 3), 'p1')
+})
+
+test('previousPromptForClip: the LATEST version for the nearest prior clip wins, not the first', () => {
+  assert.equal(previousPromptForClip([v('draft', 'p1', 1), v('revise', 'p1-revised', 1)], 2), 'p1-revised')
+})
 
 // ── authoringModeForContent — the composer's TEXT decides the contract, ───
 // ── never a picked door ─────────────────────────────────────────────────

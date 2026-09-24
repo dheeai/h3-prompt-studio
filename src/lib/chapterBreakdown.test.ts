@@ -9,13 +9,16 @@ import {
   chapterBreakdownToBreakdown,
   chapterBreakdownToShotList,
   checkChapterBreakdown,
+  checkRawAsksDistinct,
   fillChapterBreakdownTemplate,
+  foldLedger,
   formatClipRawAsk,
   formatShotLine,
+  formatStateBlocks,
   parseChapterBreakdown,
   rawAskForClipIndex,
 } from './chapterBreakdown'
-import type { ChapterBreakdown, ChapterBreakdownClip, ChapterBreakdownShot } from './chapterBreakdown'
+import type { ChapterBreakdown, ChapterBreakdownClip, ChapterBreakdownShot, Ledger, LedgerEntity } from './chapterBreakdown'
 
 function shot(partial: Partial<ChapterBreakdownShot>): ChapterBreakdownShot {
   return {
@@ -39,12 +42,27 @@ function clip(partial: Partial<ChapterBreakdownClip>): ChapterBreakdownClip {
       shot({ shot: 3, seconds: 5, camera: 'medium_close', action: 'looks up at Farid', dialogue: { speaker: 'Nusrat', line: 'This is not what I chose.' } }),
     ],
     forwardPull: 'Farid does not move from the doorway.',
+    stateChanges: [],
     ...partial,
   }
 }
 
-function breakdown(clips: ChapterBreakdownClip[]): ChapterBreakdown {
-  return { chapter: 'The switched cloth', clips, at: 12345 }
+const EMPTY_LEDGER: Ledger = { entities: [] }
+
+function breakdown(clips: ChapterBreakdownClip[], ledger: Ledger = EMPTY_LEDGER): ChapterBreakdown {
+  return { chapter: 'The switched cloth', ledger, clips, at: 12345 }
+}
+
+function entity(partial: Partial<LedgerEntity>): LedgerEntity {
+  return {
+    id: 'nusrat',
+    name: 'Nusrat',
+    kind: 'character',
+    clipIds: [1, 2, 3],
+    axes: [{ axis: 'composure', options: ['composed', 'shaken'], progressive: false, plateVisible: false }],
+    initial: [{ axis: 'composure', value: 'composed' }],
+    ...partial,
+  }
 }
 
 // ── template ───────────────────────────────────────────────────────────────
@@ -247,4 +265,194 @@ test('rawAskForClipIndex: finds the clip by BreakdownClip.index and formats it',
 test('rawAskForClipIndex: undefined when the breakdown is absent or the clip is not in it', () => {
   assert.equal(rawAskForClipIndex(undefined, 1), undefined)
   assert.equal(rawAskForClipIndex(breakdown([clip({ clip: 1 })]), 9), undefined)
+})
+
+// ── the state ledger — schema, parser, checks, fold, format ─────────────
+
+test('chapterBreakdownResponseFormat: ledger comes BEFORE clips in required[] and properties, matching h3_chapter\'s schema order', () => {
+  const fmt = chapterBreakdownResponseFormat() as any
+  const schema = fmt.json_schema.schema
+  assert.deepEqual(schema.required, ['chapter', 'ledger', 'clips'])
+  assert.deepEqual(Object.keys(schema.properties), ['chapter', 'ledger', 'clips'])
+  const entity = schema.properties.ledger.properties.entities.items
+  assert.deepEqual(entity.required, ['id', 'name', 'kind', 'clip_ids', 'axes', 'initial'])
+  const axis = entity.properties.axes.items
+  assert.deepEqual(axis.required, ['axis', 'options', 'progressive', 'plate_visible'])
+  const change = schema.properties.clips.items.properties.state_changes.items
+  assert.deepEqual(change.required, ['entity', 'axis', 'to', 'shot'])
+  assert.ok(schema.properties.clips.items.required.includes('state_changes'))
+})
+
+function ledgerReply(entities: unknown[]) {
+  return { entities }
+}
+
+test('parseChapterBreakdown: round-trips a ledger with axes and initial values', () => {
+  const raw = JSON.stringify({
+    chapter: 'c',
+    ledger: ledgerReply([
+      {
+        id: 'nusrat', name: 'Nusrat', kind: 'character', clip_ids: [1, 2],
+        axes: [{ axis: 'composure', options: ['composed', 'shaken'], progressive: false, plate_visible: false }],
+        initial: [{ axis: 'composure', value: 'composed' }],
+      },
+    ]),
+    clips: [{ clip: 1, beat: 'b', forward_pull: 'f', state_changes: [{ entity: 'nusrat', axis: 'composure', to: 'shaken', shot: 2 }], shots: [{ shot: 1, seconds: 5, camera: 'medium', subject: 's', action: 'a', has_dialogue: false, dialogue_speaker: '', dialogue_line: '' }, { shot: 2, seconds: 5, camera: 'close_up', subject: 's', action: 'a', has_dialogue: false, dialogue_speaker: '', dialogue_line: '' }, { shot: 3, seconds: 5, camera: 'wide_establishing', subject: 's', action: 'a', has_dialogue: false, dialogue_speaker: '', dialogue_line: '' }] }],
+  })
+  const parsed = parseChapterBreakdown(raw)
+  assert.ok(parsed)
+  assert.equal(parsed!.ledger.entities.length, 1)
+  const e = parsed!.ledger.entities[0]
+  assert.equal(e.id, 'nusrat')
+  assert.equal(e.kind, 'character')
+  assert.deepEqual(e.clipIds, [1, 2])
+  assert.equal(e.axes[0].plateVisible, false)
+  assert.deepEqual(e.initial, [{ axis: 'composure', value: 'composed' }])
+  assert.deepEqual(parsed!.clips[0].stateChanges, [{ entity: 'nusrat', axis: 'composure', to: 'shaken', shot: 2 }])
+})
+
+test('parseChapterBreakdown: a missing/malformed ledger defaults to entities: [] rather than failing the whole parse', () => {
+  const raw = JSON.stringify({ chapter: 'c', clips: [{ clip: 1, beat: 'b', forward_pull: '', shots: [{ shot: 1, seconds: 5, camera: 'medium', subject: 's', action: 'a', has_dialogue: false, dialogue_speaker: '', dialogue_line: '' }, { shot: 2, seconds: 5, camera: 'close_up', subject: 's', action: 'a', has_dialogue: false, dialogue_speaker: '', dialogue_line: '' }, { shot: 3, seconds: 5, camera: 'wide_establishing', subject: 's', action: 'a', has_dialogue: false, dialogue_speaker: '', dialogue_line: '' }] }] })
+  const parsed = parseChapterBreakdown(raw)
+  assert.deepEqual(parsed!.ledger, { entities: [] })
+  assert.deepEqual(parsed!.clips[0].stateChanges, [])
+})
+
+test('checkChapterBreakdown: flags a state_changes entry citing an unknown entity', () => {
+  const c = clip({ stateChanges: [{ entity: 'ghost', axis: 'composure', to: 'shaken', shot: 1 }] })
+  const issues = checkChapterBreakdown(breakdown([c], { entities: [entity({})] }))
+  assert.ok(issues.some((i) => i.includes("cites entity 'ghost'")))
+})
+
+test('checkChapterBreakdown: flags a state_changes entry citing an axis the entity never declared', () => {
+  const c = clip({ stateChanges: [{ entity: 'nusrat', axis: 'wardrobe', to: 'torn', shot: 1 }] })
+  const issues = checkChapterBreakdown(breakdown([c], { entities: [entity({})] }))
+  assert.ok(issues.some((i) => i.includes("no axis 'wardrobe'")))
+})
+
+test('checkChapterBreakdown: flags a state_changes value not in the axis\'s own declared options', () => {
+  const c = clip({ stateChanges: [{ entity: 'nusrat', axis: 'composure', to: 'ecstatic', shot: 1 }] })
+  const issues = checkChapterBreakdown(breakdown([c], { entities: [entity({})] }))
+  assert.ok(issues.some((i) => i.includes("not one of nusrat.composure's declared options")))
+})
+
+test('checkChapterBreakdown: flags a state_changes shot that is not one of this clip\'s own shots', () => {
+  const c = clip({ stateChanges: [{ entity: 'nusrat', axis: 'composure', to: 'shaken', shot: 99 }] })
+  const issues = checkChapterBreakdown(breakdown([c], { entities: [entity({})] }))
+  assert.ok(issues.some((i) => i.includes('cites shot 99')))
+})
+
+test('checkChapterBreakdown: a well-formed state_changes entry raises no issue', () => {
+  const c = clip({ stateChanges: [{ entity: 'nusrat', axis: 'composure', to: 'shaken', shot: 2 }] })
+  const issues = checkChapterBreakdown(breakdown([c], { entities: [entity({})] }))
+  assert.deepEqual(issues, [])
+})
+
+test('checkChapterBreakdown: a progressive axis moving backwards across clips is flagged', () => {
+  const progressiveEntity = entity({ axes: [{ axis: 'condition', options: ['fine', 'hurt', 'unconscious'], progressive: true, plateVisible: false }], initial: [{ axis: 'condition', value: 'fine' }] })
+  const c1 = clip({ clip: 1, stateChanges: [{ entity: 'nusrat', axis: 'condition', to: 'unconscious', shot: 1 }] })
+  const c2 = clip({ clip: 2, stateChanges: [{ entity: 'nusrat', axis: 'condition', to: 'hurt', shot: 1 }] })
+  const issues = checkChapterBreakdown(breakdown([c1, c2], { entities: [progressiveEntity] }))
+  assert.ok(issues.some((i) => i.includes('moves backwards at clip 2')))
+})
+
+test('checkChapterBreakdown: a NON-progressive axis is free to move back and forth with no complaint', () => {
+  const flexEntity = entity({ axes: [{ axis: 'posture', options: ['standing', 'sitting'], progressive: false, plateVisible: false }], initial: [{ axis: 'posture', value: 'standing' }] })
+  const c1 = clip({ clip: 1, stateChanges: [{ entity: 'nusrat', axis: 'posture', to: 'sitting', shot: 1 }] })
+  const c2 = clip({ clip: 2, stateChanges: [{ entity: 'nusrat', axis: 'posture', to: 'standing', shot: 1 }] })
+  const issues = checkChapterBreakdown(breakdown([c1, c2], { entities: [flexEntity] }))
+  assert.deepEqual(issues, [])
+})
+
+test('checkRawAsksDistinct: two different clips never collide', () => {
+  const issues = checkRawAsksDistinct(breakdown([clip({ clip: 1 }), clip({ clip: 2 })]))
+  assert.deepEqual(issues, [])
+})
+
+test('checkRawAsksDistinct: two clip entries claiming the SAME clip number collide — a real bug class (duplicate clip numbers from the model)', () => {
+  // formatClipRawAsk bakes the clip's OWN `.clip` field into its "Clip N:"
+  // header, so two DIFFERENT clip numbers can never format identically —
+  // the Studio's per-clip lookup (keyed on `.clip`, never a shared walker
+  // cache) is structurally safer than the bundle's original bug. What CAN
+  // still collide here is two entries that both claim the SAME clip number
+  // (a duplicate the model shouldn't have written) — rawAskForClipIndex's
+  // `.find()` then returns the SAME formatted text for both positions.
+  const c1 = clip({ clip: 1 })
+  const c2 = clip({ clip: 1 })
+  const issues = checkRawAsksDistinct(breakdown([c1, c2]))
+  assert.ok(issues.some((i) => i.includes("clip 1's raw ask is byte-identical to clip 1's")))
+})
+
+test('checkChapterBreakdown folds checkRawAsksDistinct\'s own issues in too', () => {
+  const c1 = clip({ clip: 1 })
+  const c2 = clip({ clip: 1 })
+  const issues = checkChapterBreakdown(breakdown([c1, c2]))
+  assert.ok(issues.some((i) => i.includes('byte-identical')))
+})
+
+test('foldLedger: an entity\'s state as of clip N is initial + every PRIOR clip\'s changes, never this clip\'s own', () => {
+  const ledger: Ledger = { entities: [entity({})] }
+  const clips = [
+    { clip: 1, stateChanges: [{ entity: 'nusrat', axis: 'composure', to: 'shaken', shot: 1 }] },
+    { clip: 2, stateChanges: [] },
+  ]
+  const byClip = foldLedger(ledger, clips)
+  assert.equal(byClip.get(1)!.get('nusrat')!.get('composure'), 'composed') // start of clip 1 = initial
+  assert.equal(byClip.get(2)!.get('nusrat')!.get('composure'), 'shaken') // start of clip 2 = after clip 1's change
+})
+
+test('foldLedger: clips out of array order are folded in CLIP-NUMBER order, not array order', () => {
+  const ledger: Ledger = { entities: [entity({})] }
+  const clips = [
+    { clip: 2, stateChanges: [{ entity: 'nusrat', axis: 'composure', to: 'shaken', shot: 1 }] },
+    { clip: 1, stateChanges: [] },
+  ]
+  const byClip = foldLedger(ledger, clips)
+  assert.equal(byClip.get(1)!.get('nusrat')!.get('composure'), 'composed')
+  assert.equal(byClip.get(2)!.get('nusrat')!.get('composure'), 'composed') // clip 1 (folded first) made no change
+})
+
+test('formatStateBlocks: only entities on screen THIS clip, only axes that differ from initial or change this clip', () => {
+  const ledger: Ledger = { entities: [entity({ clipIds: [1, 2] })] }
+  const startState = new Map([['nusrat', new Map([['composure', 'composed']])]])
+  const text = formatStateBlocks(ledger, startState, [], 1)
+  // Nothing worth mentioning: at initial value, nothing changing this clip.
+  assert.equal(text, '')
+})
+
+test('formatStateBlocks: STATE AT THE START block shows a value that has drifted from initial', () => {
+  const ledger: Ledger = { entities: [entity({ clipIds: [2] })] }
+  const startState = new Map([['nusrat', new Map([['composure', 'shaken']])]])
+  const text = formatStateBlocks(ledger, startState, [], 2)
+  assert.ok(text.startsWith('STATE AT THE START OF THIS CLIP:'))
+  assert.ok(text.includes('Nusrat (character): composure=shaken'))
+})
+
+test('formatStateBlocks: CHANGES DURING block lists this clip\'s own changes, entity name + arrow + shot', () => {
+  const ledger: Ledger = { entities: [entity({ clipIds: [1] })] }
+  const startState = new Map([['nusrat', new Map([['composure', 'composed']])]])
+  const changes = [{ entity: 'nusrat', axis: 'composure', to: 'shaken', shot: 2 }]
+  const text = formatStateBlocks(ledger, startState, changes, 1)
+  assert.ok(text.includes('CHANGES DURING THIS CLIP:'))
+  assert.ok(text.includes('Nusrat.composure -> shaken (shot 2)'))
+})
+
+test('formatStateBlocks: an entity not on screen this clip contributes nothing', () => {
+  const ledger: Ledger = { entities: [entity({ clipIds: [5] })] }
+  const startState = new Map([['nusrat', new Map([['composure', 'shaken']])]])
+  assert.equal(formatStateBlocks(ledger, startState, [], 1), '')
+})
+
+test('rawAskForClipIndex: state blocks are prepended before the "Clip N:" raw ask, separated by a blank line', () => {
+  const ledger: Ledger = { entities: [entity({ clipIds: [1] })] }
+  const c = clip({ clip: 1, stateChanges: [{ entity: 'nusrat', axis: 'composure', to: 'shaken', shot: 2 }] })
+  const raw = rawAskForClipIndex(breakdown([c], ledger), 1)
+  assert.ok(raw!.startsWith('STATE AT THE START OF THIS CLIP:'))
+  assert.ok(raw!.includes('CHANGES DURING THIS CLIP:'))
+  assert.ok(raw!.includes('\n\nClip 1:'))
+})
+
+test('rawAskForClipIndex: a breakdown with an empty ledger is byte-identical to formatClipRawAsk alone', () => {
+  const c = clip({})
+  assert.equal(rawAskForClipIndex(breakdown([c]), 1), formatClipRawAsk(c))
 })

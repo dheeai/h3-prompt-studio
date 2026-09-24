@@ -105,14 +105,88 @@ export interface ChapterBreakdownClip {
   /** "End every clip with tension, a question, or a forward pull into the
    * next clip" — the skill's own phrase for it. */
   forwardPull: string
+  /** ONLY this clip's own state changes — a sparse delta, never a full
+   * snapshot. See the module comment on the state ledger, below. */
+  stateChanges: StateChange[]
 }
 
 export interface ChapterBreakdown {
   /** The chapter's own spine/title, in one line. */
   chapter: string
+  /** Entities + axes + chapter-opening values — see the module comment on
+   * the state ledger, below. Always present (an empty `entities: []]` for a
+   * chapter this planner decided needs no tracked state). */
+  ledger: Ledger
   clips: ChapterBreakdownClip[]
   at: number
 }
+
+// ── the state ledger (character/prop/creature/environment axes) ──────────
+//
+// Design: `~/Projects/dhee-cofounder/memory/2026-09-21-character-and-prop-
+// state-ledger.md`. Ported to match `~/.kshana/bundles/h3_chapter`'s
+// `schemas/chapter_breakdown.schema.json` / `validators/
+// chapter_breakdown_checks.mjs` / `runners/dhee-runner-h3-chapter-plan/src/
+// text.ts` EXACTLY (types, field names on the wire, `foldLedger`/
+// `formatStateBlocks` logic) — that bundle and this file both author from
+// the same one-call contract, and must not drift apart. TS uses camelCase
+// (`clipIds`, `plateVisible`) the same way this file already does for
+// `forwardPull`/`hasDialogue`-equivalents; the WIRE schema below uses the
+// bundle's own snake_case (`clip_ids`, `plate_visible`) — that pairing is
+// this file's own existing convention, not a departure from it.
+//
+// Folded into the SAME one breakdown call, per the founder's 2026-09-24
+// simplification (no separate state-ledger LLM call): `ledger.entities[]`
+// proposes axes + initial values FIRST (the model writes top to bottom, so
+// it must decide the axes before it can reference them in `state_changes`);
+// each clip then carries ONLY its own `stateChanges` — a sparse delta,
+// never a full per-clip snapshot, which is what keeps the reply small. CODE
+// (`foldLedger`), never the model, folds `initial` + the ordered
+// `state_changes` forward into each clip's START-of-clip state, so a clip's
+// start state is a pure function of everything before it and can never
+// drift from the model's own account of "what changed when".
+
+export interface StateAxis {
+  axis: string
+  options: string[]
+  /** True only when this axis can never move BACKWARDS through its own
+   * options list within this chapter (an injury does not un-happen). */
+  progressive: boolean
+  /** True only when this axis is something the entity's OWN reference plate
+   * would show (wardrobe, a carried object, a visible marking). */
+  plateVisible: boolean
+}
+
+export interface LedgerEntity {
+  id: string
+  name: string
+  kind: 'character' | 'prop' | 'creature' | 'environment'
+  /** Every clip (1-based clip number) this entity is on screen in, or — for
+   * kind:'environment' — every clip set at that location. */
+  clipIds: number[]
+  axes: StateAxis[]
+  /** This entity's value on every axis at the chapter's opening, before
+   * clip 1. One entry per axis declared above. */
+  initial: Array<{ axis: string; value: string }>
+}
+
+export interface StateChange {
+  /** One of `ledger.entities[].id`. */
+  entity: string
+  /** One of that entity's own declared axes. */
+  axis: string
+  /** The new value — must be one of that axis's declared options. */
+  to: string
+  /** The 1-based shot WITHIN THIS CLIP where the change happens. */
+  shot: number
+}
+
+export interface Ledger {
+  entities: LedgerEntity[]
+}
+
+/** entityId -> axis -> value, as of a point in the fold. */
+export type StateMap = Map<string, Map<string, string>>
 
 export const CHAPTER_BREAKDOWN_SHOT_MIN = 3
 export const CHAPTER_BREAKDOWN_SHOT_MAX = 6
@@ -142,10 +216,16 @@ RULES — a clip is one continuous narrative beat; a shot is one discrete camera
 - No shot should require having seen a previous clip to make sense — each clip is visually self-contained.
 - Camera per shot must be exactly one of these terms (spelled verbatim, snake_case): ${CAMERA_SHOTS.join(', ')}.
 
+STATE LEDGER — before writing the clips, propose a small ledger of what actually CHANGES visibly during this chapter:
+- One entry per character, prop, creature, or location-as-environment whose visible state changes (wardrobe, condition, possession, consciousness, restraint for people; configuration, integrity, fill, activation for objects/environments — a lamp lit or not, a door open or not). Do NOT track a permanent trait as an axis, and do NOT invent an entity with nothing that changes.
+- Each entity declares its own small set of axes, each axis a short ordered list of options (least to most, for anything that can only move one way — an injury does not heal mid-chapter) and whether it is progressive (can never move backwards) and whether it would show on that entity's own reference plate (wardrobe, a visible marking — never posture or mood).
+- Give every entity its value on every one of its own axes at the chapter's OPENING, before clip 1.
+- Then, per clip, list ONLY the state changes that actually happen in THAT clip (which entity, which axis, its new value, and which shot causes it) — never restate a value that did not change, and never repeat earlier clips' changes.
+
 CHAPTER:
 {{chapter}}
 
-Return the breakdown as data: the chapter's own spine in one line, then every clip in order with its beat, its shots (camera, subject, the physical action, and — only on the shot where someone actually speaks — the speaker and their exact line), and the forward pull that closes it.`
+Return the breakdown as data: the state ledger first (entities, their axes, their opening values), then every clip in order with its beat, its shots (camera, subject, the physical action, and — only on the shot where someone actually speaks — the speaker and their exact line), its own state changes if any, and the forward pull that closes it.`
 
 export function fillChapterBreakdownTemplate(template: string, chapter: string): string {
   return template.replace('{{chapter}}', chapter.trim())
@@ -168,15 +248,67 @@ export function chapterBreakdownResponseFormat(): Record<string, unknown> {
       schema: {
         type: 'object',
         additionalProperties: false,
-        required: ['chapter', 'clips'],
+        // `ledger` BEFORE `clips` — the model writes top to bottom, and
+        // `clips[].state_changes` cites `ledger.entities[].id`/axis/option,
+        // so the ledger has to exist in the reply before anything can
+        // reference it. Matches `~/.kshana/bundles/h3_chapter/schemas/
+        // chapter_breakdown.schema.json`'s own property order exactly.
+        required: ['chapter', 'ledger', 'clips'],
         properties: {
           chapter: { type: 'string', description: "The chapter's own spine, in one line." },
+          ledger: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['entities'],
+            description: 'Entities whose visible state changes during this chapter — see the module comment on the state ledger. Empty entities array when nothing worth tracking changes.',
+            properties: {
+              entities: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  additionalProperties: false,
+                  required: ['id', 'name', 'kind', 'clip_ids', 'axes', 'initial'],
+                  properties: {
+                    id: { type: 'string', description: 'A short stable slug for this entity.' },
+                    name: { type: 'string' },
+                    kind: { type: 'string', enum: ['character', 'prop', 'creature', 'environment'] },
+                    clip_ids: { type: 'array', items: { type: 'integer' }, description: "Every clip (1-based) this entity is on screen in, or — for kind:'environment' — set at that location." },
+                    axes: {
+                      type: 'array',
+                      description: 'Only axes that actually change during this chapter and are visible when they do. May be empty for an entity tracked only for presence.',
+                      items: {
+                        type: 'object',
+                        additionalProperties: false,
+                        required: ['axis', 'options', 'progressive', 'plate_visible'],
+                        properties: {
+                          axis: { type: 'string', description: 'Short name, e.g. wardrobe, condition, possession, consciousness, configuration, activation.' },
+                          options: { type: 'array', items: { type: 'string' }, description: "This axis's own values, least to most for a progressive axis." },
+                          progressive: { type: 'boolean', description: 'True only when this axis can never move backwards through its own options within this chapter.' },
+                          plate_visible: { type: 'boolean', description: "True only when this axis is something the entity's own reference plate would show." },
+                        },
+                      },
+                    },
+                    initial: {
+                      type: 'array',
+                      description: "This entity's value on every axis at the chapter's opening, before clip 1. One entry per axis declared above.",
+                      items: {
+                        type: 'object',
+                        additionalProperties: false,
+                        required: ['axis', 'value'],
+                        properties: { axis: { type: 'string' }, value: { type: 'string', description: "Must be one of that axis's own options." } },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
           clips: {
             type: 'array',
             items: {
               type: 'object',
               additionalProperties: false,
-              required: ['clip', 'beat', 'shots', 'forward_pull'],
+              required: ['clip', 'beat', 'shots', 'forward_pull', 'state_changes'],
               properties: {
                 clip: { type: 'integer', description: '1-based position of this clip in the chapter.' },
                 beat: { type: 'string', description: 'What dramatic beat/unit this 15s clip covers, in one line. No camera, no shot-by-shot detail — that is the shots array.' },
@@ -201,6 +333,21 @@ export function chapterBreakdownResponseFormat(): Record<string, unknown> {
                   },
                 },
                 forward_pull: { type: 'string', description: "The tension, question or forward pull this clip closes on — what makes the audience need the next 15 seconds." },
+                state_changes: {
+                  type: 'array',
+                  description: 'ONLY this clip\'s own changes — a sparse delta, never a full snapshot of every entity\'s every axis. Empty when nothing changes in this clip.',
+                  items: {
+                    type: 'object',
+                    additionalProperties: false,
+                    required: ['entity', 'axis', 'to', 'shot'],
+                    properties: {
+                      entity: { type: 'string', description: 'One of ledger.entities[].id.' },
+                      axis: { type: 'string', description: "One of that entity's own declared axes." },
+                      to: { type: 'string', description: "The new value — must be one of that axis's declared options." },
+                      shot: { type: 'integer', description: 'The 1-based shot WITHIN THIS CLIP where the change happens.' },
+                    },
+                  },
+                },
               },
             },
           },
@@ -247,6 +394,13 @@ function coerceShot(v: unknown, fallbackShot: number): ChapterBreakdownShot | nu
   }
 }
 
+function coerceStateChange(v: unknown): StateChange | null {
+  if (!v || typeof v !== 'object') return null
+  const o = v as Record<string, unknown>
+  if (typeof o.entity !== 'string' || typeof o.axis !== 'string' || typeof o.to !== 'string') return null
+  return { entity: o.entity.trim(), axis: o.axis.trim(), to: o.to.trim(), shot: Number.isFinite(Number(o.shot)) ? Number(o.shot) : 0 }
+}
+
 function coerceClip(v: unknown, fallbackClip: number): ChapterBreakdownClip | null {
   if (!v || typeof v !== 'object') return null
   const o = v as Record<string, unknown>
@@ -255,12 +409,49 @@ function coerceClip(v: unknown, fallbackClip: number): ChapterBreakdownClip | nu
     .map((s, i) => coerceShot(s, i + 1))
     .filter((s): s is ChapterBreakdownShot => !!s)
   if (!shots.length) return null
+  const stateChanges = (Array.isArray(o.state_changes) ? o.state_changes : [])
+    .map(coerceStateChange)
+    .filter((c): c is StateChange => !!c)
   return {
     clip: Number.isFinite(Number(o.clip)) ? Number(o.clip) : fallbackClip,
     beat: typeof o.beat === 'string' ? o.beat.trim() : '',
     shots,
     forwardPull: typeof o.forward_pull === 'string' ? o.forward_pull.trim() : '',
+    stateChanges,
   }
+}
+
+function coerceAxis(v: unknown): StateAxis | null {
+  if (!v || typeof v !== 'object') return null
+  const o = v as Record<string, unknown>
+  if (typeof o.axis !== 'string') return null
+  const options = (Array.isArray(o.options) ? o.options : []).filter((x): x is string => typeof x === 'string')
+  return { axis: o.axis.trim(), options, progressive: o.progressive === true, plateVisible: o.plate_visible === true }
+}
+
+function coerceEntity(v: unknown): LedgerEntity | null {
+  if (!v || typeof v !== 'object') return null
+  const o = v as Record<string, unknown>
+  if (typeof o.id !== 'string' || !o.id.trim()) return null
+  const KINDS = ['character', 'prop', 'creature', 'environment'] as const
+  const kind = KINDS.includes(o.kind as (typeof KINDS)[number]) ? (o.kind as LedgerEntity['kind']) : 'character'
+  const clipIds = (Array.isArray(o.clip_ids) ? o.clip_ids : []).map(Number).filter((n) => Number.isFinite(n))
+  const axes = (Array.isArray(o.axes) ? o.axes : []).map(coerceAxis).filter((a): a is StateAxis => !!a)
+  const initial = (Array.isArray(o.initial) ? o.initial : [])
+    .map((i) => {
+      if (!i || typeof i !== 'object') return null
+      const io = i as Record<string, unknown>
+      return typeof io.axis === 'string' && typeof io.value === 'string' ? { axis: io.axis.trim(), value: io.value.trim() } : null
+    })
+    .filter((i): i is { axis: string; value: string } => !!i)
+  return { id: o.id.trim(), name: typeof o.name === 'string' ? o.name.trim() : o.id.trim(), kind, clipIds, axes, initial }
+}
+
+function coerceLedger(v: unknown): Ledger {
+  if (!v || typeof v !== 'object') return { entities: [] }
+  const o = v as Record<string, unknown>
+  const entities = (Array.isArray(o.entities) ? o.entities : []).map(coerceEntity).filter((e): e is LedgerEntity => !!e)
+  return { entities }
 }
 
 /**
@@ -269,7 +460,10 @@ function coerceClip(v: unknown, fallbackClip: number): ChapterBreakdownClip | nu
  * carries no usable clip at all (a truncated or garbled reply); a clip with
  * a malformed field still comes back with that field defaulted, since a
  * missing camera term is a fact for `checkChapterBreakdown` to surface, not
- * a reason to discard the whole chapter.
+ * a reason to discard the whole chapter. A missing/malformed `ledger`
+ * defaults to `{ entities: [] }` — the same "not tracked" state a chapter
+ * genuinely needing no ledger would produce, so an older reply (or a
+ * provider without schema support) still parses.
  */
 export function parseChapterBreakdown(raw: string): ChapterBreakdown | null {
   const obj = extractJsonObject(raw)
@@ -279,7 +473,7 @@ export function parseChapterBreakdown(raw: string): ChapterBreakdown | null {
     .map((c, i) => coerceClip(c, i + 1))
     .filter((c): c is ChapterBreakdownClip => !!c)
   if (!clips.length) return null
-  return { chapter: obj.chapter.trim(), clips, at: Date.now() }
+  return { chapter: obj.chapter.trim(), ledger: coerceLedger(obj.ledger), clips, at: Date.now() }
 }
 
 // ── deterministic checks — plain fact strings, never a throw ─────────────
@@ -303,6 +497,8 @@ function wordCount(line: string): number {
 
 export function checkChapterBreakdown(b: ChapterBreakdown): string[] {
   const issues: string[] = []
+  const entityById = new Map(b.ledger.entities.map((e) => [e.id, e]))
+
   for (const clip of b.clips) {
     const n = clip.shots.length
     if (n < CHAPTER_BREAKDOWN_SHOT_MIN || n > CHAPTER_BREAKDOWN_SHOT_MAX) {
@@ -325,6 +521,88 @@ export function checkChapterBreakdown(b: ChapterBreakdown): string[] {
       if (wps > DIALOGUE_WORDS_PER_SECOND_MAX) {
         issues.push(`clip ${clip.clip} shot ${s.shot}: ${words} words in ${s.seconds.toFixed(1)}s is ${wps.toFixed(1)} words/s — over the ${DIALOGUE_WORDS_PER_SECOND_MAX} words/s ceiling H3 dialogue tends to mangle past.`)
       }
+    }
+
+    // ── state_changes referential integrity — ported verbatim (semantics)
+    // from ~/.kshana/bundles/h3_chapter/validators/chapter_breakdown_checks.mjs
+    const shotNumbers = new Set(clip.shots.map((s) => s.shot))
+    for (const change of clip.stateChanges) {
+      const entity = entityById.get(change.entity)
+      if (!entity) {
+        issues.push(`clip ${clip.clip} state_changes cites entity '${change.entity}', which is not in ledger.entities[].id.`)
+        continue
+      }
+      const axis = entity.axes.find((a) => a.axis === change.axis)
+      if (!axis) {
+        issues.push(`clip ${clip.clip} state_changes: entity '${change.entity}' has no axis '${change.axis}' declared in the ledger.`)
+        continue
+      }
+      if (!axis.options.includes(change.to)) {
+        issues.push(`clip ${clip.clip} state_changes: '${change.to}' is not one of ${entity.id}.${axis.axis}'s declared options (${axis.options.join(', ')}).`)
+      }
+      if (!shotNumbers.has(change.shot)) {
+        issues.push(`clip ${clip.clip} state_changes cites shot ${change.shot}, which is not one of this clip's own shots (${[...shotNumbers].join(', ')}).`)
+      }
+    }
+  }
+
+  // ── progressive axes never move backwards, across the WHOLE chapter ──
+  const sortedClips = [...b.clips].sort((a, c) => a.clip - c.clip)
+  for (const entity of b.ledger.entities) {
+    for (const axis of entity.axes) {
+      if (!axis.progressive) continue
+      const options = axis.options
+      let lastIndex = options.indexOf(entity.initial.find((i) => i.axis === axis.axis)?.value ?? '')
+      for (const clip of sortedClips) {
+        const change = clip.stateChanges.find((c) => c.entity === entity.id && c.axis === axis.axis)
+        if (!change) continue
+        const idx = options.indexOf(change.to)
+        if (idx === -1) continue // already flagged above
+        if (lastIndex !== -1 && idx < lastIndex) {
+          issues.push(`${entity.id}.${axis.axis} moves backwards at clip ${clip.clip} (from '${options[lastIndex]}' to '${change.to}') — this axis is progressive and its options are ordered least to most.`)
+        }
+        lastIndex = idx
+      }
+    }
+  }
+
+  issues.push(...checkRawAsksDistinct(b))
+  return issues
+}
+
+/**
+ * The lesson from the h3_chapter bundle's first live run
+ * (dhee-runner-h3-chapter-plan#1): a per-clip step that cannot find its own
+ * clip must never emit placeholder text — a walker scoping bug there handed
+ * every clip the SAME upstream document, and a silent fallback wrote clip
+ * 1's raw ask to disk for clips 2-5, all HASHING IDENTICALLY (the box's own
+ * caching then compounded it). The Studio's per-clip lookups
+ * (`rawAskForClipIndex`, keyed off `clipIndex` directly, no shared walker
+ * cache) do not have that exact bug, but this is the same-shaped guard: a
+ * pairwise check that two DIFFERENT clips' fully-assembled raw asks (shots +
+ * state blocks) are never byte-identical, since that can only mean a
+ * lookup/indexing bug, never a genuine coincidence — two real clips always
+ * differ in at least their shot count, their camera sequence or their
+ * dialogue. Called from `checkChapterBreakdown` (surfaced as an ordinary
+ * disclosed issue at breakdown time) AND from `renderExtenderPlan`
+ * (`state.tsx`), which REFUSES to submit — the actual "throw" moment,
+ * because THAT is the step that would otherwise send corrupted, collided
+ * text to the box.
+ */
+export function checkRawAsksDistinct(b: ChapterBreakdown): string[] {
+  const issues: string[] = []
+  const seenAt = new Map<string, number>()
+  for (const clip of b.clips) {
+    const text = rawAskForClipIndex(b, clip.clip)
+    if (!text) {
+      issues.push(`clip ${clip.clip}: could not build a raw ask at all — refusing to treat this as "nothing to say".`)
+      continue
+    }
+    const priorClip = seenAt.get(text)
+    if (priorClip !== undefined) {
+      issues.push(`clip ${clip.clip}'s raw ask is byte-identical to clip ${priorClip}'s — almost certainly a lookup/indexing bug, not a real coincidence between two 15s clips.`)
+    } else {
+      seenAt.set(text, clip.clip)
     }
   }
   return issues
@@ -365,6 +643,86 @@ export function formatClipRawAsk(clip: ChapterBreakdownClip): string {
   const lines = [`Clip ${clip.clip}:`, '', ...clip.shots.map(formatShotLine)]
   if (clip.forwardPull.trim()) lines.push('', clip.forwardPull.trim())
   return lines.join('\n')
+}
+
+// ── the state ledger: fold + format — ported verbatim from
+// ~/.kshana/runners/dhee-runner-h3-chapter-plan/src/text.ts (same function
+// names, same logic) so the bundle and the Studio cannot drift apart. ─────
+
+function initialStateMap(ledger: Ledger): StateMap {
+  const map: StateMap = new Map()
+  for (const e of ledger.entities) {
+    const axisMap = new Map<string, string>()
+    for (const a of e.initial) axisMap.set(a.axis, a.value)
+    map.set(e.id, axisMap)
+  }
+  return map
+}
+
+function cloneStateMap(src: StateMap): StateMap {
+  const out: StateMap = new Map()
+  for (const [id, axisMap] of src) out.set(id, new Map(axisMap))
+  return out
+}
+
+/**
+ * Fold `ledger.initial` forward through every clip's `stateChanges`, in clip
+ * order. Returns, per clip number, the state as of the START of that clip
+ * (the running total from every PRIOR clip's changes) — this clip's own
+ * changes are what moves it to its END state, available as that clip's own
+ * `stateChanges`.
+ */
+export function foldLedger(ledger: Ledger, clips: Array<{ clip: number; stateChanges: StateChange[] }>): Map<number, StateMap> {
+  const byClip = new Map<number, StateMap>()
+  let running = initialStateMap(ledger)
+  for (const c of [...clips].sort((a, b) => a.clip - b.clip)) {
+    byClip.set(c.clip, cloneStateMap(running))
+    const next = cloneStateMap(running)
+    for (const change of c.stateChanges) {
+      if (!next.has(change.entity)) next.set(change.entity, new Map())
+      next.get(change.entity)!.set(change.axis, change.to)
+    }
+    running = next
+  }
+  return byClip
+}
+
+/**
+ * Format the two raw-ask blocks for ONE clip, over only entities present in
+ * it (`clipIds` includes this clip number), and only axes worth mentioning:
+ * differs from the axis's chapter-opening `initial` value, or is changing
+ * THIS clip. Prepended onto `formatClipRawAsk`'s own output by
+ * `rawAskForClipIndex`, so both writer paths (preset D and the ComfyUI
+ * rewriter) see it without either needing to know the ledger exists.
+ */
+export function formatStateBlocks(ledger: Ledger, startState: StateMap, clipChanges: StateChange[], clip: number): string {
+  const byId = new Map(ledger.entities.map((e) => [e.id, e]))
+  const onScreen = ledger.entities.filter((e) => e.clipIds.includes(clip))
+  if (!onScreen.length) return ''
+
+  const changedThisClip = new Set(clipChanges.map((c) => `${c.entity}::${c.axis}`))
+  const startLines: string[] = []
+  for (const entity of onScreen) {
+    const axisMap = startState.get(entity.id) ?? new Map<string, string>()
+    const worth = entity.axes.filter((a) => {
+      const initial = entity.initial.find((i) => i.axis === a.axis)?.value ?? ''
+      const value = axisMap.get(a.axis) ?? initial
+      return value !== initial || changedThisClip.has(`${entity.id}::${a.axis}`)
+    })
+    if (worth.length) {
+      const line = worth.map((a) => `${a.axis}=${axisMap.get(a.axis) ?? entity.initial.find((i) => i.axis === a.axis)?.value ?? ''}`).join(', ')
+      startLines.push(`${entity.name} (${entity.kind}): ${line}`)
+    }
+  }
+
+  const changeLines = clipChanges
+    .filter((c) => byId.has(c.entity))
+    .map((c) => `${byId.get(c.entity)!.name}.${c.axis} -> ${c.to} (shot ${c.shot})`)
+
+  const parts: string[] = []
+  if (startLines.length) parts.push(['STATE AT THE START OF THIS CLIP:', ...startLines].join('\n'))
+  if (changeLines.length) parts.push(['CHANGES DURING THIS CLIP:', ...changeLines].join('\n'))
+  return parts.join('\n\n')
 }
 
 // ── mapping into the rest of Full Story mode ──────────────────────────────
@@ -425,19 +783,40 @@ export function chapterBreakdownToBreakdown(b: ChapterBreakdown): Breakdown {
     title: `Clip ${clip.clip}`,
     role: roleForPosition(i, n),
     seconds: clip.shots.reduce((sum, s) => sum + s.seconds, 0),
-    covers: formatClipRawAsk(clip),
+    covers: rawAskForClipIndex(b, clip.clip) ?? formatClipRawAsk(clip),
     precedes: '',
     follows: clip.forwardPull,
   }))
   return { spine: b.chapter, clips, at: b.at }
 }
 
-/** The raw ask for one clip of a `ChapterBreakdown`, by `BreakdownClip.index`
- * — what the rewriter-authored render path sends as `clips_json[i].prompt`.
+/**
+ * The raw ask for one clip of a `ChapterBreakdown`, by `BreakdownClip.index`
+ * — what the rewriter-authored render path sends as `clips_json[i].prompt`,
+ * and what `state.tsx`'s `rebuild()` hands preset D's `{{current}}`.
  * `undefined` when this film's plan did not come from this planner (a plain
  * `covers` fallback is the caller's job — see `extenderSettings.ts`'s
- * module comment on `authoringMode`). */
+ * module comment on `authoringMode`).
+ *
+ * State-aware: when `b.ledger` has entities, the STATE AT THE START OF THIS
+ * CLIP / CHANGES DURING THIS CLIP blocks (`formatStateBlocks`, folded via
+ * `foldLedger`) are prepended, so BOTH writer paths — preset D and the
+ * ComfyUI rewriter — see the ledger without either needing a second edge
+ * to it. A breakdown with no ledger (or one whose model reply never
+ * populated it) is unaffected: `formatStateBlocks` returns '' and this is
+ * exactly `formatClipRawAsk`'s own output, unchanged.
+ */
 export function rawAskForClipIndex(b: ChapterBreakdown | undefined, clipIndex: number): string | undefined {
   const clip = b?.clips.find((c) => c.clip === clipIndex)
-  return clip ? formatClipRawAsk(clip) : undefined
+  if (!clip || !b) return undefined
+  let text = formatClipRawAsk(clip)
+  if (b.ledger.entities.length) {
+    const byClip = foldLedger(b.ledger, b.clips)
+    const startState = byClip.get(clipIndex)
+    if (startState) {
+      const stateText = formatStateBlocks(b.ledger, startState, clip.stateChanges, clipIndex)
+      if (stateText) text = `${stateText}\n\n${text}`
+    }
+  }
+  return text
 }

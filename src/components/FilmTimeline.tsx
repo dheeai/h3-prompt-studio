@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useApp } from '../app/state'
 import { FilmRegion } from './FilmRegion'
 import { latestPromptForClip } from '../lib/stages'
@@ -9,12 +9,46 @@ import { pairShotsWithPrompt, promptShotIssues, splitClipLevelSections, splitPro
 import { clipsNeedingPrompt } from '../lib/studio-workflow'
 import { matchesOwner } from '../lib/extenderLiveProgress'
 import { bulkSelectionPlan } from '../lib/timeline'
+import { foldLedger, formatStateBlocks } from '../lib/chapterBreakdown'
 import { DraftingStatus, RenderProgress } from './DraftingStatus'
 import { PromptDoc } from './PromptDoc'
 import type { ClipTimelineState, TimelineClip } from '../lib/timeline'
 import type { DraftingProgress } from '../lib/studio-workflow'
 import type { ExtenderLiveProgress } from '../lib/extenderLiveProgress'
 import type { ExtenderPreviewInfo } from '../lib/extender'
+import type { ChapterBreakdown } from '../lib/chapterBreakdown'
+
+/**
+ * The state ledger, whole-chapter — entities, their axes, their
+ * chapter-opening values. Only rendered when the plan came from the
+ * structured-json breakdown planner AND it actually proposed a ledger
+ * (`chapterBreakdown.ts`'s module comment) — an empty `entities: []` (no
+ * ledger.ts) chapter, or a plan from the incumbent beats/subdivide planner,
+ * shows nothing here. "Inspecting surface is the point" (founder,
+ * 2026-09-24) — this is read-only disclosure, not an editor.
+ */
+function StateLedgerCard({ ledger }: { ledger: ChapterBreakdown['ledger'] }) {
+  if (!ledger.entities.length) return null
+  return (
+    <div className="card" style={{ marginTop: 9 }}>
+      <div className="lbl" style={{ marginBottom: 7 }}>State ledger — {ledger.entities.length} entit{ledger.entities.length === 1 ? 'y' : 'ies'} tracked</div>
+      {ledger.entities.map((e) => (
+        <div key={e.id} style={{ marginBottom: e.axes.length ? 7 : 0 }}>
+          <span style={{ fontWeight: 600, fontSize: 12 }}>{e.name}</span>{' '}
+          <span className="tok">({e.kind} · on screen clip{e.clipIds.length === 1 ? '' : 's'} {e.clipIds.join(', ')})</span>
+          {e.axes.map((a) => {
+            const initial = e.initial.find((i) => i.axis === a.axis)?.value ?? '?'
+            return (
+              <div key={a.axis} className="tok" style={{ marginLeft: 14 }}>
+                {a.axis}: {a.options.join(' → ')} {a.progressive ? '(progressive — never backwards)' : ''} — opens at <b>{initial}</b>{a.plateVisible ? ' · plate-visible' : ''}
+              </div>
+            )
+          })}
+        </div>
+      ))}
+    </div>
+  )
+}
 
 /**
  * The film, start to finish — one clip band per row, on a shared time axis
@@ -68,7 +102,22 @@ export function FilmTimeline() {
     redoPlanClip, renderExtenderPlan, discardGroupRender, editPromptShotText,
     setEditingGroupIndex, approveShotGroups, writePendingPrompts,
     shotListBusy, streaming, pipelineStreaming, extenderLiveProgress, extenderProgress,
+    chapterBreakdown,
   } = app
+
+  // The ledger fold is O(clips) — computed once here, not once per
+  // ClipBand, and looked up per clip below (`stateTextForClip`).
+  const ledgerFold = useMemo(
+    () => (chapterBreakdown?.ledger.entities.length ? foldLedger(chapterBreakdown.ledger, chapterBreakdown.clips) : null),
+    [chapterBreakdown],
+  )
+  const stateTextForClip = (clipIndex: number): string => {
+    if (!chapterBreakdown || !ledgerFold) return ''
+    const startState = ledgerFold.get(clipIndex)
+    const clip = chapterBreakdown.clips.find((c) => c.clip === clipIndex)
+    if (!startState || !clip) return ''
+    return formatStateBlocks(chapterBreakdown.ledger, startState, clip.stateChanges, clipIndex)
+  }
 
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [openShots, setOpenShots] = useState<Set<string>>(new Set())
@@ -203,6 +252,7 @@ export function FilmTimeline() {
 
       <FilmRegion />
       <RuntimeBar timeline={timeline} />
+      {chapterBreakdown && <StateLedgerCard ledger={chapterBreakdown.ledger} />}
 
       {unapprovedGroupIndices.length > 0 && (
         <div className="card" style={{ marginTop: 9 }}>
@@ -270,6 +320,7 @@ export function FilmTimeline() {
             onSaveEdit={(shotN) => saveEdit(clip.index, shotN)}
             busyNow={busyNow}
             shotKey={shotKey}
+            stateText={stateTextForClip(clip.index)}
             pipelineStreaming={pipelineStreaming}
             streaming={streaming}
             liveProgress={rendering && clip.state === 'rendering' ? liveProgressHere : null}
@@ -405,6 +456,12 @@ interface ClipBandProps {
   onSaveEdit: (shotN: number) => void
   busyNow: boolean
   shotKey: (clipIndex: number, shotIndex: number) => string
+  /** This clip's own STATE AT THE START OF THIS CLIP / CHANGES DURING THIS
+   * CLIP blocks (`chapterBreakdown.ts`'s `formatStateBlocks`) — the exact
+   * text folded into its raw ask, shown here so the operator can inspect
+   * it without opening "the clip in hand". Empty string when this plan has
+   * no ledger, or nothing is worth mentioning for this clip. */
+  stateText: string
   pipelineStreaming: DraftingProgress | null
   streaming: { stage: string; text: string; reasoning: string; startedAt: number; continuations: number; phase?: DraftingProgress['phase']; auto?: boolean; target?: DraftingProgress['target'] } | null
   liveProgress: ExtenderLiveProgress | null
@@ -462,6 +519,12 @@ function ClipBand(props: ClipBandProps) {
         )}
         {hasGroup && <button className="btn sm ghost" onClick={onOpenInHand}>open in “the clip in hand”</button>}
       </div>
+
+      {props.stateText && (
+        <div className="tok" style={{ marginTop: 8, whiteSpace: 'pre-wrap', fontFamily: 'var(--mono)', fontSize: 11, lineHeight: 1.6, color: 'var(--ink2)' }}>
+          {props.stateText}
+        </div>
+      )}
 
       {directionHere && <DraftingStatus streaming={directionHere} />}
       {writingHere && <DraftingStatus streaming={writingHere} />}

@@ -130,7 +130,14 @@ export function previousPromptForClip(
   clipIndex?: number,
 ): string | undefined {
   if (clipIndex === undefined || !Number.isFinite(clipIndex) || clipIndex <= 1) return undefined
-  const canonical = new Set(['draft', 'revise', 'rebuild', 'freeform'])
+  // Every writer stage that produces the canonical prompt belongs here —
+  // `draftDirected`/`draftOptimised`/`draftRewriter` were missing, so a clip
+  // authored by preset B/C/D was invisible to the NEXT clip's own
+  // `{{previous}}` lookup (it fell through to whatever an EARLIER preset-A
+  // pass happened to leave, or nothing at all). Keep this in step with
+  // `stages.ts`'s `PROMPT_STAGES` — same "the canonical prompt" notion,
+  // just filtered to the STAGES this function itself considers, not the ids.
+  const canonical = new Set(['draft', 'revise', 'rebuild', 'freeform', 'draftDirected', 'draftOptimised', 'draftRewriter'])
   let best: { text: string; clipIndex: number } | undefined
   for (let i = versions.length - 1; i >= 0; i--) {
     const version = versions[i]

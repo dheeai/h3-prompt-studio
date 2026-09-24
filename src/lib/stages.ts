@@ -8,7 +8,7 @@ export const STAGE_ORDER: StageId[] = ['direct', 'draft', 'critique', 'revise']
  * schema-constrained reply when the provider supports one. Direct and Critique
  * return one undivided document; Handoff and Breakdown have their own shapes.
  */
-export const SCHEMA_STAGES = new Set<StageId>(['draft', 'revise', 'rebuild', 'draftDirected', 'draftOptimised'])
+export const SCHEMA_STAGES = new Set<StageId>(['draft', 'revise', 'rebuild', 'draftDirected', 'draftOptimised', 'draftRewriter'])
 
 /**
  * Stages whose output is a canonical prompt, as opposed to a direction sheet,
@@ -18,7 +18,7 @@ export const SCHEMA_STAGES = new Set<StageId>(['draft', 'revise', 'rebuild', 'dr
  * 2026-09-16) and "Generate the rest" (Task 2), so they can never quietly
  * disagree about what counts as authored.
  */
-export const PROMPT_STAGES = new Set<StageId>(['draft', 'revise', 'rebuild', 'freeform', 'draftDirected', 'draftOptimised'])
+export const PROMPT_STAGES = new Set<StageId>(['draft', 'revise', 'rebuild', 'freeform', 'draftDirected', 'draftOptimised', 'draftRewriter'])
 
 /** The latest canonical prompt version authored for one plan clip, or
  * undefined if it has none yet. */
@@ -27,7 +27,7 @@ export function latestPromptForClip(versions: readonly Version[], clipIndex: num
 }
 
 /** Stages that are actions rather than steps in the chain. */
-export const OFF_CHAIN: StageId[] = ['rebuild', 'freeform', 'handoff', 'breakdown', 'draftDirected', 'draftOptimised']
+export const OFF_CHAIN: StageId[] = ['rebuild', 'freeform', 'handoff', 'breakdown', 'draftDirected', 'draftOptimised', 'draftRewriter']
 
 /**
  * What each pass consumes and produces.
@@ -91,6 +91,12 @@ export const STAGE_INFO: Record<StageId, { produces: string; needs: 'story' | 'a
     blurb:
       'Preset C\'s writer: one call, like Draft, but running the GEPA-optimised instruction measured against the judge rubric instead of the hand-written one.',
   },
+  draftRewriter: {
+    produces: 'the prompt',
+    needs: 'anything',
+    blurb:
+      'Preset D\'s writer, for a clip already broken into named-camera shots: writes the six sections from that raw ask, using the same instruction the ComfyUI rewriter uses, in the Studio.',
+  },
 }
 
 export const STAGE_LABEL: Record<StageId, string> = {
@@ -104,6 +110,7 @@ export const STAGE_LABEL: Record<StageId, string> = {
   breakdown: 'Break down',
   draftDirected: 'Draft (directed)',
   draftOptimised: 'Draft (optimised)',
+  draftRewriter: 'Draft (raw ask)',
 }
 
 /**
@@ -583,6 +590,51 @@ SOURCE
 
 Now write your reply. Output exactly one block, with no heading of your own
 before or after it:
+
+<<<PROMPT>>>
+the complete prompt — and nothing else in it: no preamble, no explanation, no
+fences
+
+Write the prompt and stop.`,
+
+  /**
+   * Preset D's writer ("Raw ask"). Deliberately SHORT: the full ref2va
+   * authoring contract — the six sections, the camera vocabulary, the
+   * speaker/dialogue rules, the five things that go missing first — is
+   * already in the SYSTEM message for this stage (`rewriteSystemPrompt.ts`'s
+   * `DEFAULT_REWRITE_SYSTEM_PROMPT`, substituted in `state.tsx`'s `run()` in
+   * place of `buildH3SystemPrompt` for exactly this one stage). Restating
+   * any of it here would just be the same defect the other templates avoid
+   * by not repeating loaded skills. This template's only job is handing
+   * over the concrete per-clip facts: the film context, the previous clip's
+   * OWN RAW ASK (not its rendered prompt — mirrors the node's own
+   * `rewrite_previous_clips: "raw asks"`), and THIS clip's raw ask.
+   *
+   * No `{{story}}`/SOURCE block on purpose — unlike every other writer here,
+   * this stage never sees the whole plot, only this one clip's raw ask, the
+   * same discipline the ComfyUI rewriter itself keeps.
+   */
+  draftRewriter: `You already have your full instructions above, in the system
+message — the exact ref2va authoring contract, verbatim. This turn only hands
+you the concrete facts for ONE clip.
+
+{{film}}
+
+{{duration}}
+
+PREVIOUS CLIP — its OWN raw ask, for continuity only. Do not re-describe or
+recreate what it already shows; open this clip from where it leaves off.
+{{previous}}
+
+{{continuationFrame}}
+THIS CLIP — the raw ask. This is everything that must happen on screen; you
+decide how it is shot, exactly as the system message's "ONE RULE" states.
+{{current}}
+
+{{plates}}
+Now write the six sections for THIS CLIP ALONE, following the system
+message's contract exactly. Output exactly one block, with no heading of your
+own before or after it:
 
 <<<PROMPT>>>
 the complete prompt — and nothing else in it: no preamble, no explanation, no

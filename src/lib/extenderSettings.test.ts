@@ -2,10 +2,12 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   EXTENDER_QUALITY_TIERS,
+  EXTENDER_STUDIO_AUTHORING_OVERRIDES,
   extenderEngineChoiceFromInputs,
   extenderEngineOverride,
   extenderQualityOverride,
   extenderQualityTierFromInputs,
+  extenderRewriteOverrides,
   isExtenderFieldFrozen,
   mergeExtenderInputs,
   parseExtenderNodeSchema,
@@ -13,6 +15,7 @@ import {
   withExtenderOverride,
   withExtenderOverrides,
 } from './extenderSettings'
+import { DEFAULT_REWRITE_SYSTEM_PROMPT } from './rewriteSystemPrompt'
 
 // ── which fields are frozen ─────────────────────────────────────────────────
 
@@ -202,4 +205,46 @@ test('parseExtenderNodeSchema: null on a malformed/unexpected shape rather than 
   assert.equal(parseExtenderNodeSchema(null), null)
   assert.equal(parseExtenderNodeSchema('not an object'), null)
   assert.equal(parseExtenderNodeSchema({ MiniMaxH3MasterExtender: { input: { required: {} } } }), null)
+})
+
+// ── rewriter-authored path ───────────────────────────────────────────────
+
+test('extenderRewriteOverrides: sets pending-clips rewrite mode and the raw-asks contract', () => {
+  const ov = extenderRewriteOverrides(undefined)
+  assert.equal(ov.rewrite_mode, 'pending clips')
+  assert.equal(ov.rewrite_task, 'auto')
+  assert.equal(ov.rewrite_previous_clips, 'raw asks')
+})
+
+test('extenderRewriteOverrides: no override text falls back to the default system prompt', () => {
+  assert.equal(extenderRewriteOverrides(undefined).rewrite_system_prompt, DEFAULT_REWRITE_SYSTEM_PROMPT)
+  assert.equal(extenderRewriteOverrides('   ').rewrite_system_prompt, DEFAULT_REWRITE_SYSTEM_PROMPT)
+})
+
+test('extenderRewriteOverrides: a non-empty override text is sent verbatim instead', () => {
+  assert.equal(extenderRewriteOverrides('a custom system prompt').rewrite_system_prompt, 'a custom system prompt')
+})
+
+test('extenderRewriteOverrides: never touches rewrite_writer_model/rewrite_caption_model — the graph\'s own baked local model stands', () => {
+  const ov = extenderRewriteOverrides(undefined)
+  assert.equal('rewrite_writer_model' in ov, false)
+  assert.equal('rewrite_caption_model' in ov, false)
+})
+
+test('DEFAULT_REWRITE_SYSTEM_PROMPT: carries the base ref2va contract plus the appended craft rules, clearly delimited', () => {
+  assert.ok(DEFAULT_REWRITE_SYSTEM_PROMPT.includes('You write MiniMax H3 (Hailuo 03) video prompts in full-reference mode (ref2va).'))
+  assert.ok(DEFAULT_REWRITE_SYSTEM_PROMPT.includes('APPENDED CRAFT RULES'))
+  assert.ok(DEFAULT_REWRITE_SYSTEM_PROMPT.includes('not the phone'))
+  assert.ok(DEFAULT_REWRITE_SYSTEM_PROMPT.includes('A screen is a light source, not a document'))
+  // the base prompt must come BEFORE the appended section
+  assert.ok(DEFAULT_REWRITE_SYSTEM_PROMPT.indexOf('THE ONE RULE') < DEFAULT_REWRITE_SYSTEM_PROMPT.indexOf('APPENDED CRAFT RULES'))
+})
+
+test('rewrite_mode/rewrite_system_prompt are NOT in EXTENDER_SIGNATURE_FIELDS — ground truth is master_node.py, not this file\'s guess', () => {
+  assert.equal(isExtenderFieldFrozen('rewrite_mode'), false)
+  assert.equal(isExtenderFieldFrozen('rewrite_system_prompt'), false)
+})
+
+test('EXTENDER_STUDIO_AUTHORING_OVERRIDES: forces rewrite_mode off, so a six-section Studio prompt is never fed back through the rewriter', () => {
+  assert.deepEqual(EXTENDER_STUDIO_AUTHORING_OVERRIDES, { rewrite_mode: 'off' })
 })

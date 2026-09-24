@@ -65,13 +65,18 @@ export function isSingleRequestStage(stage: StageId): boolean {
  * `draftDirected` is one of them — it is preset B's writer, and its output is
  * the clip's prompt in exactly the way `draft`'s is. It was missing here, so
  * even a successful directed write would not have been recognised as the
- * clip's prompt. `draftOptimised` (preset C's writer) is the same case.
+ * clip's prompt. `draftOptimised` (preset C's writer) is the same case, and
+ * `draftRewriter` (preset D's writer) is the same case again — an omission
+ * here is the exact silent-failure class this comment already warns about,
+ * so a NEW writer stage is added here on its own line, not folded into the
+ * boolean expression where it is easy to miss.
  * Keep this in step with `PROMPT_STAGES` in `stages.ts`. */
 export function isCanonicalPromptStage(stage: StageId): boolean {
   return (
     stage === 'draft' ||
     stage === 'draftDirected' ||
     stage === 'draftOptimised' ||
+    stage === 'draftRewriter' ||
     stage === 'revise' ||
     stage === 'rebuild' ||
     stage === 'freeform'

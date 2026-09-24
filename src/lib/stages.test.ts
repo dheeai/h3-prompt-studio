@@ -322,6 +322,72 @@ test('preset C runs one call, and writes via draftOptimised', () => {
   assert.equal(c.writerStage, 'draftOptimised')
 })
 
+// ── preset D's draftRewriter template — the Studio-side rewriter port ────
+
+test('draftRewriter is a NEW template, not a rename or edit of any other writer', () => {
+  assert.notEqual(DEFAULT_TEMPLATES.draftRewriter, DEFAULT_TEMPLATES.draft)
+  assert.notEqual(DEFAULT_TEMPLATES.draftRewriter, DEFAULT_TEMPLATES.draftDirected)
+  assert.notEqual(DEFAULT_TEMPLATES.draftRewriter, DEFAULT_TEMPLATES.draftOptimised)
+  assert.ok(!Object.values(FROZEN_TEMPLATE_HASHES).includes(sha256(DEFAULT_TEMPLATES.draftRewriter)))
+})
+
+test('draftRewriter carries {{current}}/{{previous}}/{{film}}/{{duration}}/{{plates}} — but NOT {{story}}, unlike every other writer', () => {
+  const t = DEFAULT_TEMPLATES.draftRewriter
+  for (const ph of ['{{current}}', '{{previous}}', '{{film}}', '{{duration}}', '{{plates}}', '{{continuationFrame}}']) {
+    assert.ok(t.includes(ph), `draftRewriter must carry ${ph}`)
+  }
+  // Deliberately no {{story}}/SOURCE block — this stage never sees the whole
+  // plot, only one clip's raw ask (see the template's own module comment).
+  assert.ok(!t.includes('{{story}}'))
+})
+
+test('draftRewriter has no direction/acting placeholders — it is a one-call preset, like draft/draftOptimised', () => {
+  assert.ok(!DEFAULT_TEMPLATES.draftRewriter.includes('{{direction}}'))
+  assert.ok(!DEFAULT_TEMPLATES.draftRewriter.includes('{{acting}}'))
+})
+
+test('draftRewriter keeps the same <<<PROMPT>>> output contract as every other writer', () => {
+  assert.match(DEFAULT_TEMPLATES.draftRewriter, /<<<PROMPT>>>/)
+  assert.match(DEFAULT_TEMPLATES.draftRewriter, /no preamble, no explanation, no\nfences/)
+})
+
+test('draftRewriter fills end to end — the raw ask reaches the filled prompt, the previous-clip fallback reads as "first clip"', () => {
+  const filled = fillTemplateWithDuration(DEFAULT_TEMPLATES.draftRewriter, {
+    duration: 'DURATION — 124 frames',
+    current: 'Shot 1 – Wide as Nusrat unrolls the silk. (5s)',
+    film: 'FILM-WIDE LOOK\nsome look',
+    previous: '',
+    plates: '',
+    continuationFrame: '',
+  })
+  assert.match(filled, /Nusrat unrolls the silk/)
+  assert.match(filled, /none — this is the first clip/)
+  assert.match(filled, /<<<PROMPT>>>/)
+})
+
+test('draftRewriter is schema-constrained and counts as a canonical prompt stage', () => {
+  assert.ok(SCHEMA_STAGES.has('draftRewriter'))
+  assert.ok(PROMPT_STAGES.has('draftRewriter'))
+})
+
+test('draftRewriter is off the manual chain — an action a preset invokes, not a button to click through', () => {
+  assert.ok(OFF_CHAIN.includes('draftRewriter'))
+})
+
+test('draftRewriter has its own label and stage info, distinct from every other writer', () => {
+  assert.equal(STAGE_LABEL.draftRewriter, 'Draft (raw ask)')
+  assert.notEqual(STAGE_LABEL.draftRewriter, STAGE_LABEL.draft)
+  assert.notEqual(STAGE_LABEL.draftRewriter, STAGE_LABEL.draftDirected)
+  assert.notEqual(STAGE_LABEL.draftRewriter, STAGE_LABEL.draftOptimised)
+  assert.ok(STAGE_INFO.draftRewriter.blurb.length > 0)
+})
+
+test('preset D ("Raw ask") runs one call, and writes via draftRewriter', () => {
+  const d = pipelinePreset('raw-ask')
+  assert.deepStrictEqual(d.extraStages, [])
+  assert.equal(d.writerStage, 'draftRewriter')
+})
+
 // ── plates cite the slot the render actually resolves (2026-09-18) ──────
 
 test('an image plate is offered as <Picture N> — the slot refs_json wires it to', () => {

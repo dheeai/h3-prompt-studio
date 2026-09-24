@@ -1,4 +1,5 @@
 import { EXTENDER_SIGNATURE_FIELDS } from './extender'
+import { rewriteSystemPromptFor } from './rewriteSystemPrompt'
 
 /**
  * The Master Extender settings panel's own small bookkeeping — kept separate
@@ -218,3 +219,65 @@ export function parseExtenderNodeSchema(raw: unknown): ExtenderNodeSchema | null
   if (!Array.isArray(spec) || !Array.isArray(spec[0])) return null
   return { turboLoras: (spec[0] as unknown[]).map(String) }
 }
+
+// ── Authoring mode: Studio-written prompts, or the node's own rewriter ────
+//
+// The incumbent path (`authoringMode` unset or `'studio'`) is what this file
+// already assumed everywhere above: every field on this node describes the
+// RENDER, and the six-section prompt in `clips_json[i].prompt` was written by
+// the Studio's own Direct/Draft/Revise stages (`stages.ts`) before the film
+// was ever submitted here.
+//
+// `'rewriter'` is additive, from the founder's own hand-run workflow: submit
+// each clip's plain-English RAW ASK (`chapterBreakdown.ts`'s
+// `formatClipRawAsk`, or a manually-typed one) as `clips_json[i].prompt`
+// instead, and let the node's own `rewrite_mode: "pending clips"` turn it
+// into the six sections on the box, using `rewrite_system_prompt`
+// (`rewriteSystemPrompt.ts`) — the Studio never authors or sees the rewritten
+// six-section prompt at all: checked live against
+// `/object_info/MiniMaxH3MasterExtender` (2026-09-24), the node has no
+// `master_ui`/text output any more, so there is currently no channel back.
+//
+// `rewrite_task`/`rewrite_previous_clips` are set EXPLICITLY here even though
+// they already match the shipped graph's own baked defaults
+// (`"auto"`/`"raw asks"`, `MiniMax-H3-Master-Extender-TURBO-SLA-LOCAL-
+// rewriter-api.json`, 2026-09-22) — stating them rather than relying on a
+// baked default that could change under a future graph swap.
+//
+// `rewrite_writer_model`/`rewrite_caption_model` are DELIBERATELY never
+// overridden here: the shipped graph already bakes both to the local
+// `swift-uncensored-27b` weights (long descriptive combo strings, not a
+// slug this file could safely reconstruct), which already satisfies the
+// LOCAL-FIRST model policy with zero code here needing to know the model's
+// name. Overriding them to a hand-typed string risks sending a combo value
+// the live node doesn't recognise; leaving them out lets the graph's own
+// baked choice stand.
+export type ExtenderAuthoringMode = 'studio' | 'rewriter'
+
+/** The override patch for `settings.extenderOverrides` when `authoringMode`
+ * is `'rewriter'` — merge this on TOP of any operator render-setting
+ * overrides at build time (`buildExtenderGraph`'s `overrides` argument
+ * applies both as one plain object merge; order there is caller's choice —
+ * see `state.tsx`'s `renderExtenderPlan`). */
+export function extenderRewriteOverrides(rewriteSystemPromptOverride: string | undefined): Record<string, unknown> {
+  return {
+    rewrite_mode: 'pending clips',
+    rewrite_task: 'auto',
+    rewrite_previous_clips: 'raw asks',
+    rewrite_system_prompt: rewriteSystemPromptFor(rewriteSystemPromptOverride),
+  }
+}
+
+/**
+ * The override for `authoringMode` `'studio'` (the incumbent) — EXPLICITLY
+ * forces `rewrite_mode: "off"` rather than trusting the graph's own baked
+ * value. The shipped graph bakes `rewrite_mode: "pending clips"` (the
+ * founder's own working config for the rewriter path — see
+ * `extenderRewriteOverrides`), so leaving this unset for a Studio-authored
+ * clip would hand the node's rewriter an ALREADY-WRITTEN six-section prompt
+ * as if it were a raw ask, which is not what that field means. Live
+ * `/object_info` confirms `"off"` is one of `rewrite_mode`'s three combo
+ * values (2026-09-24: `off` / `pending clips` / `all clips`), and the
+ * founder's own 23 Sep save file uses exactly `"off"` once its clips were
+ * already rewritten. */
+export const EXTENDER_STUDIO_AUTHORING_OVERRIDES: Record<string, unknown> = { rewrite_mode: 'off' }

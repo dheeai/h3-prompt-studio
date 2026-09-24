@@ -280,6 +280,15 @@ const STAGE_SKILLS: Partial<Record<StageSkillKey, readonly string[]>> = {
   // it was never measured with that payload, so it would invalidate the
   // measured 0.760. Do not "fix" this to match `draft`.
   draftOptimised: ['h3-prompting'],
+
+  // ── preset D (`lib/pipeline.ts`) ───────────────────────────────────────
+  // Deliberately EMPTY, never `['h3-prompting']`: this stage's system
+  // message is REPLACED wholesale (`rewriteSystemPrompt.ts`'s
+  // `DEFAULT_REWRITE_SYSTEM_PROMPT`, substituted in `state.tsx`'s `run()`),
+  // not composed from the loaded-skill corpus `buildH3SystemPrompt` builds
+  // for every other stage. Handing it skills here would load tokens into
+  // `ctx` that the system message never uses.
+  draftRewriter: [],
 }
 
 /** Narrow a selection to the documents a stage needs — see `STAGE_SKILLS`. */

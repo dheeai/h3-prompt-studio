@@ -388,6 +388,16 @@ test('buildExtenderClipsJson defaults seed_mode to fixed and loras to an empty a
   assert.deepEqual(parsed.loras, [])
 })
 
+test('buildExtenderClipsJson defaults prompt_rewritten to false — always re-rewrite on resubmit, never silently reuse', () => {
+  const parsed = JSON.parse(buildExtenderClipsJson([{ prompt: 'p', seconds: 5, seed: 1, validated: false }]))[0]
+  assert.equal(parsed.prompt_rewritten, false)
+})
+
+test('buildExtenderClipsJson: promptRewritten: true is passed through', () => {
+  const parsed = JSON.parse(buildExtenderClipsJson([{ prompt: 'p', seconds: 5, seed: 1, validated: true, promptRewritten: true }]))[0]
+  assert.equal(parsed.prompt_rewritten, true)
+})
+
 // ── Full Story mode's film-wide default + per-clip override, wired all the
 // way into clips_json — the same `resolveLoraStack` -> `loraStackToWire`
 // assembly `renderExtenderPlan` (state.tsx) runs per plan clip at submit

@@ -398,6 +398,20 @@ export interface ExtenderClipInput {
   seedMode?: ExtenderSeedMode
   validated: boolean
   loras?: unknown[]
+  /**
+   * The 22 Sep graph's `_default_clips()` carries `prompt_rewritten: false`
+   * on its example pending clip — the node's own flag for whether THIS
+   * clip's `prompt` has already been expanded by `rewrite_mode: "pending
+   * clips"` into the six sections, so a resubmit can skip re-rewriting one
+   * that already was. The Studio has no channel to learn a clip's rewritten
+   * text back — checked live against `/object_info/MiniMaxH3MasterExtender`
+   * 2026-09-24, which has no `master_ui`/text output at all any more (see
+   * `rewriteSystemPrompt.ts`'s module comment) — so this is left unset
+   * (-> `false`) on every build, which is the conservative
+   * choice: it costs an extra rewrite call on a resubmit rather than risking
+   * a stale or wrong rewrite being silently reused with no way to tell.
+   */
+  promptRewritten?: boolean
 }
 
 /** Build the `clips_json` string — `id` is the 0-based position
@@ -415,6 +429,7 @@ export function buildExtenderClipsJson(clips: ExtenderClipInput[]): string {
       seed_mode: c.seedMode ?? 'fixed',
       validated: c.validated,
       loras: c.loras ?? [],
+      prompt_rewritten: c.promptRewritten ?? false,
     })),
   )
 }

@@ -1,4 +1,6 @@
 import type { PipelinePresetId } from './pipeline'
+import type { BreakdownPlannerId } from './breakdownPlanner'
+import type { ExtenderAuthoringMode } from './extenderSettings'
 
 export type SkillSource = 'bundled' | 'upload' | 'url'
 
@@ -108,6 +110,17 @@ export type StageId =
    * in place of the hand-written one. See `lib/pipeline.ts`'s module
    * comment. */
   | 'draftOptimised'
+  /** The `'raw-ask'` preset's writer — the Studio's own port of the
+   * MiniMax H3 Master Extender's own `rewrite_mode: "pending clips"`
+   * rewriter: given one clip's RAW ASK (a formatted breakdown shot list,
+   * `chapterBreakdown.ts`'s `formatClipRawAsk`), not a plot, it writes the
+   * six sections using `rewriteSystemPrompt.ts`'s
+   * `DEFAULT_REWRITE_SYSTEM_PROMPT` as the SYSTEM message instead of the
+   * Studio's usual skills-based one — the founder's own directive
+   * (2026-09-24): this writing must happen IN THE STUDIO, where it can be
+   * inspected, not silently inside ComfyUI. See `lib/pipeline.ts`'s module
+   * comment. */
+  | 'draftRewriter'
 
 export interface Version {
   id: string
@@ -402,6 +415,26 @@ export interface Settings {
    * never touches the switch sees no change at all.
    */
   pipelinePreset?: PipelinePresetId
+  /**
+   * Which strategy Full Story mode uses to turn a plot into a `ShotList` —
+   * see `lib/breakdownPlanner.ts`. Unset (or an id `breakdownPlanner()`
+   * doesn't recognise) means the incumbent beats->subdivide->group pipeline,
+   * so an operator who never touches the switch sees no change at all.
+   */
+  breakdownPlanner?: BreakdownPlannerId
+  /**
+   * Studio-authored (the incumbent: Direct/Draft/Revise write the six-section
+   * prompt) or rewriter-authored (submit each clip's plain-English raw ask
+   * and let the Master Extender's OWN `rewrite_mode: "pending clips"` write
+   * it, on the box) — see `lib/extenderSettings.ts`'s module comment. Unset
+   * means `'studio'`, the incumbent.
+   */
+  authoringMode?: ExtenderAuthoringMode
+  /** User override for `rewriteSystemPrompt.ts`'s
+   * `DEFAULT_REWRITE_SYSTEM_PROMPT` — same override-or-default contract as
+   * `stageTemplates`, just a single free-text field rather than one per
+   * `StageId`. Empty/unset means "use the shipped default". */
+  rewriteSystemPrompt?: string
   selection: Selection
   /**
    * User overrides ONLY. Storing a full copy meant a stored snapshot shadowed

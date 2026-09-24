@@ -32,8 +32,26 @@ import type { StageId } from './types'
  * 0.760 (one call) — C beat both on 7 of 7. Its writer stage is
  * `draftOptimised`, a NEW template (`stages.ts`) carrying that instruction
  * verbatim; it is not an edit of `draft`.
+ *
+ * Preset D ("Raw ask") is preset A/C's shape again — one call, no extra
+ * stages — for a DIFFERENT kind of clip plan: `breakdownPlanner.ts`'s
+ * `structured-json` planner already decides shots, camera and dialogue up
+ * front, and hands each clip a formatted RAW ASK
+ * (`chapterBreakdown.ts`'s `formatClipRawAsk`) rather than a plot. Its writer
+ * stage, `draftRewriter`, writes the six sections from that raw ask using
+ * `rewriteSystemPrompt.ts`'s `DEFAULT_REWRITE_SYSTEM_PROMPT` — the SAME
+ * instruction the ComfyUI Master Extender's own `rewrite_mode: "pending
+ * clips"` rewriter uses — as its SYSTEM message, in place of the Studio's
+ * usual skills-based one. Founder directive (2026-09-24): this writing must
+ * happen IN THE STUDIO, where it can be inspected, never silently inside
+ * ComfyUI — the ComfyUI-rewriter render path stays available as an OPTION
+ * (`Settings.authoringMode`), never the default. `breakdownPlanner.ts`'s
+ * planner switch sets this preset as the STARTING default the moment the
+ * structured-json planner is chosen, but it stays a preset like any other —
+ * switching back to preset A/B/C afterward is unaffected and never
+ * clobbered.
  */
-export type PipelinePresetId = 'direct-write' | 'directed' | 'optimised'
+export type PipelinePresetId = 'direct-write' | 'directed' | 'optimised' | 'raw-ask'
 
 /** The two per-clip calls a preset may run before its writer — always in
  * this order, always sequential (never parallel; see `state.tsx`'s
@@ -82,6 +100,15 @@ export const PIPELINE_PRESETS: readonly PipelinePreset[] = [
     cost: 'one model call per clip — measured 0.760 vs Direct and write’s 0.668 on 7 held-out cases',
     extraStages: [],
     writerStage: 'draftOptimised',
+  },
+  {
+    id: 'raw-ask',
+    name: 'Raw ask',
+    description:
+      'For a clip already broken into named-camera shots (the structured-json breakdown planner): writes the six sections straight from that raw ask, using the same instruction the ComfyUI rewriter uses — but IN the Studio, where you can see and edit it before anything renders.',
+    cost: 'one model call per clip',
+    extraStages: [],
+    writerStage: 'draftRewriter',
   },
 ] as const
 

@@ -41,12 +41,13 @@ test('clipsNeedingPrompt: a non-prompt pass (e.g. critique) for a clip does not 
   assert.deepEqual(remaining.map((c) => c.index), [1])
 })
 
-// ── isCanonicalPromptStage — every writer stage, across all three presets ──
+// ── isCanonicalPromptStage — every writer stage, across all four presets ──
 
-test('isCanonicalPromptStage: draft, draftDirected and draftOptimised (the three presets\' writers) all count', () => {
+test('isCanonicalPromptStage: draft, draftDirected, draftOptimised and draftRewriter (the four presets\' writers) all count', () => {
   assert.ok(isCanonicalPromptStage('draft'))
   assert.ok(isCanonicalPromptStage('draftDirected'))
   assert.ok(isCanonicalPromptStage('draftOptimised'))
+  assert.ok(isCanonicalPromptStage('draftRewriter'))
 })
 
 test('isCanonicalPromptStage: revise, rebuild and freeform also count; direct, critique, handoff and breakdown do not', () => {

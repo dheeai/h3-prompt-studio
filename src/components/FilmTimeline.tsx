@@ -102,7 +102,7 @@ export function FilmTimeline() {
     redoPlanClip, renderExtenderPlan, discardGroupRender, editPromptShotText,
     setEditingGroupIndex, approveShotGroups, writePendingPrompts,
     shotListBusy, streaming, pipelineStreaming, extenderLiveProgress, extenderProgress,
-    chapterBreakdown,
+    chapterBreakdown, citationAuditFailedClips,
   } = app
 
   // The ledger fold is O(clips) — computed once here, not once per
@@ -321,6 +321,7 @@ export function FilmTimeline() {
             busyNow={busyNow}
             shotKey={shotKey}
             stateText={stateTextForClip(clip.index)}
+            citationBlocked={citationAuditFailedClips.includes(clip.index)}
             pipelineStreaming={pipelineStreaming}
             streaming={streaming}
             liveProgress={rendering && clip.state === 'rendering' ? liveProgressHere : null}
@@ -462,6 +463,9 @@ interface ClipBandProps {
    * it without opening "the clip in hand". Empty string when this plan has
    * no ledger, or nothing is worth mentioning for this clip. */
   stateText: string
+  /** Blocks a Studio-authored render outright — see `Session.
+   * citationAuditFailedClips`'s own module comment (state.tsx). */
+  citationBlocked: boolean
   pipelineStreaming: DraftingProgress | null
   streaming: { stage: string; text: string; reasoning: string; startedAt: number; continuations: number; phase?: DraftingProgress['phase']; auto?: boolean; target?: DraftingProgress['target'] } | null
   liveProgress: ExtenderLiveProgress | null
@@ -544,6 +548,14 @@ function ClipBand(props: ClipBandProps) {
         <div className="alert warn" style={{ marginTop: 8 }}>
           Clip {clip.index}’s shots have changed since this prompt was written — reopen it in “the clip in hand” to
           rewrite it against what they say now.
+        </div>
+      )}
+
+      {props.citationBlocked && (
+        <div className="alert warn" style={{ marginTop: 8 }}>
+          Clip {clip.index} still fails the reference-citation audit after a retry (an on-screen plate isn’t cited in
+          subject_definitions, or a &lt;Picture N&gt; doesn’t exist) — this blocks a Studio-authored render. Reopen it
+          in “the clip in hand” and rewrite it, or switch to the ComfyUI-rewriter path.
         </div>
       )}
 

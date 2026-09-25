@@ -57,8 +57,9 @@ import {
 } from '../lib/shotList'
 import type { ShotSubdivideCall, ThinBriefCheck } from '../lib/shotList'
 import {
-  CHAPTER_BREAKDOWN_TEMPLATE, chapterBreakdownResponseFormat, chapterBreakdownToShotList,
+  CHAPTER_BREAKDOWN_TEMPLATE, auditClipPromptCitations, chapterBreakdownResponseFormat, chapterBreakdownToShotList,
   checkChapterBreakdown, checkClipCount, checkRawAsksDistinct, fillChapterBreakdownTemplate, parseChapterBreakdown, rawAskForClipIndex,
+  rawAskForClipIndexWithReferences,
 } from '../lib/chapterBreakdown'
 import type { ChapterBreakdown } from '../lib/chapterBreakdown'
 import { breakdownPlanner } from '../lib/breakdownPlanner'
@@ -68,6 +69,9 @@ import { describeEntityForPlate, entitiesNeedingGeneratedPlates, resolveEntityPl
 import { PLATE_SIZES, fillPlateBrief, parsePlatePromptRewrite, platePromptKindForLedgerKind } from '../lib/platePrompting'
 import { buildQwenPlateGraph } from '../lib/qwenPlateGraph'
 import { analyzeSubjectImage, composeSubjectJob } from '../lib/subject'
+import { referenceContextForClip } from '../lib/referenceContext'
+import type { ClipReferenceContext } from '../lib/referenceContext'
+import { planChapterBatches } from '../lib/chapterBatching'
 import {
   addShotToGroup, clipsDiscardedByShotRevision, discardBreakdownFromIndex, dropShot, planForTickedSubmission,
   pullShotFromNext, pushShotToNext, retimeShot, rewordShot, takeShotGroups,
@@ -260,6 +264,14 @@ interface Session {
    * for an unrelated reason).
    */
   entityPlateAssignments?: Record<string, string>
+  /**
+   * Clip indices whose preset-D output still fails `auditClipPromptCitations`
+   * after the one retry `rebuild()` already spent on it — `renderExtenderPlan`
+   * refuses to submit a Studio-authored film with any of these still
+   * outstanding (see its own module comment). Cleared for a clip the
+   * moment a later write of it passes.
+   */
+  citationAuditFailedClips?: number[]
   /**
    * Full Story mode's film-wide style-LoRA default — the same kind of
    * decision as `FilmLook` (chosen once, applies to the whole film), but
@@ -753,6 +765,9 @@ export interface Api {
   /** Whether `generateMissingPlates`' own graph (qwen21_tti.json) has
    * loaded — same "fixed shipped asset" contract as `extenderReady`. */
   qwenTtiReady: boolean
+  /** Clip indices currently blocking a Studio-authored render — see
+   * `Session.citationAuditFailedClips`'s own module comment. */
+  citationAuditFailedClips: number[]
   /** "Use supplied, generate missing" — see the function's own module
    * comment in this file. */
   generateMissingPlates: () => Promise<void>
@@ -2168,28 +2183,40 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
 
     // Preset D's writer is given RAW ASKS, not a plot — this clip's own
-    // (`chapterBreakdown.ts`'s `formatClipRawAsk`, via `rawAskForClipIndex`)
-    // and the PREVIOUS clip's (mirrors the ComfyUI rewriter's own
-    // `rewrite_previous_clips: "raw asks"` behaviour) — computed the same
-    // "only for a Full Story clip that actually has a clipIndex" way
-    // `draftDirected`'s block above does. Falls back to the plan clip's
-    // plain `covers` when this film's plan did not come from the
-    // structured-json planner (no `chapterBreakdown`) — still a raw ask,
-    // just without that planner's exact multi-line/header formatting.
+    // (`chapterBreakdown.ts`'s `formatClipRawAsk`, via `rawAskForClipIndex`/
+    // `rawAskForClipIndexWithReferences`) and the PREVIOUS clip's (mirrors
+    // the ComfyUI rewriter's own `rewrite_previous_clips: "raw asks"`
+    // behaviour) — computed the same "only for a Full Story clip that
+    // actually has a clipIndex" way `draftDirected`'s block above does.
+    // Falls back to the plan clip's plain `covers` when this film's plan
+    // did not come from the structured-json planner (no `chapterBreakdown`)
+    // — still a raw ask, just without that planner's exact multi-line/
+    // header formatting, and with no REFERENCES block (there is no ledger
+    // to bind plates against).
     let currentRawAsk: string | undefined
     let previousRawAsk: string | undefined
+    // Set only when a ledger + resolved plates exist — `referenceContext`
+    // is what the citation-audit retry/block below needs, on TOP of the
+    // template text itself.
+    let referenceContext: ClipReferenceContext | undefined
+    let thisClipIndex: number | undefined
     if (preset.writerStage === 'draftRewriter' && studioModeOverride === 'story') {
       const clipIndex = sessionRef.current.film?.clipIndex
+      thisClipIndex = clipIndex
       if (clipIndex !== undefined) {
         const breakdown = sessionRef.current.breakdown
         const chapterBreakdown = sessionRef.current.chapterBreakdown
-        currentRawAsk =
-          rawAskForClipIndex(chapterBreakdown, clipIndex) ??
-          breakdown?.clips.find((c) => c.index === clipIndex)?.covers ??
-          sessionRef.current.film?.covers
-        previousRawAsk =
-          rawAskForClipIndex(chapterBreakdown, clipIndex - 1) ??
-          breakdown?.clips.find((c) => c.index === clipIndex - 1)?.covers
+        if (chapterBreakdown?.ledger.entities.length) {
+          const resolvedPlates = resolveEntityPlates(chapterBreakdown.ledger.entities, platesRef.current, sessionRef.current.entityPlateAssignments ?? {})
+          referenceContext = referenceContextForClip(chapterBreakdown, clipIndex, resolvedPlates, platesRef.current)
+          currentRawAsk = rawAskForClipIndexWithReferences(chapterBreakdown, clipIndex, referenceContext.refSlots, referenceContext.registry)
+          previousRawAsk = rawAskForClipIndexWithReferences(chapterBreakdown, clipIndex - 1, referenceContext.refSlots, referenceContext.registry)
+        } else {
+          currentRawAsk = rawAskForClipIndex(chapterBreakdown, clipIndex)
+          previousRawAsk = rawAskForClipIndex(chapterBreakdown, clipIndex - 1)
+        }
+        currentRawAsk = currentRawAsk ?? breakdown?.clips.find((c) => c.index === clipIndex)?.covers ?? sessionRef.current.film?.covers
+        previousRawAsk = previousRawAsk ?? breakdown?.clips.find((c) => c.index === clipIndex - 1)?.covers
       }
     }
 
@@ -2199,7 +2226,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // itself. `draftRewriter` (preset D) is handed the raw asks above via
     // the same generic `current`/`previous` override every writer stage
     // already threads through `run()` — no new plumbing there.
-    await run(preset.writerStage, undefined, {
+    const version = await run(preset.writerStage, undefined, {
       studioMode: studioModeOverride,
       auto: opts?.auto,
       direction: directionBlock,
@@ -2208,6 +2235,41 @@ export function AppProvider({ children }: { children: ReactNode }) {
       previous: previousRawAsk,
       pipelinePreset: preset.id,
     })
+
+    // Citation/format audit (dhee-runner-h3-chapter-plan#2/#3's own lesson,
+    // ported): an uncited on-screen plate or a hallucinated <Picture N>
+    // must fail LOUDLY, not silently render a submission H3 was never bound
+    // to. Only meaningful when this clip actually has ref slots to audit
+    // against — a plan with no ledger, or a clip with no on-screen entity
+    // that has a plate, has nothing to check. ONE retry, the audit's own
+    // issues handed back as the complaint (mirrors `runChapterBreakdown`'s
+    // own retry-on-miss contract); still failing after that BLOCKS render
+    // (`renderExtenderPlan`'s own citationAuditFailedClips check), never a
+    // silent submit.
+    if (preset.writerStage === 'draftRewriter' && referenceContext?.refSlots.length && thisClipIndex !== undefined && version) {
+      const auditOnce = () => auditClipPromptCitations(version.text, referenceContext!.refSlots, referenceContext!.registry, thisClipIndex!)
+      let issues = auditOnce()
+      if (issues.length) {
+        const complaint = `YOUR PREVIOUS REPLY FAILED THIS CHECK — CORRECT EXACTLY THIS AND NOTHING ELSE:\n${issues.join('\n')}`
+        const retried = await run(preset.writerStage, undefined, {
+          studioMode: studioModeOverride,
+          auto: opts?.auto,
+          direction: directionBlock,
+          acting: actingBlock,
+          current: `${currentRawAsk}\n\n${complaint}`,
+          previous: previousRawAsk,
+          pipelinePreset: preset.id,
+        })
+        issues = retried ? auditClipPromptCitations(retried.text, referenceContext.refSlots, referenceContext.registry, thisClipIndex) : issues
+      }
+      const failedNow = sessionRef.current.citationAuditFailedClips ?? []
+      const nextFailed = issues.length ? [...new Set([...failedNow, thisClipIndex])] : failedNow.filter((i) => i !== thisClipIndex)
+      if (nextFailed !== failedNow) {
+        const next = { ...sessionRef.current, citationAuditFailedClips: nextFailed }
+        sessionRef.current = next
+        setSession(next)
+      }
+    }
   }, [run, breakIntoScenes, settings.pipelinePreset, runDirection, runActing])
 
   const reset = useCallback(async () => {
@@ -3390,9 +3452,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // clip's plain `covers` — still a raw ask, just without that exact
       // formatting.
       const rewriterAuthored = settings.authoringMode === 'rewriter'
+      // The REFERENCES block reaches the ComfyUI-rewriter path the same way
+      // it reaches preset D (`rebuild()`'s own module comment) — computed
+      // once here (batch-aware, `referenceContextForClip`) rather than
+      // per-clip inside the map below, since every clip's context needs the
+      // SAME resolved-plates snapshot.
+      const chapterBreakdown = sessionRef.current.chapterBreakdown
+      const resolvedPlatesForRender = chapterBreakdown?.ledger.entities.length
+        ? resolveEntityPlates(chapterBreakdown.ledger.entities, platesRef.current, sessionRef.current.entityPlateAssignments ?? {})
+        : undefined
       const plan = b.clips.map((c) => {
         const v = [...vs].reverse().find((x) => x.clipIndex === c.index && PROMPT_STAGES.has(x.stage))
-        const prompt = rewriterAuthored ? rawAskForClipIndex(sessionRef.current.chapterBreakdown, c.index) ?? c.covers : v?.text ?? ''
+        let prompt = v?.text ?? ''
+        if (rewriterAuthored) {
+          let rawAsk: string | undefined
+          if (resolvedPlatesForRender && chapterBreakdown) {
+            const ctx = referenceContextForClip(chapterBreakdown, c.index, resolvedPlatesForRender, platesRef.current)
+            rawAsk = rawAskForClipIndexWithReferences(chapterBreakdown, c.index, ctx.refSlots, ctx.registry)
+          } else {
+            rawAsk = rawAskForClipIndex(chapterBreakdown, c.index)
+          }
+          prompt = rawAsk ?? c.covers
+        }
         return { index: c.index, title: c.title || `clip ${c.index}`, seconds: c.seconds, prompt, loraStack: c.loraStack }
       })
 
@@ -3475,6 +3556,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const collisions = checkRawAsksDistinct(sessionRef.current.chapterBreakdown)
         if (collisions.length) {
           setError(`Refusing to render — ${collisions[0]}`)
+          return
+        }
+      }
+      // The other half of the citation-audit gate `rebuild()` runs (its own
+      // module comment): a Studio-authored (preset D) clip that STILL fails
+      // `auditClipPromptCitations` after its one retry is recorded in
+      // `citationAuditFailedClips` and blocks THIS submit outright — never a
+      // silent render of a prompt that cites no plate, or a hallucinated
+      // one, that was uploaded for nothing.
+      if (!rewriterAuthored && sessionRef.current.citationAuditFailedClips?.length) {
+        const submittingIndices = new Set(b.clips.map((c) => c.index))
+        const blocked = sessionRef.current.citationAuditFailedClips.filter((i) => submittingIndices.has(i))
+        if (blocked.length) {
+          setError(`Refusing to render — clip(s) ${blocked.join(', ')} still fail the reference-citation audit after a retry. Reopen and rewrite them, or switch to the ComfyUI-rewriter path.`)
           return
         }
       }
@@ -4470,6 +4565,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     entityPlateAssignments: session.entityPlateAssignments ?? {},
     setEntityPlateAssignment,
     qwenTtiReady: !!qwenTtiGraph,
+    citationAuditFailedClips: session.citationAuditFailedClips ?? [],
     generateMissingPlates,
     setEndpoints,
     refreshComfyProbe,

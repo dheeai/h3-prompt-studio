@@ -8,6 +8,7 @@ import {
   fillPlateBrief,
   fillPropPlateBrief,
   parsePlatePromptRewrite,
+  platePromptKindForLedgerKind,
 } from './platePrompting'
 
 const INPUT = { name: 'Nusrat', description: 'A woman in a blue cardigan, dark hair.', chapter: 'The switched cloth chapter text.' }
@@ -69,4 +70,17 @@ test('parsePlatePromptRewrite: garbage returns null, never throws', () => {
   assert.equal(parsePlatePromptRewrite('not json at all'), null)
   assert.equal(parsePlatePromptRewrite('{"wh_ratio": "1:1"}'), null)
   assert.equal(parsePlatePromptRewrite('{"rewritten_prompt": ""}'), null)
+})
+
+test('platePromptKindForLedgerKind: character and prop map to themselves', () => {
+  assert.equal(platePromptKindForLedgerKind('character'), 'character')
+  assert.equal(platePromptKindForLedgerKind('prop'), 'prop')
+})
+
+test('platePromptKindForLedgerKind: a creature gets the identity-sheet (character) treatment', () => {
+  assert.equal(platePromptKindForLedgerKind('creature'), 'character')
+})
+
+test('platePromptKindForLedgerKind: an environment entity is the location it belongs to', () => {
+  assert.equal(platePromptKindForLedgerKind('environment'), 'location')
 })

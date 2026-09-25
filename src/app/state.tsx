@@ -63,6 +63,11 @@ import {
 import type { ChapterBreakdown } from '../lib/chapterBreakdown'
 import { breakdownPlanner } from '../lib/breakdownPlanner'
 import { rewriteSystemPromptFor } from '../lib/rewriteSystemPrompt'
+import { QWEN_REWRITE_SYSTEM_PROMPT_T2I } from '../lib/qwenRewriteSystemPromptT2i'
+import { describeEntityForPlate, entitiesNeedingGeneratedPlates, resolveEntityPlates } from '../lib/plateMatching'
+import { PLATE_SIZES, fillPlateBrief, parsePlatePromptRewrite, platePromptKindForLedgerKind } from '../lib/platePrompting'
+import { buildQwenPlateGraph } from '../lib/qwenPlateGraph'
+import { analyzeSubjectImage, composeSubjectJob } from '../lib/subject'
 import {
   addShotToGroup, clipsDiscardedByShotRevision, discardBreakdownFromIndex, dropShot, planForTickedSubmission,
   pullShotFromNext, pushShotToNext, retimeShot, rewordShot, takeShotGroups,
@@ -245,6 +250,16 @@ interface Session {
    * incumbent beats/subdivide planner produced, or a hand-edited one.
    */
   chapterBreakdown?: ChapterBreakdown
+  /**
+   * Manual entity -> plate assignments — `lib/plateMatching.ts`'s
+   * `resolveEntityPlates` overrides its own name-based auto-match with
+   * these first. Set by the operator when a plate's own name doesn't line
+   * up with the ledger's proposed entity name; an entityId mapped to `''`
+   * means "explicitly no plate — do not auto-match this one either" (e.g.
+   * the operator wants it generated even though a same-named plate exists
+   * for an unrelated reason).
+   */
+  entityPlateAssignments?: Record<string, string>
   /**
    * Full Story mode's film-wide style-LoRA default — the same kind of
    * decision as `FilmLook` (chosen once, applies to the whole film), but
@@ -731,6 +746,16 @@ export interface Api {
   updatePlate: (id: string, patch: Partial<Plate>) => Promise<void>
   deletePlate: (id: string) => Promise<void>
   reorderPlate: (id: string, delta: number) => Promise<void>
+  /** Manual entity -> plate overrides — see `Session.entityPlateAssignments`'s
+   * own module comment. */
+  entityPlateAssignments: Record<string, string>
+  setEntityPlateAssignment: (entityId: string, plateId: string) => void
+  /** Whether `generateMissingPlates`' own graph (qwen21_tti.json) has
+   * loaded — same "fixed shipped asset" contract as `extenderReady`. */
+  qwenTtiReady: boolean
+  /** "Use supplied, generate missing" — see the function's own module
+   * comment in this file. */
+  generateMissingPlates: () => Promise<void>
   setEndpoints: (e: ComfyEndpoint[]) => Promise<void>
   refreshComfyProbe: (id: string) => Promise<void>
   clipUrl: (c: Clip) => string | null
@@ -956,6 +981,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // — there is no operator-drop-your-own-workflow UI for this path — so it is
   // fetched once at boot (below) as a plain asset, never through an idb store.
   const [extenderGraph, setExtenderGraph] = useState<Record<string, ComfyNode> | null>(null)
+  // Same "fixed shipped asset, fetched once" contract as extenderGraph above
+  // — `generateMissingPlates`' own graph, ported from
+  // `~/.kshana/bundles/h3_chapter/workflows/qwen21_tti.json`.
+  const [qwenTtiGraph, setQwenTtiGraph] = useState<Record<string, ComfyNode> | null>(null)
   const [extenderProgress, setExtenderProgress] = useState<ExtenderPreviewInfo | null>(null)
   // Live per-clip progress — see `Api.extenderLiveProgress`'s module comment.
   const [extenderLiveProgress, setExtenderLiveProgress] = useState<ExtenderLiveProgress | null>(null)
@@ -1243,6 +1272,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
       })
       .catch(() => {
         /* stays null — extenderReady:false says so in the UI */
+      })
+    return () => {
+      live = false
+    }
+  }, [])
+
+  // Same fetch-once-fixed-asset contract, for `generateMissingPlates`' own
+  // graph.
+  useEffect(() => {
+    let live = true
+    void fetch(new URL('workflows/qwen21_tti.json', document.baseURI).toString(), { cache: 'no-cache' })
+      .then((r) => (r.ok ? r.text() : Promise.reject(new Error(`${r.status}`))))
+      .then((text) => {
+        if (live) setQwenTtiGraph(parseWorkflow(text))
+      })
+      .catch(() => {
+        /* stays null — generateMissingPlates reports it plainly */
       })
     return () => {
       live = false
@@ -3086,6 +3132,158 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setPlates(stamped)
   }, [])
 
+  /** The operator's own override, when a ledger entity's name doesn't line
+   * up with an existing plate's — always wins over
+   * `plateMatching.ts`'s name-based auto-match. `plateId: ''` records
+   * "explicitly no plate", never simply deleting the key (see
+   * `Session.entityPlateAssignments`'s own module comment). */
+  const setEntityPlateAssignment = useCallback((entityId: string, plateId: string) => {
+    const next = { ...sessionRef.current, entityPlateAssignments: { ...(sessionRef.current.entityPlateAssignments ?? {}), [entityId]: plateId } }
+    sessionRef.current = next
+    setSession(next)
+  }, [])
+
+  /** A tiny `fetch` + `FileReader` round trip — the same shape
+   * `PlatesPanel.tsx`'s own private `urlToDataUrl` already uses for reading
+   * a plate's analysis source, duplicated here rather than exported from a
+   * component file for one orchestration call site. */
+  const fetchAsDataUrl = (url: string): Promise<string> =>
+    fetch(url)
+      .then((res) => res.blob())
+      .then(
+        (blob) =>
+          new Promise<string>((resolve, reject) => {
+            const fr = new FileReader()
+            fr.onerror = () => reject(new Error('Could not read the generated plate image.'))
+            fr.onload = () => resolve(String(fr.result))
+            fr.readAsDataURL(blob)
+          }),
+      )
+
+  /**
+   * "Use supplied, generate missing" — for every ledger entity that
+   * `resolveEntityPlates` cannot match to an existing plate, author a Qwen
+   * Image 2.1 prompt (one model call: SYSTEM = Qwen's own official rewrite
+   * instructions, USER = our plate brief — `platePrompting.ts`'s module
+   * comment), render it on the box, analyse the result exactly like an
+   * operator-uploaded plate (`analyzeSubjectImage`/`composeSubjectJob`, the
+   * SAME calls `PlatesPanel.tsx`'s own "Analyze" button makes — a generated
+   * plate's `job` is never invented separately), and add it to PlatesPanel
+   * marked `mode: 'carried'` with an `entityPlateAssignments` entry so the
+   * next resolve pass finds it directly rather than re-guessing by name.
+   *
+   * Sequential, one entity at a time — never parallel — through the SAME
+   * one-model-call-at-a-time GPU lock (`beginGpuUse`/`endGpuUse`) every
+   * other authoring/render call in this file already uses, alternating
+   * 'llm' (author the prompt, then analyse the result) and 'render'
+   * (generate the image) exactly as those calls are actually sequenced.
+   * One entity's failure (a bad rewrite, a failed render) is reported and
+   * SKIPPED — it does not abort the rest of the run.
+   */
+  const generateMissingPlates = useCallback(async () => {
+    const b = sessionRef.current.chapterBreakdown
+    if (!b || !b.ledger.entities.length) { setError('No state ledger to match plates against — run the structured breakdown planner first.'); return }
+    const provider = providers.find((p) => p.id === settings.providerId)
+    if (!provider) { setError('Pick a provider first.'); return }
+    if (!settings.model) { setError('Pick a model first.'); return }
+    if (!endpoint) { setError('Pick a ComfyUI endpoint first.'); return }
+    if (!qwenTtiGraph) { setError('The Qwen Image 2.1 workflow has not loaded — check public/workflows/qwen21_tti.json.'); return }
+
+    const resolved = resolveEntityPlates(b.ledger.entities, platesRef.current, sessionRef.current.entityPlateAssignments ?? {})
+    const missing = entitiesNeedingGeneratedPlates(b.ledger.entities, resolved)
+    if (!missing.length) { setError('Nothing to generate — every ledger entity already has a matched plate.'); return }
+
+    for (const entity of missing) {
+      const kind = platePromptKindForLedgerKind(entity.kind)
+      const brief = fillPlateBrief(kind, { name: entity.name, description: describeEntityForPlate(entity), chapter: sessionRef.current.plot ?? '' })
+
+      // 1. Author the Qwen Image 2.1 prompt.
+      let rewritten: string | null = null
+      if (!beginGpuUse('llm')) return
+      try {
+        const result = await streamChatComplete({
+          provider,
+          model: settings.model,
+          temperature: 0.35,
+          maxTokens: settings.maxTokens,
+          thinkingBudget: resolveThinkingBudget(provider.id, settings.model, settings.thinkingBudgets),
+          messages: [
+            { role: 'system', content: QWEN_REWRITE_SYSTEM_PROMPT_T2I },
+            { role: 'user', content: brief },
+          ],
+          onDelta: () => {},
+        })
+        rewritten = parsePlatePromptRewrite(result.text)
+      } catch (e) {
+        setError(`Plate prompt failed for '${entity.name}': ${String((e as Error).message || e)}`)
+        endGpuUse()
+        continue
+      }
+      endGpuUse()
+      if (!rewritten) { setError(`Could not parse a plate prompt for '${entity.name}' — try again.`); continue }
+
+      // 2. Render it on the box.
+      const size = PLATE_SIZES[kind]
+      let output: NonNullable<Clip['output']> | undefined
+      if (!beginGpuUse('render')) return
+      try {
+        const built = buildQwenPlateGraph({
+          graph: qwenTtiGraph,
+          prompt: rewritten,
+          width: size.width,
+          height: size.height,
+          seed: Math.floor(Math.random() * 2 ** 31),
+          filenamePrefix: `plates/${entity.id}`,
+        })
+        const promptId = await submit(endpoint, built)
+        for (;;) {
+          await new Promise((r) => setTimeout(r, 2500))
+          const res = await poll(endpoint, promptId)
+          if (!res.done) continue
+          if (res.failed) throw new Error(res.failed)
+          output = res.output
+          break
+        }
+      } catch (e) {
+        setError(`Plate render failed for '${entity.name}': ${String((e as Error).message || e)}`)
+        endGpuUse()
+        continue
+      }
+      endGpuUse()
+      if (!output) continue
+
+      // 3. Analyse it exactly like an operator-uploaded plate.
+      const dataUrl = await fetchAsDataUrl(viewUrl(endpoint, output))
+      let job = ''
+      let subjectDef: Awaited<ReturnType<typeof analyzeSubjectImage>>['def'] | undefined
+      if (!beginGpuUse('llm')) return
+      try {
+        const analysis = await analyzeSubjectImage({ provider, model: settings.model, imageDataUrl: dataUrl, maxTokens: settings.maxTokens })
+        subjectDef = analysis.def
+        job = composeSubjectJob({ subjectKind: 'other', def: analysis.def })
+      } catch (e) {
+        setError(`Plate analysis failed for '${entity.name}': ${String((e as Error).message || e)} — the plate was still generated and added, unanalysed.`)
+      } finally {
+        endGpuUse()
+      }
+
+      const plateId = `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`
+      await savePlate({
+        id: plateId,
+        name: entity.name,
+        job,
+        jobAuto: job,
+        kind: 'image',
+        mode: 'carried',
+        dataUrl,
+        subjectKind: 'other',
+        subjectDef,
+        addedAt: Date.now(),
+      })
+      setEntityPlateAssignment(entity.id, plateId)
+    }
+  }, [providers, settings, endpoint, qwenTtiGraph, beginGpuUse, endGpuUse, savePlate, setEntityPlateAssignment])
+
   const setEndpoints = useCallback(async (next: ComfyEndpoint[]) => {
     setEndpointsState(next)
     await idb.set('settings', 'comfyEndpoints', next)
@@ -4269,6 +4467,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     updatePlate,
     deletePlate,
     reorderPlate,
+    entityPlateAssignments: session.entityPlateAssignments ?? {},
+    setEntityPlateAssignment,
+    qwenTtiReady: !!qwenTtiGraph,
+    generateMissingPlates,
     setEndpoints,
     refreshComfyProbe,
     clipUrl,

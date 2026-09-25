@@ -40,6 +40,21 @@
 
 export type PlateEntityKind = 'character' | 'location' | 'prop'
 
+/** `LedgerEntity.kind` has FOUR values (`character`/`prop`/`creature`/
+ * `environment`, per `chapterBreakdown.ts`'s state-ledger design) but the
+ * plate briefs below only have THREE shapes (an identity sheet, a product
+ * plate, a location contact sheet) — there is no separate "creature" or
+ * "environment" template. A creature gets the identity-sheet treatment
+ * (the ledger's own module comment: "a creature gets the same axes as a
+ * person"); an environment IS the location it belongs to (the ledger
+ * tracks environment STATE, e.g. a lamp lit or not, as its own entity, but
+ * the PLATE is the room itself). */
+export function platePromptKindForLedgerKind(kind: 'character' | 'prop' | 'creature' | 'environment'): PlateEntityKind {
+  if (kind === 'prop') return 'prop'
+  if (kind === 'environment') return 'location'
+  return 'character'
+}
+
 export interface PlateSize {
   width: number
   height: number

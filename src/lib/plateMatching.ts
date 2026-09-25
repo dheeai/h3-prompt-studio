@@ -69,11 +69,28 @@ export function resolveEntityPlates(
 }
 
 /** Every ledger entity with no resolved plate at all — exactly the set
- * `platesOrchestration.ts`'s "generate missing plates" action must author
- * and render a plate for. */
+ * `state.tsx`'s `generateMissingPlates` action must author and render a
+ * plate for. */
 export function entitiesNeedingGeneratedPlates(
   entities: readonly LedgerEntity[],
   resolved: Readonly<Record<string, string | null>>,
 ): LedgerEntity[] {
   return entities.filter((e) => !resolved[e.id])
+}
+
+/**
+ * A short, deterministic grounding description for a plate-generation
+ * brief, built from the ledger entity's OWN declared axes/initial values —
+ * the only structured description this planner's schema carries for an
+ * entity (there is no free-text `description` field on `LedgerEntity` by
+ * design; see `chapterBreakdown.ts`'s module comment on the ledger). The
+ * full chapter text (passed separately as `PlateBriefInput.chapter`) is
+ * where most of a generated plate's visual grounding actually comes from —
+ * this is a small, honest supplement, never a substitute for it.
+ */
+export function describeEntityForPlate(entity: LedgerEntity): string {
+  const openingValues = entity.axes
+    .map((a) => `${a.axis}=${entity.initial.find((i) => i.axis === a.axis)?.value ?? '?'}`)
+    .join(', ')
+  return openingValues ? `${entity.name} (${entity.kind}). Opens the chapter at: ${openingValues}.` : `${entity.name} (${entity.kind}).`
 }

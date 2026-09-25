@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { autoMatchPlateForEntity, entitiesNeedingGeneratedPlates, normalizePlateName, resolveEntityPlates } from './plateMatching'
+import { autoMatchPlateForEntity, describeEntityForPlate, entitiesNeedingGeneratedPlates, normalizePlateName, resolveEntityPlates } from './plateMatching'
 import type { LedgerEntity } from './chapterBreakdown'
 import type { Plate } from './types'
 
@@ -80,4 +80,19 @@ test('entitiesNeedingGeneratedPlates: exactly the entities resolved to null', ()
 test('entitiesNeedingGeneratedPlates: every entity resolved is an empty list', () => {
   const entities = [entity({ id: 'nusrat', name: 'Nusrat' })]
   assert.deepEqual(entitiesNeedingGeneratedPlates(entities, { nusrat: 'p1' }), [])
+})
+
+test('describeEntityForPlate: names the entity, its kind, and its opening axis values', () => {
+  const e = entity({
+    name: 'Nusrat',
+    kind: 'character',
+    axes: [{ axis: 'composure', options: ['composed', 'shaken'], progressive: false, plateVisible: false }],
+    initial: [{ axis: 'composure', value: 'composed' }],
+  })
+  assert.equal(describeEntityForPlate(e), 'Nusrat (character). Opens the chapter at: composure=composed.')
+})
+
+test('describeEntityForPlate: an entity with no axes at all still names itself and its kind', () => {
+  const e = entity({ name: 'The tailoring shop', kind: 'environment', axes: [], initial: [] })
+  assert.equal(describeEntityForPlate(e), 'The tailoring shop (environment).')
 })

@@ -11,8 +11,9 @@ import { PIPELINE_PRESETS, pipelinePreset } from '../lib/pipeline'
 import type { PipelinePresetId } from '../lib/pipeline'
 import { BREAKDOWN_PLANNERS, breakdownPlanner } from '../lib/breakdownPlanner'
 import type { BreakdownPlannerId } from '../lib/breakdownPlanner'
-import type { ChapterBreakdownRuntimeMode } from '../lib/chapterBreakdown'
-import type { FilmContext, FilmLook, LoraStackEntry, Settings } from '../lib/types'
+import type { ChapterBreakdown, ChapterBreakdownRuntimeMode } from '../lib/chapterBreakdown'
+import { entitiesNeedingGeneratedPlates, resolveEntityPlates } from '../lib/plateMatching'
+import type { FilmContext, FilmLook, LoraStackEntry, Plate, Settings } from '../lib/types'
 
 /**
  * The preset switch (2026-09-18 brief: "Create a new preset with direction +
@@ -122,6 +123,94 @@ function ChapterRuntimeModeRow({
       <button className={`chip${active === 'target' ? ' on' : ''}`} onClick={() => patchSettings({ chapterBreakdownRuntimeMode: 'target' })}>
         Target — exactly N, below
       </button>
+    </div>
+  )
+}
+
+/**
+ * "Use supplied, generate missing" — the state ledger's own
+ * characters/locations/props, matched against PlatesPanel's existing plates
+ * by name (`lib/plateMatching.ts`), with a manual per-entity override for
+ * when the names don't line up. Shown only once a ledger actually exists
+ * (`chapterBreakdown.ledger.entities.length` — a plan from the incumbent
+ * planner, or a chapter the model decided needs no tracked state, shows
+ * nothing here). "Generate missing plates" authors + renders + analyses a
+ * plate for every unmatched entity in one press — see `generateMissingPlates`'s
+ * own module comment in state.tsx for the full three-step pipeline.
+ */
+function LedgerPlatesCard({
+  chapterBreakdown,
+  plates,
+  entityPlateAssignments,
+  setEntityPlateAssignment,
+  qwenTtiReady,
+  generateMissingPlates,
+}: {
+  chapterBreakdown: ChapterBreakdown | undefined
+  plates: Plate[]
+  entityPlateAssignments: Record<string, string>
+  setEntityPlateAssignment: (entityId: string, plateId: string) => void
+  qwenTtiReady: boolean
+  generateMissingPlates: () => Promise<void>
+}) {
+  const [busy, setBusy] = useState(false)
+  if (!chapterBreakdown?.ledger.entities.length) return null
+
+  const resolved = resolveEntityPlates(chapterBreakdown.ledger.entities, plates, entityPlateAssignments)
+  const missing = entitiesNeedingGeneratedPlates(chapterBreakdown.ledger.entities, resolved)
+
+  const run = async () => {
+    setBusy(true)
+    try {
+      await generateMissingPlates()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="card" style={{ marginTop: 9 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 9 }}>
+        <div className="lbl">Ledger plates — {chapterBreakdown.ledger.entities.length} entit{chapterBreakdown.ledger.entities.length === 1 ? 'y' : 'ies'}</div>
+        <div style={{ flexGrow: 1 }} />
+        {missing.length > 0 && (
+          <button className="btn sm pri" disabled={busy || !qwenTtiReady} onClick={() => void run()}>
+            {busy ? 'Generating…' : `Generate ${missing.length} missing plate${missing.length === 1 ? '' : 's'}`}
+          </button>
+        )}
+      </div>
+      {!qwenTtiReady && missing.length > 0 && (
+        <div className="tok" style={{ color: 'var(--ox)', marginTop: 4 }}>
+          The Qwen Image 2.1 workflow has not loaded — check public/workflows/qwen21_tti.json.
+        </div>
+      )}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginTop: 9 }}>
+        {chapterBreakdown.ledger.entities.map((e) => {
+          const plateId = resolved[e.id]
+          const plate = plateId ? plates.find((p) => p.id === plateId) : undefined
+          return (
+            <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+              <span style={{ minWidth: 140, fontSize: 12 }}>{e.name}</span>
+              <span className="tok" style={{ minWidth: 80 }}>{e.kind}</span>
+              <select
+                value={plateId ?? ''}
+                onChange={(ev) => setEntityPlateAssignment(e.id, ev.target.value)}
+                style={{ fontSize: 11.5 }}
+              >
+                <option value="">— generate a plate —</option>
+                {plates.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+              {plate ? (
+                <span className="tok" style={{ color: 'var(--grn)' }}>matched</span>
+              ) : (
+                <span className="tok" style={{ color: 'var(--amb)' }}>needs a plate</span>
+              )}
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -346,6 +435,7 @@ export function StoryAndShots({ onOpenPlates }: { onOpenPlates: () => void }) {
     filmLoraStack, setFilmLoraStack, extenderDefaultLoraStack, endpoint, loraNames, loraNamesState, refreshLoraNames,
     filmName, filmNameEffective, setFilmName, settings, patchSettings,
     exportDirName, exportDirStatus, chooseExportDirectory, reconnectExportDirectory, saveFilmNow,
+    chapterBreakdown, entityPlateAssignments, setEntityPlateAssignment, qwenTtiReady, generateMissingPlates,
   } = app
 
   // Pass 1 landed but pass 2 hasn't run yet — either it's paused on
@@ -512,6 +602,15 @@ export function StoryAndShots({ onOpenPlates }: { onOpenPlates: () => void }) {
         )}
         {platesFrozenReason && <div className="alert warn" style={{ marginTop: 9 }}>{platesFrozenReason}</div>}
       </div>
+
+      <LedgerPlatesCard
+        chapterBreakdown={chapterBreakdown}
+        plates={plates}
+        entityPlateAssignments={entityPlateAssignments}
+        setEntityPlateAssignment={setEntityPlateAssignment}
+        qwenTtiReady={qwenTtiReady}
+        generateMissingPlates={generateMissingPlates}
+      />
 
       {shotList?.beats && shotList.beats.length > 0 && (
         <div className="card" style={{ marginTop: 9 }}>

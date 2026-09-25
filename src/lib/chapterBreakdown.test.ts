@@ -6,9 +6,11 @@ import {
   CHAPTER_BREAKDOWN_SHOT_MIN,
   CHAPTER_BREAKDOWN_TEMPLATE,
   chapterBreakdownResponseFormat,
+  chapterBreakdownRuntimeInstruction,
   chapterBreakdownToBreakdown,
   chapterBreakdownToShotList,
   checkChapterBreakdown,
+  checkClipCount,
   checkRawAsksDistinct,
   fillChapterBreakdownTemplate,
   foldLedger,
@@ -74,6 +76,65 @@ test('fillChapterBreakdownTemplate: fills the one placeholder, trims the chapter
 
 test('CHAPTER_BREAKDOWN_TEMPLATE: names every camera term verbatim', () => {
   for (const c of CAMERA_SHOTS) assert.ok(CHAPTER_BREAKDOWN_TEMPLATE.includes(c), `missing ${c}`)
+})
+
+// ── runtime modes: Auto vs Target ─────────────────────────────────────────
+
+test('chapterBreakdownRuntimeInstruction: auto mode leaves clip count to the model, one clip per beat', () => {
+  const text = chapterBreakdownRuntimeInstruction('auto')
+  assert.match(text, /AUTO/)
+  assert.match(text, /one clip per distinct dramatic beat/)
+  assert.match(text, /Do not compress/)
+  assert.match(text, /do not pad/)
+})
+
+test('chapterBreakdownRuntimeInstruction: target mode demands EXACTLY N, reached by finer/coarser grain — never invented events', () => {
+  const text = chapterBreakdownRuntimeInstruction('target', 4)
+  assert.match(text, /EXACTLY 4 clips/)
+  assert.match(text, /60s total/)
+  assert.match(text, /finer or coarser grain/)
+  assert.match(text, /never by inventing events/)
+})
+
+test('chapterBreakdownRuntimeInstruction: target mode with exactly 1 clip uses singular phrasing', () => {
+  assert.match(chapterBreakdownRuntimeInstruction('target', 1), /EXACTLY 1 clip /)
+})
+
+test('chapterBreakdownRuntimeInstruction: target mode with no/zero targetClips falls back to auto wording', () => {
+  assert.match(chapterBreakdownRuntimeInstruction('target', undefined), /AUTO/)
+  assert.match(chapterBreakdownRuntimeInstruction('target', 0), /AUTO/)
+})
+
+test('fillChapterBreakdownTemplate: fills BOTH placeholders — chapter and the mode-specific runtime instruction', () => {
+  const filled = fillChapterBreakdownTemplate(CHAPTER_BREAKDOWN_TEMPLATE, 'a story', 'target', 4)
+  assert.match(filled, /EXACTLY 4 clips/)
+  assert.match(filled, /a story/)
+  assert.ok(!filled.includes('{{runtimeInstruction}}'))
+  assert.ok(!filled.includes('{{chapter}}'))
+})
+
+test('fillChapterBreakdownTemplate: defaults to auto mode when no mode is given, unchanged from before runtime modes existed', () => {
+  const filled = fillChapterBreakdownTemplate(CHAPTER_BREAKDOWN_TEMPLATE, 'a story')
+  assert.match(filled, /RUNTIME — AUTO/)
+})
+
+test('checkClipCount: auto mode never complains, regardless of clip count', () => {
+  assert.deepEqual(checkClipCount(breakdown([clip({ clip: 1 })]), 'auto', 4), [])
+})
+
+test('checkClipCount: target mode with a matching clip count has no complaint', () => {
+  assert.deepEqual(checkClipCount(breakdown([clip({ clip: 1 }), clip({ clip: 2 })]), 'target', 2), [])
+})
+
+test('checkClipCount: target mode with a mismatched clip count complains with the actual and target counts', () => {
+  const issues = checkClipCount(breakdown([clip({ clip: 1 })]), 'target', 3)
+  assert.equal(issues.length, 1)
+  assert.match(issues[0], /came back as 1 clip/)
+  assert.match(issues[0], /target is EXACTLY 3/)
+})
+
+test('checkClipCount: target mode with no targetClips given never complains (nothing to check against)', () => {
+  assert.deepEqual(checkClipCount(breakdown([clip({ clip: 1 })]), 'target', undefined), [])
 })
 
 // ── schema ─────────────────────────────────────────────────────────────────
@@ -190,6 +251,33 @@ test('checkChapterBreakdown: flags a dialogue line over the words/second ceiling
 test('formatShotLine: camera, subject, action and duration in the skill\'s own form', () => {
   const line = formatShotLine(shot({ shot: 2, seconds: 4, camera: 'close_up', subject: "Nusrat's thumb", action: 'presses against the weave' }))
   assert.equal(line, "Shot 2 – Close Up as Nusrat's thumb presses against the weave. (4s)")
+})
+
+test('formatShotLine: a subject that is a SCENE (not a grammatical subject of action) and an action that is its OWN sentence get a period between them, not a run-on', () => {
+  // Bug seen live: "Nusrat's tailoring shop in the Surat cloth market The
+  // shop is visible: …" — no seam at all between the two. `action` here
+  // opens capitalised ("The shop..."), which is the signal this is a
+  // separate sentence, not a continuing predicate.
+  const line = formatShotLine(shot({
+    shot: 1, seconds: 4, camera: 'wide_establishing',
+    subject: "Nusrat's tailoring shop in the Surat cloth market",
+    action: 'The shop is visible: bolts of cloth on every shelf',
+  }))
+  assert.equal(line, "Shot 1 – Wide as Nusrat's tailoring shop in the Surat cloth market. The shop is visible: bolts of cloth on every shelf. (4s)")
+})
+
+test('formatShotLine: a subject already ending in punctuation never gets a doubled period before a new-sentence action', () => {
+  const line = formatShotLine(shot({
+    shot: 1, seconds: 4, camera: 'wide_establishing',
+    subject: 'The tailoring shop.',
+    action: 'Farid stands in the doorway.',
+  }))
+  assert.equal(line, 'Shot 1 – Wide as The tailoring shop. Farid stands in the doorway. (4s)')
+})
+
+test('formatShotLine: only a subject, or only an action, is used bare — no stray punctuation invented', () => {
+  assert.equal(formatShotLine(shot({ shot: 1, seconds: 4, camera: 'medium', subject: '', action: 'the door creaks open' })), 'Shot 1 – Medium as the door creaks open. (4s)')
+  assert.equal(formatShotLine(shot({ shot: 1, seconds: 4, camera: 'medium', subject: 'A locked door', action: '' })), 'Shot 1 – Medium as A locked door. (4s)')
 })
 
 test('formatShotLine: quotes dialogue verbatim, attributed to the speaker', () => {
@@ -412,11 +500,19 @@ test('foldLedger: clips out of array order are folded in CLIP-NUMBER order, not 
   assert.equal(byClip.get(2)!.get('nusrat')!.get('composure'), 'composed') // clip 1 (folded first) made no change
 })
 
-test('formatStateBlocks: only entities on screen THIS clip, only axes that differ from initial or change this clip', () => {
+test('formatStateBlocks: an on-screen entity shows ALL its axes unconditionally, even at the untouched initial value (2026-09-25 supersession)', () => {
   const ledger: Ledger = { entities: [entity({ clipIds: [1, 2] })] }
   const startState = new Map([['nusrat', new Map([['composure', 'composed']])]])
   const text = formatStateBlocks(ledger, startState, [], 1)
-  // Nothing worth mentioning: at initial value, nothing changing this clip.
+  // At initial value, nothing changing this clip — STILL shown, because the
+  // writer cannot see the ledger and a permanent non-default state (e.g. a
+  // soaked garment never marked "changed") must not be silently dropped.
+  assert.equal(text, 'STATE AT THE START OF THIS CLIP:\nNusrat (character): composure=composed')
+})
+
+test('formatStateBlocks: an on-screen entity with NO declared axes contributes no start-state line', () => {
+  const ledger: Ledger = { entities: [entity({ clipIds: [1], axes: [], initial: [] })] }
+  const text = formatStateBlocks(ledger, new Map(), [], 1)
   assert.equal(text, '')
 })
 

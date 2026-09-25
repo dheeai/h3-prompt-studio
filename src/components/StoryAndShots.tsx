@@ -11,6 +11,7 @@ import { PIPELINE_PRESETS, pipelinePreset } from '../lib/pipeline'
 import type { PipelinePresetId } from '../lib/pipeline'
 import { BREAKDOWN_PLANNERS, breakdownPlanner } from '../lib/breakdownPlanner'
 import type { BreakdownPlannerId } from '../lib/breakdownPlanner'
+import type { ChapterBreakdownRuntimeMode } from '../lib/chapterBreakdown'
 import type { FilmContext, FilmLook, LoraStackEntry, Settings } from '../lib/types'
 
 /**
@@ -92,6 +93,35 @@ function BreakdownPlannerRow({
           </button>
         ))}
       </div>
+    </div>
+  )
+}
+
+/**
+ * Auto (the model decides how many clips the chapter needs, one per
+ * dramatic beat) vs Target runtime (exactly N = the runtime slider's own
+ * seconds / 15, reached by finer/coarser coverage of the SAME events —
+ * `chapterBreakdown.ts`'s `chapterBreakdownRuntimeInstruction`). Only shown
+ * for the structured-json planner — the beats/subdivide planner already
+ * treats the SAME slider as its own ceiling unconditionally, no mode needed.
+ */
+function ChapterRuntimeModeRow({
+  mode,
+  patchSettings,
+}: {
+  mode: ChapterBreakdownRuntimeMode | undefined
+  patchSettings: (p: Partial<Settings>) => void
+}) {
+  const active = mode ?? 'auto'
+  return (
+    <div style={{ display: 'flex', gap: 7, marginBottom: 9, alignItems: 'center' }}>
+      <span className="tok" style={{ whiteSpace: 'nowrap' }}>Runtime</span>
+      <button className={`chip${active === 'auto' ? ' on' : ''}`} onClick={() => patchSettings({ chapterBreakdownRuntimeMode: 'auto' })}>
+        Auto — one clip per beat
+      </button>
+      <button className={`chip${active === 'target' ? ' on' : ''}`} onClick={() => patchSettings({ chapterBreakdownRuntimeMode: 'target' })}>
+        Target — exactly N, below
+      </button>
     </div>
   )
 }
@@ -343,6 +373,8 @@ export function StoryAndShots({ onOpenPlates }: { onOpenPlates: () => void }) {
   const [revOpen, setRevOpen] = useState(false)
 
   const busy = shotListBusy
+  const isStructuredJsonPlanner = breakdownPlanner(settings.breakdownPlanner).id === 'structured-json'
+  const chapterRuntimeMode = settings.chapterBreakdownRuntimeMode ?? 'auto'
 
   const ceiling = shotList ? checkRuntimeCeiling(shotList.shots, maxRuntimeSeconds) : null
   const alert = ceiling ? ceilingAlert(ceiling) : null
@@ -393,6 +425,7 @@ export function StoryAndShots({ onOpenPlates }: { onOpenPlates: () => void }) {
         </div>
         <PipelinePresetRow pipelinePreset={settings.pipelinePreset} patchSettings={patchSettings} />
         <BreakdownPlannerRow breakdownPlanner={settings.breakdownPlanner} patchSettings={patchSettings} />
+        {isStructuredJsonPlanner && <ChapterRuntimeModeRow mode={settings.chapterBreakdownRuntimeMode} patchSettings={patchSettings} />}
         <SaveFilmRow
           exportDirName={exportDirName}
           exportDirStatus={exportDirStatus}
@@ -409,8 +442,11 @@ export function StoryAndShots({ onOpenPlates }: { onOpenPlates: () => void }) {
           placeholder="What happens, start to finish…"
         />
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 9, flexWrap: 'wrap' }}>
-          <label className="tok" style={{ display: 'flex', alignItems: 'center', gap: 9, flexGrow: 1, minWidth: 260 }}>
-            maximum runtime
+          <label
+            className="tok"
+            style={{ display: 'flex', alignItems: 'center', gap: 9, flexGrow: 1, minWidth: 260, opacity: isStructuredJsonPlanner && chapterRuntimeMode === 'auto' ? 0.5 : 1 }}
+          >
+            {isStructuredJsonPlanner ? (chapterRuntimeMode === 'target' ? 'target runtime' : 'runtime (not used in Auto)') : 'maximum runtime'}
             <input
               type="range"
               min={RUNTIME_MIN_SECONDS}
@@ -418,13 +454,15 @@ export function StoryAndShots({ onOpenPlates }: { onOpenPlates: () => void }) {
               step={RUNTIME_STEP_SECONDS}
               value={clampRuntimeSeconds(maxRuntimeSeconds)}
               onChange={(e) => setMaxRuntimeSeconds(clampRuntimeSeconds(Number(e.target.value)))}
+              disabled={isStructuredJsonPlanner && chapterRuntimeMode === 'auto'}
               style={{ flexGrow: 1, maxWidth: 300 }}
             />
             <span className="tok" style={{ color: 'var(--ink)', minWidth: 52 }}>
               {formatRuntime(clampRuntimeSeconds(maxRuntimeSeconds))}
             </span>
             <span className="tok">
-              ≈ {Math.round(clampRuntimeSeconds(maxRuntimeSeconds) / RUNTIME_STEP_SECONDS)} clip
+              {isStructuredJsonPlanner && chapterRuntimeMode === 'target' ? 'exactly ' : '≈ '}
+              {Math.round(clampRuntimeSeconds(maxRuntimeSeconds) / RUNTIME_STEP_SECONDS)} clip
               {Math.round(clampRuntimeSeconds(maxRuntimeSeconds) / RUNTIME_STEP_SECONDS) === 1 ? '' : 's'}
             </span>
           </label>

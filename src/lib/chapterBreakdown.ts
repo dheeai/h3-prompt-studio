@@ -196,10 +196,11 @@ export const CHAPTER_BREAKDOWN_CLIP_SECONDS = 15
 export const CHAPTER_BREAKDOWN_SECONDS_TOLERANCE = 0.5
 
 /**
- * The skill, adapted to demand data rather than prose — `{{chapter}}` is the
- * one placeholder, filled by `fillChapterBreakdownTemplate`. No skills, no
- * system prompt: same discipline as `shotList.ts`'s `BEAT_LIST_TEMPLATE` —
- * "the template is the whole ask" — because the shape is already carried by
+ * The skill, adapted to demand data rather than prose — `{{chapter}}` and
+ * `{{runtimeInstruction}}` are the two placeholders, filled by
+ * `fillChapterBreakdownTemplate`. No skills, no system prompt: same
+ * discipline as `shotList.ts`'s `BEAT_LIST_TEMPLATE` — "the template is the
+ * whole ask" — because the shape is already carried by
  * `chapterBreakdownResponseFormat`, not by prose the model has to remember.
  */
 export const CHAPTER_BREAKDOWN_TEMPLATE = `Break the chapter below into fixed 15-second video clips, each built from 3-6 shots.
@@ -216,6 +217,8 @@ RULES — a clip is one continuous narrative beat; a shot is one discrete camera
 - No shot should require having seen a previous clip to make sense — each clip is visually self-contained.
 - Camera per shot must be exactly one of these terms (spelled verbatim, snake_case): ${CAMERA_SHOTS.join(', ')}.
 
+{{runtimeInstruction}}
+
 STATE LEDGER — before writing the clips, propose a small ledger of what actually CHANGES visibly during this chapter:
 - One entry per character, prop, creature, or location-as-environment whose visible state changes (wardrobe, condition, possession, consciousness, restraint for people; configuration, integrity, fill, activation for objects/environments — a lamp lit or not, a door open or not). Do NOT track a permanent trait as an axis, and do NOT invent an entity with nothing that changes.
 - Each entity declares its own small set of axes, each axis a short ordered list of options (least to most, for anything that can only move one way — an injury does not heal mid-chapter) and whether it is progressive (can never move backwards) and whether it would show on that entity's own reference plate (wardrobe, a visible marking — never posture or mood).
@@ -227,8 +230,49 @@ CHAPTER:
 
 Return the breakdown as data: the state ledger first (entities, their axes, their opening values), then every clip in order with its beat, its shots (camera, subject, the physical action, and — only on the shot where someone actually speaks — the speaker and their exact line), its own state changes if any, and the forward pull that closes it.`
 
-export function fillChapterBreakdownTemplate(template: string, chapter: string): string {
-  return template.replace('{{chapter}}', chapter.trim())
+/**
+ * Auto lets the model decide how many clips the chapter needs; Target
+ * demands EXACTLY N, reached by re-grained coverage of the SAME events
+ * rather than compression/padding or invented events. See
+ * `chapterBreakdownRuntimeInstruction`.
+ */
+export type ChapterBreakdownRuntimeMode = 'auto' | 'target'
+
+/**
+ * The one clause that varies between the two runtime modes — everything
+ * else in `CHAPTER_BREAKDOWN_TEMPLATE` is shared. Target mode's wording is
+ * the SAME "reach it by finer/coarser grain, never invented events" contract
+ * `shotList.ts`'s `SHOT_SUBDIVIDE_TEMPLATE` already uses for beat->shot
+ * subdivision, applied one level up (chapter->clip): the two must not read
+ * as different rules for the same idea.
+ */
+export function chapterBreakdownRuntimeInstruction(mode: ChapterBreakdownRuntimeMode, targetClips?: number): string {
+  if (mode === 'target' && targetClips && targetClips > 0) {
+    return `RUNTIME — TARGET, NOT A CEILING OR A FLOOR: this chapter must become EXACTLY ${targetClips} clip${targetClips === 1 ? '' : 's'} of 15 seconds each (${targetClips * 15}s total) — not one more, not one fewer. Reach EXACTLY ${targetClips} by covering the SAME events at a finer or coarser grain — more or fewer clips, longer or shorter dwell on each beat — never by inventing events the chapter does not contain, and never by compressing two distinct dramatic beats into one clip or stretching one beat thin across several just to fill the count.`
+  }
+  return `RUNTIME — AUTO: decide how many 15-second clips this chapter genuinely needs, one clip per distinct dramatic beat. Do not compress two beats into one clip, and do not pad a single beat across several clips just to run longer. The clip count follows the STORY, not a target.`
+}
+
+export function fillChapterBreakdownTemplate(template: string, chapter: string, mode: ChapterBreakdownRuntimeMode = 'auto', targetClips?: number): string {
+  return template
+    .replace('{{runtimeInstruction}}', chapterBreakdownRuntimeInstruction(mode, targetClips))
+    .replace('{{chapter}}', chapter.trim())
+}
+
+/**
+ * Target mode's own deterministic check — outside `checkChapterBreakdown`
+ * (which knows nothing about runtime mode) because it is the ONE check this
+ * planner retries on: `state.tsx`'s `runChapterBreakdown` calls this right
+ * after parsing and, on a mismatch, resubmits ONCE with the complaint
+ * appended, mirroring `shotList.ts`'s own retry-on-miss discipline for a
+ * runtime target. Empty (no complaint) in auto mode, or when the count
+ * already matches.
+ */
+export function checkClipCount(b: ChapterBreakdown, mode: ChapterBreakdownRuntimeMode, targetClips?: number): string[] {
+  if (mode !== 'target' || !targetClips) return []
+  const actual = b.clips.length
+  if (actual === targetClips) return []
+  return [`This chapter came back as ${actual} clip${actual === 1 ? '' : 's'} — the target is EXACTLY ${targetClips}. Reach ${targetClips} by covering the same events at a finer or coarser grain, never by inventing or dropping events.`]
 }
 
 /**
@@ -622,7 +666,28 @@ function formatSeconds(seconds: number): string {
  */
 export function formatShotLine(s: ChapterBreakdownShot): string {
   const camera = CAMERA_LABELS[s.camera] ?? s.camera
-  let body = [s.subject, s.action].map((x) => x.trim()).filter(Boolean).join(' ')
+  const subject = s.subject.trim()
+  const action = s.action.trim()
+  // `action` is usually a bare predicate continuing `subject` as ONE
+  // sentence ("Nusrat's thumb" + "presses against the weave" -> "Nusrat's
+  // thumb presses against the weave") — those join with a plain space, no
+  // punctuation inserted between them. But `action` is sometimes a
+  // SEPARATE, already-complete sentence of its own (a scene-setting
+  // `subject` — "Nusrat's tailoring shop in the Surat cloth market" —
+  // followed by "The shop is visible: …", itself a full sentence with its
+  // OWN subject) — bug seen live: joined with a bare space this reads as
+  // one run-on clause with no seam at all. A capitalised first letter of
+  // `action` is what a model actually writes for "this starts a new
+  // sentence" (a bare predicate never opens capitalised mid-shot), so it is
+  // the deterministic signal this uses to choose ". " instead of " ".
+  let body: string
+  if (subject && action) {
+    const startsNewSentence = /^[A-Z]/.test(action)
+    const sep = startsNewSentence ? (/[.!?]$/.test(subject) ? '' : '.') + ' ' : ' '
+    body = `${subject}${sep}${action}`
+  } else {
+    body = subject || action
+  }
   if (s.dialogue?.line) {
     const sep = /[.!?,]$/.test(body) ? '' : ','
     const speaker = s.dialogue.speaker ? `${s.dialogue.speaker} says` : 'says'
@@ -689,30 +754,36 @@ export function foldLedger(ledger: Ledger, clips: Array<{ clip: number; stateCha
 
 /**
  * Format the two raw-ask blocks for ONE clip, over only entities present in
- * it (`clipIds` includes this clip number), and only axes worth mentioning:
- * differs from the axis's chapter-opening `initial` value, or is changing
- * THIS clip. Prepended onto `formatClipRawAsk`'s own output by
- * `rawAskForClipIndex`, so both writer paths (preset D and the ComfyUI
- * rewriter) see it without either needing to know the ledger exists.
+ * it (`clipIds` includes this clip number). Every axis of an ON-SCREEN
+ * entity is shown, at its CURRENT (start-of-clip) value, regardless of
+ * whether that axis has ever changed from `initial` — the writer cannot see
+ * the ledger, so an entity that enters the chapter already off its plate's
+ * default (e.g. a soaked garment from clip 1, never "changed" because it
+ * was never dry on screen) would otherwise never be told, silently dropping
+ * a fact the render needs.
+ *
+ * Superseded 2026-09-25, matching `~/.kshana/runners/dhee-runner-h3-chapter-
+ * plan/src/text.ts` commit `164e70c`: the PRIOR rule (mention an axis only
+ * when it differs from `initial` or changes this clip) relied on every
+ * plate-relevant axis being correctly tagged, and a single missed tag
+ * silently dropped a permanent, never-changing, non-default state. An
+ * entity NOT on screen this clip is never in this block at all — its own
+ * changes still surface in the separate CHANGES block below, which is not
+ * gated on on-screen-ness.
  */
 export function formatStateBlocks(ledger: Ledger, startState: StateMap, clipChanges: StateChange[], clip: number): string {
   const byId = new Map(ledger.entities.map((e) => [e.id, e]))
   const onScreen = ledger.entities.filter((e) => e.clipIds.includes(clip))
   if (!onScreen.length) return ''
 
-  const changedThisClip = new Set(clipChanges.map((c) => `${c.entity}::${c.axis}`))
   const startLines: string[] = []
   for (const entity of onScreen) {
+    if (!entity.axes.length) continue
     const axisMap = startState.get(entity.id) ?? new Map<string, string>()
-    const worth = entity.axes.filter((a) => {
-      const initial = entity.initial.find((i) => i.axis === a.axis)?.value ?? ''
-      const value = axisMap.get(a.axis) ?? initial
-      return value !== initial || changedThisClip.has(`${entity.id}::${a.axis}`)
-    })
-    if (worth.length) {
-      const line = worth.map((a) => `${a.axis}=${axisMap.get(a.axis) ?? entity.initial.find((i) => i.axis === a.axis)?.value ?? ''}`).join(', ')
-      startLines.push(`${entity.name} (${entity.kind}): ${line}`)
-    }
+    const line = entity.axes
+      .map((a) => `${a.axis}=${axisMap.get(a.axis) ?? entity.initial.find((i) => i.axis === a.axis)?.value ?? ''}`)
+      .join(', ')
+    startLines.push(`${entity.name} (${entity.kind}): ${line}`)
   }
 
   const changeLines = clipChanges

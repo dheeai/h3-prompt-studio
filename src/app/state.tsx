@@ -51,14 +51,14 @@ import { clipsNeedingPrompt, isSingleRequestStage, type DraftingProgress, type D
 import { streamingCallbacks } from '../lib/streamingProgress'
 import { normalizeThinkingBudgets, resolveThinkingBudget } from '../lib/thinking'
 import {
-  BEAT_LIST_TEMPLATE, allocateBeatSeconds, beatListResponseFormat, checkThinBrief, deriveFilmName,
+  BEAT_LIST_TEMPLATE, RUNTIME_STEP_SECONDS, allocateBeatSeconds, beatListResponseFormat, checkThinBrief, deriveFilmName,
   fillBeatListTemplate, groupShotsIntoClips, parseBeatList, planShotRevision, reviseShotsFromIndex,
   shotSubdivideResponseFormat, subdivideAllBeats,
 } from '../lib/shotList'
 import type { ShotSubdivideCall, ThinBriefCheck } from '../lib/shotList'
 import {
   CHAPTER_BREAKDOWN_TEMPLATE, chapterBreakdownResponseFormat, chapterBreakdownToShotList,
-  checkChapterBreakdown, checkRawAsksDistinct, fillChapterBreakdownTemplate, parseChapterBreakdown, rawAskForClipIndex,
+  checkChapterBreakdown, checkClipCount, checkRawAsksDistinct, fillChapterBreakdownTemplate, parseChapterBreakdown, rawAskForClipIndex,
 } from '../lib/chapterBreakdown'
 import type { ChapterBreakdown } from '../lib/chapterBreakdown'
 import { breakdownPlanner } from '../lib/breakdownPlanner'
@@ -2545,24 +2545,48 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setShotsAuthoredSoFar([])
     const ac = new AbortController()
     abortRef.current = ac
-    setShotStreaming({ stage: 'chapter-breakdown', text: '', reasoning: '', startedAt: Date.now(), continuations: 0, phase: 'thinking' })
+    // Target mode's clip count is the operator's own runtime slider
+    // (Session.maxRuntimeSeconds — the SAME 15s-grid control the beats/
+    // subdivide planner already uses as its ceiling), read as a clip count
+    // rather than a second, separate setting.
+    const runtimeMode = settings.chapterBreakdownRuntimeMode ?? 'auto'
+    const targetClips = runtimeMode === 'target'
+      ? Math.round((sessionRef.current.maxRuntimeSeconds ?? DEFAULT_MAX_RUNTIME_SECONDS) / RUNTIME_STEP_SECONDS)
+      : undefined
     try {
-      const user = fillChapterBreakdownTemplate(CHAPTER_BREAKDOWN_TEMPLATE, plot)
-      const result = await streamChatComplete({
-        provider,
-        model: settings.model,
-        temperature: settings.temperature,
-        maxTokens: settings.maxTokens,
-        thinkingBudget: resolveThinkingBudget(provider.id, settings.model, settings.thinkingBudgets),
-        responseFormat: provider.supportsJsonSchema ? chapterBreakdownResponseFormat() : undefined,
-        signal: ac.signal,
-        messages: [{ role: 'user', content: user }],
-        ...streamingCallbacks(setShotStreaming),
-      })
-      if (!result.text.trim()) throw new Error('The model returned nothing.')
-      const parsed = parseChapterBreakdown(result.text)
+      let parsed: ReturnType<typeof parseChapterBreakdown> = null
+      let clipCountIssues: string[] = []
+      // Target mode gets exactly ONE retry on a clip-count miss — the model
+      // is handed its own failure and asked to correct exactly that, the
+      // same "retry on a runtime miss" contract `shotList.ts`'s beat/shot
+      // subdivision already uses for a different granularity of the same
+      // idea (land ON a target by re-grained coverage, never invention).
+      for (let attempt = 0; attempt < 2; attempt++) {
+        setShotStreaming({ stage: 'chapter-breakdown', text: '', reasoning: '', startedAt: Date.now(), continuations: 0, phase: 'thinking' })
+        let user = fillChapterBreakdownTemplate(CHAPTER_BREAKDOWN_TEMPLATE, plot, runtimeMode, targetClips)
+        if (attempt > 0 && clipCountIssues.length) {
+          user = `${user}\n\nYOUR PREVIOUS REPLY FAILED THIS CHECK — CORRECT EXACTLY THIS AND NOTHING ELSE:\n${clipCountIssues.join('\n')}`
+        }
+        const result = await streamChatComplete({
+          provider,
+          model: settings.model,
+          temperature: settings.temperature,
+          maxTokens: settings.maxTokens,
+          thinkingBudget: resolveThinkingBudget(provider.id, settings.model, settings.thinkingBudgets),
+          responseFormat: provider.supportsJsonSchema ? chapterBreakdownResponseFormat() : undefined,
+          signal: ac.signal,
+          messages: [{ role: 'user', content: user }],
+          ...streamingCallbacks(setShotStreaming),
+        })
+        if (!result.text.trim()) throw new Error('The model returned nothing.')
+        const attemptParsed = parseChapterBreakdown(result.text)
+        if (!attemptParsed) throw new Error('Could not parse a chapter breakdown from the reply — try again.')
+        parsed = attemptParsed
+        clipCountIssues = checkClipCount(attemptParsed, runtimeMode, targetClips)
+        if (!clipCountIssues.length) break
+      }
       if (!parsed) throw new Error('Could not parse a chapter breakdown from the reply — try again.')
-      const issues = checkChapterBreakdown(parsed)
+      const issues = [...checkChapterBreakdown(parsed), ...clipCountIssues]
       const { shotList, groups } = chapterBreakdownToShotList(parsed)
       const next = {
         ...sessionRef.current,

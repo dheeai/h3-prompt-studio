@@ -1,5 +1,6 @@
 import type { PipelinePresetId } from './pipeline'
 import type { BreakdownPlannerId } from './breakdownPlanner'
+import type { ChapterBreakdownRuntimeMode } from './chapterBreakdown'
 import type { ExtenderAuthoringMode } from './extenderSettings'
 
 export type SkillSource = 'bundled' | 'upload' | 'url'
@@ -422,6 +423,14 @@ export interface Settings {
    * so an operator who never touches the switch sees no change at all.
    */
   breakdownPlanner?: BreakdownPlannerId
+  /**
+   * The structured-json planner's own runtime mode — see
+   * `chapterBreakdown.ts`'s `ChapterBreakdownRuntimeMode`. `'target'` reads
+   * its clip count off the SAME `Session.maxRuntimeSeconds` slider the
+   * beats/subdivide planner already uses as its ceiling (seconds / 15).
+   * Unset means `'auto'`, the model decides.
+   */
+  chapterBreakdownRuntimeMode?: ChapterBreakdownRuntimeMode
   /**
    * Studio-authored (the incumbent: Direct/Draft/Revise write the six-section
    * prompt) or rewriter-authored (submit each clip's plain-English raw ask

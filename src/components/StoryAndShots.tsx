@@ -13,6 +13,7 @@ import { BREAKDOWN_PLANNERS, breakdownPlanner } from '../lib/breakdownPlanner'
 import type { BreakdownPlannerId } from '../lib/breakdownPlanner'
 import type { ChapterBreakdown, ChapterBreakdownRuntimeMode } from '../lib/chapterBreakdown'
 import { entitiesNeedingGeneratedPlates, resolveEntityPlates } from '../lib/plateMatching'
+import { planChapterBatches } from '../lib/chapterBatching'
 import type { FilmContext, FilmLook, LoraStackEntry, Plate, Settings } from '../lib/types'
 
 /**
@@ -158,6 +159,14 @@ function LedgerPlatesCard({
 
   const resolved = resolveEntityPlates(chapterBreakdown.ledger.entities, plates, entityPlateAssignments)
   const missing = entitiesNeedingGeneratedPlates(chapterBreakdown.ledger.entities, resolved)
+  // H3's 9 global ref slots are per-SUBMISSION, not per-chapter — a chapter
+  // whose ledger needs more than 9 distinct on-screen (plated) entities
+  // across its whole runtime cannot be one Master Extender job. Computed
+  // read-only here so the operator sees the split (and its continuity
+  // cost) BEFORE rendering — see `chapterBatching.ts`'s own module comment
+  // for why actually submitting/assembling the separate jobs is not yet
+  // automated.
+  const batchPlan = planChapterBatches(chapterBreakdown, (id) => !!resolved[id])
 
   const run = async () => {
     setBusy(true)
@@ -211,6 +220,31 @@ function LedgerPlatesCard({
           )
         })}
       </div>
+      {batchPlan.batches.length > 1 && (
+        <div className="alert warn" style={{ marginTop: 9 }}>
+          This chapter needs {batchPlan.batches.length} separate Master Extender submissions — H3's 9 reference slots
+          are per-job, and this ledger names more plated entities than that across the whole runtime.
+          {' '}Continuity cost: {batchPlan.splitEntityIds.length
+            ? `${batchPlan.splitEntityIds.join(', ')} appear in more than one submission (resubmitted as a fresh reference each time — H3 has no notion these are "the same" slot across jobs).`
+            : 'no entity is split across a boundary.'}
+          {' '}Submitting and assembling the separate jobs automatically is not yet wired — see the batches below and
+          run each clip range as its own film for now.
+          <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {batchPlan.batches.map((batch) => (
+              <span key={batch.index} className="tok">
+                Batch {batch.index}: clips {batch.clipFrom}–{batch.clipTo} ({batch.entityIds.length} ref{batch.entityIds.length === 1 ? '' : 's'})
+              </span>
+            ))}
+          </div>
+          {batchPlan.overflowClips.length > 0 && (
+            <div style={{ marginTop: 4 }}>
+              Clip{batchPlan.overflowClips.length === 1 ? '' : 's'} {batchPlan.overflowClips.join(', ')} alone already
+              exceed{batchPlan.overflowClips.length === 1 ? 's' : ''} 9 on-screen plated entities — cannot be resolved
+              by splitting between clips.
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

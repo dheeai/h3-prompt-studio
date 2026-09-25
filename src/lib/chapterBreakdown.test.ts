@@ -5,6 +5,8 @@ import {
   CHAPTER_BREAKDOWN_SHOT_MAX,
   CHAPTER_BREAKDOWN_SHOT_MIN,
   CHAPTER_BREAKDOWN_TEMPLATE,
+  assignRefSlots,
+  auditClipPromptCitations,
   chapterBreakdownResponseFormat,
   chapterBreakdownRuntimeInstruction,
   chapterBreakdownToBreakdown,
@@ -12,13 +14,18 @@ import {
   checkChapterBreakdown,
   checkClipCount,
   checkRawAsksDistinct,
+  extractPictureCitations,
   fillChapterBreakdownTemplate,
   foldLedger,
   formatClipRawAsk,
+  formatReferencesBlock,
   formatShotLine,
   formatStateBlocks,
   parseChapterBreakdown,
   rawAskForClipIndex,
+  rawAskForClipIndexWithReferences,
+  repairSummaryPrefix,
+  stripPlateFormatVocabulary,
 } from './chapterBreakdown'
 import type { ChapterBreakdown, ChapterBreakdownClip, ChapterBreakdownShot, Ledger, LedgerEntity } from './chapterBreakdown'
 
@@ -551,4 +558,192 @@ test('rawAskForClipIndex: state blocks are prepended before the "Clip N:" raw as
 test('rawAskForClipIndex: a breakdown with an empty ledger is byte-identical to formatClipRawAsk alone', () => {
   const c = clip({})
   assert.equal(rawAskForClipIndex(breakdown([c]), 1), formatClipRawAsk(c))
+})
+
+// ── reference binding — stripPlateFormatVocabulary, RefSlot, ────────────
+// ── formatReferencesBlock, assignRefSlots, repairSummaryPrefix, audit ────
+
+test('stripPlateFormatVocabulary: strips plate/photography-brief vocabulary, case-insensitively', () => {
+  assert.equal(stripPlateFormatVocabulary('A cluttered shop interior, isometric cutaway god-view'), 'A cluttered shop interior,')
+})
+
+test('stripPlateFormatVocabulary: leaves ordinary world-description prose untouched', () => {
+  assert.equal(stripPlateFormatVocabulary('A woman in a blue cardigan, dark hair, a thin silver necklace'), 'A woman in a blue cardigan, dark hair, a thin silver necklace')
+})
+
+test('stripPlateFormatVocabulary: tidies leftover double spaces and space-before-punctuation', () => {
+  assert.equal(stripPlateFormatVocabulary('the room , with a grid on the floor'), 'the room, with a on the floor')
+})
+
+test('stripPlateFormatVocabulary: a banned word matches even as a substring (e.g. "panel" inside "6-panel") — a known, accepted sharp edge, ported verbatim from the bundle', () => {
+  assert.equal(stripPlateFormatVocabulary('A 6-panel spread'), 'A 6- spread')
+})
+
+const REGISTRY = {
+  nusrat: { name: 'Nusrat', role: 'character', description: 'A woman in a blue cardigan, dark hair.', clipIds: [1, 2] },
+  shop: { name: 'The tailoring shop', role: 'location', description: 'Bolts of cloth on every shelf, warm lamplight.', clipIds: [1, 2, 3] },
+}
+
+test('formatReferencesBlock: one line per slot, ON SCREEN vs not on screen decided per clip', () => {
+  const refSlots = [{ slot: 1, id: 'nusrat' }, { slot: 2, id: 'shop' }]
+  const text = formatReferencesBlock(refSlots, REGISTRY, 3)
+  const lines = text.split('\n')
+  assert.equal(lines[0], 'REFERENCES (this submission):')
+  assert.equal(lines[1], '<Picture 1> — Nusrat (character): A woman in a blue cardigan, dark hair.. not on screen in this clip.')
+  assert.equal(lines[2], '<Picture 2> — The tailoring shop (location): Bolts of cloth on every shelf, warm lamplight.. ON SCREEN in this clip.')
+})
+
+test('formatReferencesBlock: empty refSlots produces no block at all', () => {
+  assert.equal(formatReferencesBlock([], REGISTRY, 1), '')
+})
+
+test('formatReferencesBlock: an entity missing from the registry still gets a line, falling back to its own id', () => {
+  const text = formatReferencesBlock([{ slot: 1, id: 'ghost' }], REGISTRY, 1)
+  assert.ok(text.includes('<Picture 1> — ghost (entity):'))
+})
+
+test('formatReferencesBlock: strips plate-artifact vocabulary out of the description defensively', () => {
+  const text = formatReferencesBlock([{ slot: 1, id: 'x' }], { x: { name: 'X', role: 'location', description: 'a contact sheet of the room', clipIds: [] } }, 1)
+  assert.ok(!text.includes('contact sheet'))
+})
+
+test('assignRefSlots: one slot per ledger entity that has a plate, in the ledger\'s own declared order', () => {
+  const ledger: Ledger = { entities: [entity({ id: 'a' }), entity({ id: 'b' }), entity({ id: 'c' })] }
+  const { refSlots, unslotted } = assignRefSlots(ledger, (id) => id !== 'b')
+  assert.deepEqual(refSlots, [{ slot: 1, id: 'a' }, { slot: 2, id: 'c' }])
+  assert.deepEqual(unslotted, [])
+})
+
+test('assignRefSlots: caps at maxSlots (default 9), reporting the rest as unslotted', () => {
+  const ledger: Ledger = { entities: Array.from({ length: 11 }, (_, i) => entity({ id: `e${i}` })) }
+  const { refSlots, unslotted } = assignRefSlots(ledger, () => true)
+  assert.equal(refSlots.length, 9)
+  assert.deepEqual(unslotted, ['e9', 'e10'])
+  assert.deepEqual(refSlots.map((s) => s.slot), [1, 2, 3, 4, 5, 6, 7, 8, 9])
+})
+
+test('assignRefSlots: an entity with no plate at all is neither slotted nor reported unslotted', () => {
+  const ledger: Ledger = { entities: [entity({ id: 'a' }), entity({ id: 'b' })] }
+  const { refSlots, unslotted } = assignRefSlots(ledger, (id) => id === 'a')
+  assert.deepEqual(refSlots, [{ slot: 1, id: 'a' }])
+  assert.deepEqual(unslotted, [])
+})
+
+test('extractPictureCitations: every <Picture N>, in order, not deduplicated', () => {
+  assert.deepEqual(extractPictureCitations('sees <Picture 1> then <Picture 2> then <Picture 1> again'), [1, 2, 1])
+})
+
+test('extractPictureCitations: no citations at all is an empty array', () => {
+  assert.deepEqual(extractPictureCitations('nothing here'), [])
+})
+
+test('repairSummaryPrefix: rewrites a dash-form task type into the required bracket form', () => {
+  const prompt = 'subject_definitions: <Subject 1> is Nusrat.\n\nsummary: reference generation -- Nusrat unrolls the silk.\n\nretention_analysis: ...'
+  const repair = repairSummaryPrefix(prompt)
+  assert.equal(repair.repaired, true)
+  assert.equal(repair.taskType, 'reference generation')
+  assert.ok(repair.text.includes('summary: [reference generation] Nusrat unrolls the silk.'))
+})
+
+test('repairSummaryPrefix: a colon separator and a combined "+" type are both handled', () => {
+  const prompt = 'summary: reference generation + keyframe completion: the shop, then the silk.'
+  const repair = repairSummaryPrefix(prompt)
+  assert.equal(repair.taskType, 'reference generation + keyframe completion')
+  assert.ok(repair.text.includes('summary: [reference generation + keyframe completion] the shop, then the silk.'))
+})
+
+test('repairSummaryPrefix: already-bracketed summary is left alone, repaired: false', () => {
+  const prompt = 'summary: [reference generation] Nusrat unrolls the silk.'
+  const repair = repairSummaryPrefix(prompt)
+  assert.equal(repair.repaired, false)
+  assert.equal(repair.text, prompt)
+})
+
+test('repairSummaryPrefix: an unrecognised opening is left alone rather than guessed at — the audit must still see the real defect', () => {
+  const prompt = 'summary: Nusrat unrolls the silk, a tense scene.'
+  const repair = repairSummaryPrefix(prompt)
+  assert.equal(repair.repaired, false)
+})
+
+test('repairSummaryPrefix: no summary section at all is left alone', () => {
+  const prompt = 'subject_definitions: something\n\ndetailed_description: something else'
+  assert.equal(repairSummaryPrefix(prompt).repaired, false)
+})
+
+const GOOD_PROMPT = [
+  'subject_definitions: <Subject 1> is Nusrat, from <Picture 1>. <Subject 2> is the shop, from <Picture 2>.',
+  'summary: [reference generation] Nusrat unrolls the silk in her shop.',
+  'retention_analysis: <Subject 1>: fully_preserved',
+  'detailed_description: [Shot 1] Nusrat unrolls the silk.',
+  'overall_soundscape: cloth rustling.',
+  'non_diegetic_music: N/A',
+].join('\n\n')
+
+test('auditClipPromptCitations: a well-formed prompt with every on-screen entity cited has no issues', () => {
+  const refSlots = [{ slot: 1, id: 'nusrat' }, { slot: 2, id: 'shop' }]
+  assert.deepEqual(auditClipPromptCitations(GOOD_PROMPT, refSlots, REGISTRY, 1), [])
+})
+
+test('auditClipPromptCitations: flags a summary with no bracketed task-type prefix', () => {
+  const bad = GOOD_PROMPT.replace('summary: [reference generation] Nusrat unrolls the silk in her shop.', 'summary: Nusrat unrolls the silk.')
+  const issues = auditClipPromptCitations(bad, [], {}, 1)
+  assert.ok(issues.some((i) => i.includes('does not open with a square-bracketed')))
+})
+
+test('auditClipPromptCitations: flags a missing summary section entirely', () => {
+  const bad = GOOD_PROMPT.replace('summary: [reference generation] Nusrat unrolls the silk in her shop.\n\n', '')
+  const issues = auditClipPromptCitations(bad, [], {}, 1)
+  assert.ok(issues.some((i) => i.includes("no 'summary' section")))
+})
+
+test('auditClipPromptCitations: flags a missing subject_definitions section entirely', () => {
+  const bad = GOOD_PROMPT.replace('subject_definitions: <Subject 1> is Nusrat, from <Picture 1>. <Subject 2> is the shop, from <Picture 2>.\n\n', '')
+  const issues = auditClipPromptCitations(bad, [], {}, 1)
+  assert.ok(issues.some((i) => i.includes("no 'subject_definitions' section")))
+})
+
+test('auditClipPromptCitations: flags a <Picture N> citation outside the submission\'s own ref slot range', () => {
+  const withBadCitation = GOOD_PROMPT + '\n\ndetailed_description: [Shot 2] cites <Picture 9> by mistake.'
+  const issues = auditClipPromptCitations(withBadCitation, [{ slot: 1, id: 'nusrat' }], REGISTRY, 1)
+  assert.ok(issues.some((i) => i.includes('cites <Picture 9>') && i.includes('only has 1 ref slot')))
+})
+
+test('auditClipPromptCitations: flags an ON-SCREEN entity with a ref slot that subject_definitions never cites', () => {
+  const noCitation = GOOD_PROMPT.replace(' <Subject 2> is the shop, from <Picture 2>.', '')
+  const refSlots = [{ slot: 1, id: 'nusrat' }, { slot: 2, id: 'shop' }]
+  const issues = auditClipPromptCitations(noCitation, refSlots, REGISTRY, 1)
+  assert.ok(issues.some((i) => i.includes("entity 'shop' is on screen and has ref slot 2") && i.includes('never cites <Picture 2>')))
+})
+
+test('auditClipPromptCitations: an entity WITH a ref slot but NOT on screen this clip is never required to be cited', () => {
+  const refSlots = [{ slot: 1, id: 'nusrat' }, { slot: 2, id: 'shop' }]
+  // shop's clipIds are [1,2,3] in REGISTRY, so use a clip it's on screen for
+  // but omit its citation to prove the check is keyed on on-screen-ness —
+  // reuse the "flags" test above for the positive case; here, an entity NOT
+  // in REGISTRY.clipIds at all for this clip number is never flagged.
+  const other = { nusrat: REGISTRY.nusrat, shop: { ...REGISTRY.shop, clipIds: [5] } }
+  assert.deepEqual(auditClipPromptCitations(GOOD_PROMPT, refSlots, other, 1), [])
+})
+
+// ── rawAskForClipIndexWithReferences ─────────────────────────────────────
+
+test('rawAskForClipIndexWithReferences: REFERENCES block comes first, then state (if any), then the "Clip N:" raw ask', () => {
+  const ledger: Ledger = { entities: [entity({ id: 'nusrat', clipIds: [1] })] }
+  const c = clip({ clip: 1, stateChanges: [{ entity: 'nusrat', axis: 'composure', to: 'shaken', shot: 2 }] })
+  const b = breakdown([c], ledger)
+  const refSlots = [{ slot: 1, id: 'nusrat' }]
+  const raw = rawAskForClipIndexWithReferences(b, 1, refSlots, REGISTRY)!
+  assert.ok(raw.startsWith('REFERENCES (this submission):'))
+  assert.ok(raw.includes('STATE AT THE START OF THIS CLIP:'))
+  assert.ok(raw.includes('\n\nClip 1:'))
+})
+
+test('rawAskForClipIndexWithReferences: no ref slots at all is byte-identical to rawAskForClipIndex alone', () => {
+  const c = clip({})
+  const b = breakdown([c])
+  assert.equal(rawAskForClipIndexWithReferences(b, 1, [], {}), rawAskForClipIndex(b, 1))
+})
+
+test('rawAskForClipIndexWithReferences: undefined when the clip itself cannot be found — never a placeholder', () => {
+  assert.equal(rawAskForClipIndexWithReferences(breakdown([clip({ clip: 1 })]), 9, [{ slot: 1, id: 'nusrat' }], REGISTRY), undefined)
 })

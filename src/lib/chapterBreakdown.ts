@@ -796,6 +796,299 @@ export function formatStateBlocks(ledger: Ledger, startState: StateMap, clipChan
   return parts.join('\n\n')
 }
 
+// ── reference (refs_json slot) citation text — ported to match
+// ~/.kshana/runners/dhee-runner-h3-chapter-plan/src/text.ts commit 164e70c ──
+//
+// `batch_plan` (the bundle's own runner) is the single source of truth for a
+// submission's refs_json SLOT ORDER, computed once, from `plate_registry`,
+// BEFORE any writer runs. `raw_asks` renders that slot order into a
+// REFERENCES block so BOTH writer modes (this Studio's preset D and the
+// box's own comfy_rewriter) see which `<Picture N>` number belongs to which
+// entity, and whether that entity is on screen in THIS clip — the block
+// that was previously missing entirely, so H3 was never told which plate
+// was which and cited none of them. `assignRefSlots` is this Studio's own
+// equivalent of `batch_plan`'s slot-order decision (see its own comment).
+
+/** The *_plate_prompt.md generation instructions (ported separately, see
+ * `platePrompting.ts`) describe PANEL LAYOUT — a contact sheet's grid,
+ * gutters, camera stations, an isometric cutaway — vocabulary that
+ * describes the PLATE AS AN IMAGE ARTIFACT, never the world it depicts. A
+ * REFERENCES line (or a plate's own subject-definition description, once
+ * analysed) must read like the breakdown's own entity description — what
+ * the room/character/prop IS — never like a photography brief for
+ * producing it. Stripped defensively wherever a plate's own description
+ * text is used, even though the normal source (a plate's `analyzeSubjectImage`
+ * read, or the operator's own words) shouldn't contain it in the first
+ * place. */
+const PLATE_FORMAT_VOCABULARY = [
+  'contact sheet',
+  'contact-sheet',
+  'reference sheet',
+  'reference plate',
+  'identity sheet',
+  'panels',
+  'panel',
+  'gutters',
+  'gutter',
+  'grid',
+  'camera stations',
+  'camera station',
+  'locked camera',
+  'cutaway',
+  'isometric',
+  'axonometric',
+  'dollhouse',
+  'god-view',
+  'god view',
+  'establishing hero shot',
+]
+
+/** Deterministically strips plate/photography-brief vocabulary from a
+ * description string, then tidies the leftover whitespace/punctuation. */
+export function stripPlateFormatVocabulary(text: string): string {
+  let out = text
+  for (const phrase of PLATE_FORMAT_VOCABULARY) {
+    const escaped = phrase.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')
+    out = out.replace(new RegExp(escaped, 'gi'), '')
+  }
+  return out
+    .replace(/\s+([,.;:])/g, '$1')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+}
+
+export interface RefSlot {
+  slot: number
+  id: string
+}
+
+/** What a REFERENCES line needs about one entity — `description` MUST come
+ * from the plate's OWN analysis (`Plate.job`/`subjectDef`, `subject.ts`'s
+ * "what's in the picture"), never the ledger's narrative arc language (a
+ * REFERENCES line reading "Initially dry, becomes soaked. Expression shifts
+ * from focused to defiant…" is the ledger's account of what CHANGES, not
+ * what the plate shows — the exact defect
+ * dhee-runner-h3-chapter-plan#3 fixed). */
+export interface ReferencePlateInfo {
+  name: string
+  role: string
+  description: string
+  clipIds: number[]
+}
+
+/**
+ * Renders this submission's ref slots into the REFERENCES block every clip
+ * gets prepended to its raw ask: one line per slot, `<Picture N> — <name>
+ * (<role>): <what it IS, in the world> ON/not on SCREEN in this clip.`
+ * Lists every slot in the submission (they're global to the render job, not
+ * per-clip), marking which ones are on screen HERE so the writer knows
+ * which citations this clip actually needs.
+ */
+export function formatReferencesBlock(refSlots: RefSlot[], registry: Record<string, ReferencePlateInfo>, clip: number): string {
+  if (!refSlots.length) return ''
+  const lines = refSlots.map(({ slot, id }) => {
+    const entity = registry[id]
+    const name = entity?.name ?? id
+    const role = entity?.role ?? 'entity'
+    const desc = stripPlateFormatVocabulary(entity?.description ?? '').trim()
+    const descPart = desc ? `${desc}. ` : ''
+    const onScreen = entity?.clipIds?.includes(clip) ?? false
+    return `<Picture ${slot}> — ${name} (${role}): ${descPart}${onScreen ? 'ON SCREEN in this clip.' : 'not on screen in this clip.'}`
+  })
+  return ['REFERENCES (this submission):', ...lines].join('\n')
+}
+
+/**
+ * Decide this film's (or this batch's, see the >9-slot splitter) fixed
+ * refs_json slot order ONCE, from the ledger alone — this Studio's
+ * equivalent of the bundle's `batch_plan` runner, which is the single
+ * source of truth its own `raw_asks`/`submission_build` both read the SAME
+ * order from rather than each re-deriving it (dhee-runner-h3-chapter-plan#2:
+ * two independent derivations going out of sync is exactly the bug that
+ * fix responds to). Order follows `ledger.entities[]`'s own declared order
+ * — stable regardless of which clip is being written. Entities with no
+ * resolved plate (`hasPlate` false) get no slot at all; entities past the
+ * 9-slot cap are reported as `unslotted`, for the caller (the >9-plate
+ * chapter splitter) to place in a different submission.
+ */
+export function assignRefSlots(ledger: Ledger, hasPlate: (entityId: string) => boolean, maxSlots = 9): { refSlots: RefSlot[]; unslotted: string[] } {
+  const refSlots: RefSlot[] = []
+  const unslotted: string[] = []
+  for (const entity of ledger.entities) {
+    if (!hasPlate(entity.id)) continue
+    if (refSlots.length >= maxSlots) {
+      unslotted.push(entity.id)
+      continue
+    }
+    refSlots.push({ slot: refSlots.length + 1, id: entity.id })
+  }
+  return { refSlots, unslotted }
+}
+
+/** Every `<Picture N>` citation in a prompt text, as the raw N's cited (not
+ * deduplicated) — used to check none of them names a slot outside this
+ * submission's actual refs_json range. */
+export function extractPictureCitations(text: string): number[] {
+  const out: number[] = []
+  const re = /<Picture\s+(\d+)>/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text))) out.push(Number(m[1]))
+  return out
+}
+
+// ── summary task-type prefix repair — ported from dhee-runner-h3-chapter-
+// plan#4 ────────────────────────────────────────────────────────────────
+//
+// The model routinely copies the format guide's own legend ("reference
+// generation -- the attached image guides...") as its summary's literal
+// opening words instead of the required `[type] ...` brackets. Pure FORMAT
+// defect (the type it named is correct, just not bracketed), repaired
+// deterministically rather than failing the citation/format audit and
+// forcing a retry over something a string edit already fixes.
+
+/** The six task types `summary` may open with — schema.ts's own
+ * `DESCRIPTIONS.summary` list, spelled identically. */
+export const SUMMARY_TASK_TYPES = [
+  'keyframe completion',
+  'reference generation',
+  'video editing',
+  'video continuation',
+  'audio reuse',
+  'audio reference',
+] as const
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')
+}
+
+export interface SummaryPrefixRepair {
+  /** The prompt text, unchanged if `repaired` is false. */
+  text: string
+  repaired: boolean
+  /** The offending prefix as originally written, for logging. */
+  from?: string
+  /** The task type (or " + "-combination) that was bracketed. */
+  taskType?: string
+}
+
+/**
+ * If the joined prompt's `summary: ...` line opens with one of
+ * `SUMMARY_TASK_TYPES` (or several joined by " + "), NOT already inside
+ * square brackets, followed by a separator (` -- `, `:` or `-`), rewrites it
+ * to `summary: [type] rest` and returns the whole prompt with that line
+ * replaced. Returns `repaired: false`, text unchanged, when the line
+ * already opens with `[`, there is no `summary:` line at all, or it does
+ * not match a known type (nothing safe to repair — that case still fails
+ * the citation/format audit so the defect is visible, not papered over).
+ *
+ * Operates on ONE LINE (`schema.ts`'s `joinH3Sections` writes `field:
+ * value` as a single line per section for a one-paragraph field like
+ * `summary`) — unlike the bundle's own `repairSummaryPrefix`, which parses
+ * a DIFFERENT wire shape (a bare section-name line, then the body on
+ * following lines). Same repair, different text shape to parse it out of.
+ */
+export function repairSummaryPrefix(promptText: string): SummaryPrefixRepair {
+  const lines = promptText.split('\n')
+  const idx = lines.findIndex((l) => /^summary:\s*/.test(l))
+  if (idx === -1) return { text: promptText, repaired: false }
+  const bodyMatch = lines[idx].match(/^summary:\s*(.*)$/)
+  const body = bodyMatch ? bodyMatch[1] : ''
+  const trimmed = body.trimStart()
+  if (!trimmed || trimmed.startsWith('[')) return { text: promptText, repaired: false }
+
+  const typeAlt = [...SUMMARY_TASK_TYPES].sort((a, b) => b.length - a.length).map(escapeRegExp).join('|')
+  const re = new RegExp(`^((?:${typeAlt})(?:\\s*\\+\\s*(?:${typeAlt}))*)\\s*(?:--|:|-)\\s*([\\s\\S]*)$`, 'i')
+  const m = trimmed.match(re)
+  if (!m) return { text: promptText, repaired: false }
+
+  const taskType = m[1].trim()
+  const rest = m[2].trim()
+  if (!rest) return { text: promptText, repaired: false }
+  const newLines = [...lines]
+  newLines[idx] = `summary: [${taskType}] ${rest}`
+  return { text: newLines.join('\n'), repaired: true, from: trimmed.slice(0, 80), taskType }
+}
+
+// ── citation / format audit ───────────────────────────────────────────────
+//
+// Deterministic gate over preset D's six-section output, so an uncited
+// on-screen plate or a hallucinated <Picture N> fails LOUDLY instead of
+// silently rendering a submission H3 was never bound to — the exact
+// failure dhee-runner-h3-chapter-plan#2/#3 responds to (refs uploaded,
+// never cited). `state.tsx`'s `rebuild()` retries the write ONCE with these
+// issues as the complaint, then blocks render on the clip if they persist —
+// see its own module comment.
+
+/** Section names this audit looks for — a SUBSET of `highlight.ts`'s
+ * `KNOWN_SECTIONS`, kept local rather than imported so this file states
+ * exactly which two of the six it actually reads, without pulling every
+ * mode's section name (`integrated_multimodal_description` etc., which
+ * Ref2VA never emits) into its own vocabulary. */
+const SUMMARY_SECTION = 'summary'
+const SUBJECT_DEFINITIONS_SECTION = 'subject_definitions'
+
+/** A section header is a snake_case name at column 0 followed by a colon —
+ * duplicated from `highlight.ts`'s own private `HEADER`/`splitSections`
+ * rather than importing them, so this pure-logic module never depends on a
+ * DISPLAY-layer file for a two-line parse. */
+function findSection(promptText: string, name: string): string | undefined {
+  const lines = promptText.split('\n')
+  const re = new RegExp(`^${name}[ \\t]*:[ \\t]*(.*)$`)
+  const idx = lines.findIndex((l) => re.test(l))
+  if (idx === -1) return undefined
+  const first = lines[idx].match(re)?.[1] ?? ''
+  const body: string[] = first ? [first] : []
+  for (let i = idx + 1; i < lines.length; i++) {
+    if (/^[a-z][a-z0-9_]{3,}[ \t]*:/.test(lines[i])) break
+    body.push(lines[i])
+  }
+  return body.join('\n')
+}
+
+/**
+ * Checks, over ONE clip's preset-D output: a `summary` section exists and
+ * opens with `[`; a `subject_definitions` section exists; every
+ * `<Picture N>` citation names a real slot in `refSlots`; every ON-SCREEN
+ * entity that has a ref slot in this submission is actually cited in
+ * `subject_definitions`. Returns plain fact strings, one per defect, never
+ * throws — the caller decides retry vs block.
+ */
+export function auditClipPromptCitations(
+  promptText: string,
+  refSlots: RefSlot[],
+  registry: Record<string, ReferencePlateInfo>,
+  clip: number,
+): string[] {
+  const issues: string[] = []
+  const summary = findSection(promptText, SUMMARY_SECTION)
+  if (summary === undefined) {
+    issues.push(`clip ${clip}: no 'summary' section found in the six-section output`)
+  } else if (!summary.trimStart().startsWith('[')) {
+    issues.push(`clip ${clip}: summary does not open with a square-bracketed task-type prefix ("${summary.slice(0, 40).replace(/\n/g, ' ')}...")`)
+  }
+
+  const subjectDefs = findSection(promptText, SUBJECT_DEFINITIONS_SECTION)
+  if (subjectDefs === undefined) {
+    issues.push(`clip ${clip}: no 'subject_definitions' section found in the six-section output`)
+  }
+  const subjectDefsBody = subjectDefs ?? ''
+
+  for (const n of extractPictureCitations(promptText)) {
+    if (n < 1 || n > refSlots.length) {
+      issues.push(`clip ${clip}: cites <Picture ${n}>, but this submission only has ${refSlots.length} ref slot(s)`)
+    }
+  }
+
+  for (const { slot, id } of refSlots) {
+    const entity = registry[id]
+    const onScreen = entity ? entity.clipIds.includes(clip) : false
+    if (onScreen && !subjectDefsBody.includes(`<Picture ${slot}>`)) {
+      issues.push(`clip ${clip}: entity '${id}' is on screen and has ref slot ${slot} in this submission, but subject_definitions never cites <Picture ${slot}>`)
+    }
+  }
+  return issues
+}
+
 // ── mapping into the rest of Full Story mode ──────────────────────────────
 
 function roleForPosition(i: number, n: number): ClipRole {
@@ -890,4 +1183,30 @@ export function rawAskForClipIndex(b: ChapterBreakdown | undefined, clipIndex: n
     }
   }
   return text
+}
+
+/**
+ * `rawAskForClipIndex`, plus a REFERENCES block prepended ahead of
+ * everything else (who/what is available to cite, before their current
+ * state, before what happens) — this is what actually reaches BOTH writer
+ * paths once plates exist: `state.tsx`'s `rebuild()` (preset D's
+ * `{{current}}`) and `renderExtenderPlan`'s rewriter-authored
+ * `clips_json[i].prompt`. `refSlots`/`registry` come from a render's own
+ * `assignRefSlots` + plate-matching pass (`platesRegistry.ts`) — kept as
+ * separate parameters rather than folded into `ChapterBreakdown` itself,
+ * since ref slots are a property of ONE SUBMISSION (see the >9-plate
+ * splitter), not of the breakdown, which is shared across every submission
+ * a long chapter gets split into. `undefined` under the exact same
+ * conditions `rawAskForClipIndex` is.
+ */
+export function rawAskForClipIndexWithReferences(
+  b: ChapterBreakdown | undefined,
+  clipIndex: number,
+  refSlots: RefSlot[],
+  registry: Record<string, ReferencePlateInfo>,
+): string | undefined {
+  const base = rawAskForClipIndex(b, clipIndex)
+  if (base === undefined) return undefined
+  const referencesBlock = formatReferencesBlock(refSlots, registry, clipIndex)
+  return referencesBlock ? `${referencesBlock}\n\n${base}` : base
 }
